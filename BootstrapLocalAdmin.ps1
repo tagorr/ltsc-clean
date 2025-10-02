@@ -41,7 +41,7 @@ function New-RandomPassword {
     if ($pw -notmatch '[A-Z]')      { $pw = 'A' + $pw.Substring(1) }
     if ($pw -notmatch '[a-z]')      { $pw = $pw.Substring(0,1) + 'z' + $pw.Substring(2) }
     if ($pw -notmatch '\d')         { $pw = $pw.Substring(0,2) + '7' + $pw.Substring(3) }
-    if ($pw -notmatch '[!@#%+_\-]') { $pw = $pw.Substring(0,3) + '_' + $pw.Substring(4) }
+    if ($pw -notmatch '[!@#%+_-]') { $pw = $pw.Substring(0,3) + '_' + $pw.Substring(4) }
     return $pw
 }
 
@@ -100,7 +100,7 @@ function New-RandomPassword {
     if ($pw -notmatch '[A-Z]')      { $pw = 'A' + $pw.Substring(1) }
     if ($pw -notmatch '[a-z]')      { $pw = $pw.Substring(0,1) + 'z' + $pw.Substring(2) }
     if ($pw -notmatch '\d')         { $pw = $pw.Substring(0,2) + '7' + $pw.Substring(3) }
-    if ($pw -notmatch '[!@#%+_\-]') { $pw = $pw.Substring(0,3) + '_' + $pw.Substring(4) }
+    if ($pw -notmatch '[!@#%+_-]') { $pw = $pw.Substring(0,3) + '_' + $pw.Substring(4) }
     return $pw
 }
 
