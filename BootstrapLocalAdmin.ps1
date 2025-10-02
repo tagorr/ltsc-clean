@@ -23,7 +23,7 @@ function Write-SetupLog {
 function Get-AdministratorsGroupName {
     try {
         $sid = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'
-        return ($sid.Translate([System.Security.Principal.NTAccount]).Value.Split('\')[-1])
+        return ($sid.Translate([System.Security.Principal.NTAccount]).Value.Split([char]0x5C)[-1])
     } catch {
         return 'Administrators'
     }
@@ -82,7 +82,7 @@ function Write-SetupLog {
 function Get-AdministratorsGroupName {
     try {
         $sid = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'
-        return ($sid.Translate([System.Security.Principal.NTAccount]).Value.Split('\')[-1])
+        return ($sid.Translate([System.Security.Principal.NTAccount]).Value.Split([char]0x5C)[-1])
     } catch {
         return 'Administrators'
     }
