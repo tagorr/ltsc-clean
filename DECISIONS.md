@@ -111,7 +111,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 ## 4. Logging and idempotence
 
 * A dedicated `:log` subroutine writes timestamped lines into `%WINDIR%\Panther\SetupComplete.log`.
-* Timestamping: **PowerShell ISO-8601**; fallback to `%DATE%`/`%TIME%`. WMIC is not used.
+* Timestamp fallback chain: WMIC, then PowerShell, then `%DATE% %TIME%`.
 * Each step logs `[SECTION]` and `[STEP]`. Warnings and errors include numeric return codes.
 * Groups of related `reg add` operations use a local error flag to produce one consolidated warning.
 * Single commands use an immediate `if errorlevel 1` handler on the next line.
@@ -119,6 +119,13 @@ This document records the decisions, rationale, scope boundaries, and verificati
 * Installers are invoked with reboot suppression: **MSI** via `REBOOT=ReallySuppress /norestart`; **EXE** with an equivalent `/norestart` switch to avoid reboots inside SetupComplete.
 
 * **Unattend hygiene:** after `SetupComplete` finishes, remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml`.
+
+---
+
+* **Timestamps:** ISO-8601 in logs. Default engine: WMIC (fast on LTSC 2021). Optional engine: PowerShell (`LOG_TS_ENGINE=POWERSHELL`, uses `Get-Date -Format o`). WMIC is deprecated in newer Windows; the switch exists for forward compatibility.
+* **Centralized DISM logging:** every DISM call goes through a runner that appends `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`.
+* **Return codes:** a single handler treats `0` as success; `3010/1641` as success with reboot required (sets `NEEDS_REBOOT=1`); anything else is failure and sets `FAILED=1`.
+* **Config flags (defaults):** `LOG_TS_ENGINE=WMIC`, `REBOOT_ON_RC=1`, `ALWAYS_REBOOT_AFTER_FIRST_LOGON=0`.
 ## 5. Platform gate
 
 * The script validates it runs on Windows 10 Enterprise 2021 LTSC:
@@ -170,7 +177,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Enterprise-allowed diagnostics level: `AllowTelemetry=0`.
 * Feedback, CEIP, diagnostics, and Windows Error Reporting are disabled via policies and tasks.
-* `WerSvc` is disabled. Tasks under Diagnostics and WER are disabled with soft handling if missing.* Firewall rule for DiagTrack is ensured with a **quoted** name containing parentheses: `name="Block Telemetry Service (DiagTrack)"`.
+* `WerSvc` is disabled. Tasks under Diagnostics and WER are disabled with soft handling if missing.
 
 ### 6.4 Delivery Optimization
 
@@ -210,7 +217,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 * Disabled services with guarded checks:
 
   * `SysMain`, `WSearch`, `Spooler`, `DiagTrack`, `dmwappushsvc`, `WerSvc`, `WebClient`
-* Nonexistent services are logged as info and do not count as failures.* **WebClient (WebDAV)** has a dedicated section in logs. Final state is recorded as `Start=0x4 State=1 (STOPPED)` when disabled.
+* Nonexistent services are logged as info and do not count as failures.
 
 ### 6.8 Features and Capabilities
 
@@ -311,7 +318,6 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 ---
 
-
 We do not append dated addenda; each decision is integrated into its canonical section (flow, logging, servicing, or feature-specific subsections). The git history acts as the chronological record of changes.
 ## 11. References in repository
 
@@ -340,3 +346,31 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 **Privacy scope covered:** Disable Privacy Experience UI; enforce OFF state for diagnostics, tailored experiences, advertising ID, input personalization/online speech, location, find-my-device.
 
 - **Decision:** Critical HKLM policies for OOBE are moved from inline `RunSynchronousCommand` to external `PreOOBE.cmd` (pass `specialize`), invoked by a **single** command. Motivation: XML validity, readability, escaping limits, centralized logging and RC.
+
+## ADR-001: AutoAdminLogon только для консоли (Console)
+
+**Дата:** 2025-10-02
+**Контекст:** Нужно гарантированно войти локально после PreOOBE без сети/служб.
+**Решение:** Используем стандартный `AutoAdminLogon` Winlogon, который работает **только** для консольной сессии.
+**Последствия:** В VMConnect **Enhanced** (RDP) всегда будет экран входа — это ожидаемо и не является ошибкой автолога.
+
+## ADR-002: Запись реестра через `reg.exe` с явными типами
+
+**Дата:** 2025-10-02
+**Контекст:** Провайдер реестра PowerShell в ранних тестах писал типы «не так»/не успевал «флашиться» до ребута.
+**Решение:** Все ключи Winlogon/политик пишем через `reg.exe` с явным `REG_SZ`/`REG_DWORD`.
+**Последствия:** Больше «шумного» кода, но предсказуемые типы и надёжность.
+
+## ADR-003: RNG-шим для WinPS 5.1
+
+**Дата:** 2025-10-02
+**Контекст:** В Windows PowerShell 5.1 нет `RandomNumberGenerator.Fill`, нужен стойкий пароль без внешних модулей.
+**Решение:** Добавлен `Invoke-RngFill` на `RandomNumberGenerator.Create()` и `New-StrongPassword` (≥20 символов, все классы).
+**Последствия:** Нет внешних зависимостей; одинаковая криптография на всех хостах.
+
+## ADR-004: Идемпотентность «взвод/откат»
+
+**Дата:** 2025-10-02
+**Контекст:** Скрипты могут запускаться повторно (ручные прогоны, кастомные сборки).
+**Решение:** Операции безопасны при повторе: допуск кода 1378 для `Administrators`, удаления значений — «молча» при отсутствии, выход только при целевом состоянии.
+**Последствия:** Стабильное поведение при регрессе/переустановках.

@@ -27,7 +27,6 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 
 > Privacy/Security policies are applied **before OOBE** via external `PreOOBE.cmd`, invoked from `Autounattend.xml` in pass `specialize` (`Microsoft-Windows-Deployment/RunSynchronous`). The script resides at `%WINDIR%\Setup\Scripts\PreOOBE.cmd` inside the installed OS.
 
-
 * Put `autounattend.xml` in the root of the installation media.
 * Put `SetupComplete.cmd` at:
 
@@ -54,7 +53,6 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 ```
 
 > Note: save `SetupComplete.cmd` as UTF-8 without BOM, with CRLF line endings.
-
 
 ### Image binding (autounattend.xml)
 - This answer file targets **Index 1** and sets `<cpi:offlineImage name="Windows 10 Enterprise LTSC">`.
@@ -98,9 +96,9 @@ For the full verification list, see `DECISIONS.md` §9.
 
 ### Логирование
 
-- Таймстемпы **ISO-8601** через **PowerShell**; фоллбэк — `%DATE%`/`%TIME%`.
-- **DISM** пишет в стандартный `%WINDIR%\Logs\DISM\dism.log`. В `SetupComplete.log` логируются вызванные команды DISM и финальные коды возврата.
-- Подавление ребутов установщиков: **MSI** запускаются с `REBOOT=ReallySuppress /norestart`, **EXE** — с эквивалентным `/norestart`.* WebClient disabled is visible in the log as: `[OK] WebClient Start=0x4 State=1 (STOPPED)`.
+- Таймстемпы **ISO-8601**. По умолчанию движок **WMIC**; опционально **PowerShell** по флагу `LOG_TS_ENGINE=POWERSHELL` (используется `Get-Date -Format o`).
+- **Централизованный лог DISM**: `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`; RC трактуются как `0` success, `3010/1641` success+reboot.
+- Подавление ребутов установщиков: **MSI** запускаются с `REBOOT=ReallySuppress /norestart`, **EXE** — с эквивалентным `/norestart`.
 
 ## Known trade-offs
 
@@ -123,8 +121,6 @@ MIT
 ## Contributing
 
 Issues and pull requests are welcome. Please keep changes aligned with the project principles: official tools only, deterministic and idempotent behavior, and no reboots inside SetupComplete.
-
-
 
 ### File encoding & EOL
 - All scripts (`*.cmd`, `*.bat`, `*.ps1`) and deployment XMLs are stored as **UTF-8 (no BOM)** with **CRLF** line endings.
@@ -152,7 +148,6 @@ Issues and pull requests are welcome. Please keep changes aligned with the proje
 ### Совместимость
 Скрипт **SetupComplete.cmd** рассчитан на **Windows 10 Enterprise LTSC 2021** (21H2, сборка ≥ 19044). В шапке скрипта есть параметры совместимости, которые позволяют либо строго требовать нужную версию, либо работать в «best‑effort» режиме:
 **По умолчанию:** репозиторий поставляется с `STRICT_DISPLAYVERSION=0` (режим *best‑effort*).
-
 
 ```bat
 :: --- compatibility controls ---
@@ -184,3 +179,90 @@ set "STRICT_DISPLAYVERSION=0"  :: 1 = строгий отказ при несо�
   - Location (`DisableWindowsLocationProvider=1`, `DisableLocation=1`)
   - Find My Device (`AllowFindMyDevice=0`)
 - Local-account **Security Questions disabled** (`NoLocalPasswordResetQuestions=1`).
+
+## Поток и архитектура установки
+
+Кратко, как должно работать «в бою»:
+
+1. На этапе `specialize/PreOOBE` под **SYSTEM** запускается `BootstrapLocalAdmin.ps1`.
+2. Скрипт:
+   - создаёт/активирует локальную учётку `bootstrap` и задаёт пароль;
+   - снимает стопперы входа: `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очищает `LegalNotice*`, ставит `DontDisplayLastUserName=0`, `IgnoreShiftOverride=1`;
+   - настраивает **автологон (AutoAdminLogon)** ТОЛЬКО для **консоли**:
+     `DefaultUserName=bootstrap`, `DefaultDomainName=<имя_ПК>`, `DefaultPassword=<тот же пароль>`,
+     `AutoAdminLogon=1 (REG_SZ)`, `ForceAutoLogon=1 (REG_SZ)`, `AutoLogonCount≥1 (REG_DWORD)`;
+   - регистрирует **RunOnce** на `CreatePrimaryAdmin.ps1`.
+3. Ребут → **автовход в консоль** под `bootstrap` → автозапуск `CreatePrimaryAdmin.ps1` (мастер).
+4. Мастер создаёт *основного локального администратора* (по умолчанию `primaryadmin`) и выполняет **откат**:
+   - удаляет `DefaultPassword`/`AutoLogonCount`, ставит `AutoAdminLogon=0`, `ForceAutoLogon=0`, `IgnoreShiftOverride=0`;
+   - возвращает политики (`DisableCAD=0`, `DevicePasswordLessBuildVersion=2`);
+   - отключает `bootstrap` (`net user bootstrap /active:no`);
+   - чистит `RunOnce`; пишет лог в `%WINDIR%\Panther\SetupComplete.log`.
+
+## Hyper-V VMConnect: Basic vs Enhanced (как правильно читать поведение)
+
+- **Basic/Console (обычный режим):** прямой доступ к *консоли* ВМ («как монитор, воткнутый в системный блок»).
+  Именно сюда срабатывает `AutoAdminLogon`. В этом режиме **нет общего буфера обмена** (Ctrl+V не работает).
+  Пункт меню VMConnect **Буфер обмена → Ввести текст из буфера обмена** просто «печатает» символы в активное окно.
+
+- **Enhanced (расширённый сеанс):** отдельная **RDP-сессия**. Есть общий буфер (Ctrl+C/V), динамический размер и пр.
+  Это **не консоль**. Экран входа в Enhanced — нормален, даже если в консоли уже прошёл автологон под `bootstrap`.
+
+Практика теста:
+- Хотите увидеть сам факт автолога → оставляйте **Basic** (без галочки «Расширённый сеанс»).
+- Нужны Ctrl+C/V и перенос файлов → заходите в **Enhanced** и **входите** в RDP-сессию (например, под `bootstrap`).
+- Одновременные сессии: у одного пользователя может существовать консольная и RDP-сессия. Для работы *под тем же пользователем* в Enhanced удобно либо
+  1) **закрыть** консольный сеанс `bootstrap` (например, `logoff 1`) и войти им в RDP; либо
+  2) **перехватить** открытую консоль в свой RDP: `tscon 1 /dest:RDP-Tcp#<номер_своего_сеанса>`.
+
+## Быстрый старт (ручной прогон на установленной ВМ)
+
+1. Скопируйте в `C:\Windows\Setup\Scripts\`:
+   `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`.
+2. Запустите `BootstrapLocalAdmin.ps1` под **SYSTEM** (эмуляция PreOOBE) через Планировщик:
+```powershell
+$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Windows\Setup\Scripts\BootstrapLocalAdmin.ps1"'
+$p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
+Register-ScheduledTask -TaskName 'BootstrapLocalAdmin-Once' -Action $a -Principal $p -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) | Out-Null
+Start-ScheduledTask -TaskName 'BootstrapLocalAdmin-Once'
+```
+
+3. Проверьте настройки (срез):
+
+```powershell
+$wl='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+Get-ItemProperty $wl | Select DefaultUserName,DefaultDomainName,DefaultPassword,AutoAdminLogon,ForceAutoLogon,AutoLogonCount,DontDisplayLastUserName,IgnoreShiftOverride | Format-List
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc" /v DevicePasswordLessBuildVersion
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableCAD
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
+```
+4. Ребут **из гостя** (Пуск → Перезагрузка).
+   В **Basic** попадёте сразу на рабочий стол `bootstrap`; в **Enhanced** появится экран входа — это ожидаемо.
+5. Дождитесь автозапуска `CreatePrimaryAdmin.ps1`. По завершении проверьте **откат** (см. чек-лист ниже).
+
+## Чек-лист приёмки после первого входа
+
+- *Основной админ* (по умолчанию `primaryadmin`) создан, активен, в **Administrators**; пароль соответствует политике.
+- В реестре **нет** `DefaultPassword` и `AutoLogonCount`; `AutoAdminLogon=0 (REG_SZ)`, `ForceAutoLogon=0 (REG_SZ)`, `IgnoreShiftOverride=0`.
+- Политики: `DisableCAD=0`; `DevicePasswordLessBuildVersion=2`.
+- `bootstrap` отключён (`net user bootstrap /active:no`).
+- В `RunOnce` нет ссылок на `CreatePrimaryAdmin.ps1`.
+- Лог `%WINDIR%\Panther\SetupComplete.log` содержит «End A: success» и «End B: success».
+
+## Диагностика (кратко)
+
+**Автологон не сработал** — проверьте:
+```powershell
+$wl='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+Get-ItemProperty $wl | Select DefaultUserName,DefaultDomainName,DefaultPassword,AutoAdminLogon,ForceAutoLogon,AutoLogonCount,DontDisplayLastUserName,IgnoreShiftOverride | Format-List
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc" /v DevicePasswordLessBuildVersion
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableCAD
+```
+
+Частые причины:
+
+* `DefaultPassword` пуст/не совпадает; `AutoAdminLogon`/`ForceAutoLogon` **не REG_SZ**;
+* `DefaultDomainName` ≠ имя ПК; включены `LegalNotice*` или `DontDisplayLastUserName=1`;
+* `DevicePasswordLessBuildVersion=2`, `DisableCAD=0`.
+
+**Видно логон в Enhanced** — это нормально: автологон работает только в **консоль**. В Basic увидите сразу рабочий стол `bootstrap`.

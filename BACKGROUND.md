@@ -67,8 +67,6 @@
 * Заменили `&` на `&&` в пакетных строках, в конце добавили `|| exit /b 0`.
 * При необходимости можно разнести «пакеты» на отдельные SynchronousCommand для более прозрачных логов.
 * Имя ПК переключили на `*`, чтобы избегать конфликта имён при массовом развёртывании.
-+ Добавлено детальное логирование для **WebClient (WebDAV)**; имя правила фаервола с круглыми скобками берётся в кавычки (`name="Block Telemetry Service (DiagTrack)"`).
-
 
 ## 6. Что готово сейчас
 
@@ -82,7 +80,7 @@
 * Что структура `$OEM$` скопирована без ошибок, регистр папок соблюдён.
 * Что `autounattend.xml` лежит в корне носителя.
 * Что при установке ты действительно создаёшь локальную учётку на OOBE. Это ожидаемое поведение.
-* DISM пишет в стандартный `%WINDIR%\Logs\DISM\dism.log`; в `SetupComplete.log` фиксируются вызванные команды DISM и их коды возврата (RC).
+* Централизованный DISM‑лог уже включён: все вызовы DISM пишут в `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` с `/LogLevel:4`. Дополнительных правок в строки не требуется.
 
 ## 8. Резервные опции на будущее
 
@@ -103,5 +101,30 @@
 
 Детали платформенного гейта и стратегии логирования описаны в **README.md** (для пользователей)
 и **DECISIONS.md** (норматив и обоснование). Соображения по рискам и операционным рекомендациям — в **SECURITY.md**.
-- Таймстемпы формируются через PowerShell (ISO-8601). Если PowerShell недоступен, применяется фоллбэк на `%DATE%`/`%TIME%`. WMIC не используется.
+- Двойной движок таймстемпов: WMIC (по умолчанию) / PowerShell (флаг `LOG_TS_ENGINE=POWERSHELL`), ISO‑8601.
+- Централизованный лог DISM: `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (`/LogLevel:4`).
+- Политика ребутов: только при RC 3010/1641 или при флаге `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; внутри SetupComplete ребутов нет.
+- Гигиена Unattend: после завершения — удалить `%WINDIR%\Panther\Unattend.xml` и `%WINDIR%\Panther\UnattendGC\*.xml`.
+- Подавление ребутов установщиков: MSI с `REBOOT=ReallySuppress /norestart`, EXE — с `/norestart`; ребуты внутри SetupComplete исключены.
 
+### Логирование
+
+- Таймстемпы **ISO-8601**. По умолчанию движок **WMIC**; опционально **PowerShell** по флагу `LOG_TS_ENGINE=POWERSHELL` (используется `Get-Date -Format o`).
+
+## 2025-09-19 — Install flow adjustments
+
+- Restored **manual disk selection** in Setup (UI): `WillShowUI=Always`, no `InstallTo*`.
+- Moved privacy/account policies to **specialize** (pre‑OOBE) so OOBE shows no privacy pages and local security questions do not appear.
+- **2025-09-20** — switched to external `PreOOBE.cmd` (invoked from `specialize`) for stability/maintainability; inline XML commands removed.
+- **2025-09-20** — Policy update: restrict baseline to **Windows 10 Enterprise LTSC 2021 / Enterprise SKUs** (due to `AllowTelemetry=0`), and finalize **Pre-OOBE delivery embedded in `install.wim`** (`Windows\Setup\Scripts\PreOOBE.cmd`).
+
+## Ограничения и особенности среды (Hyper-V, LTSC 2021)
+
+- Нет стабильного Copy-VMFile / «Гостевые службы» могут быть отключены: полагаемся на файлы, уже лежащие на ВМ.
+- Вставка/копирование в PowerShell может быть нестабильной из-за PSReadLine и/или Enhanced Session; при Basic используйте **Буфер обмена → Ввести текст из буфера обмена**.
+- VMConnect:
+  - **Basic/Console:** нет общего буфера, автологон происходит именно здесь.
+  - **Enhanced/RDP:** отдельная сессия с логон-экраном, есть Ctrl+C/V; при необходимости подключайтесь под нужным пользователем или «перехватывайте» консоль `tscon`.
+- Типичные симптомы:
+  - Автологон «не виден» в Enhanced — это норма (он прошёл в консоли).
+  - Счётчик `AutoLogonCount` уменьшается после каждого входа — это ожидаемо.
