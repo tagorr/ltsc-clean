@@ -42,14 +42,6 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
 
-### Telemetry firewall rule
-- An **outbound** firewall rule is ensured for the DiagTrack service: `name="Block Telemetry Service (DiagTrack)" dir=out action=block enable=yes service=diagtrack profile=any`.
-- The name includes parentheses and is **quoted** to avoid parsing issues.
-
-### WebClient (WebDAV) impact & rollback
-- Disabling the **WebClient** service removes Explorer WebDAV/SharePoint drive functionality.
-- Rollback: `sc config WebClient start= demand & sc start WebClient`.
-
 ## Reporting and contributions
 
 * For questions or improvements, open a GitHub issue or pull request in the repository.
@@ -59,7 +51,6 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ## License notice
 
 * This project is provided under the MIT License, without warranty. Review and adapt the baseline to your risk profile before production use.
-
 
 ### Дополнительные уточнения
 
@@ -81,7 +72,9 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 и метки времени. Персональные данные не логируются умышленно. Срок хранения определяйте политикой окружения;
 при необходимости удаляйте журнал после успешной валидации установки.
 
-**Timestamping & DISM logs.** Timestamps are **ISO-8601** via **PowerShell**; fallback to `%DATE%`/`%TIME%` if PowerShell is unavailable. DISM writes to the standard `%WINDIR%\Logs\DISM\dism.log`. The baseline also logs each DISM command and final return code to `%WINDIR%\Panther\SetupComplete.log`.
+**Timestamping & DISM logs.** Timestamps are **ISO-8601**. Default engine: **WMIC**; optional engine: **PowerShell** via `LOG_TS_ENGINE=POWERSHELL` (`Get-Date -Format o`). All DISM calls write to a centralized log: `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`. Return codes are handled uniformly: `0` = success; `3010/1641` = success, reboot required.
+
+Installer reboot suppression is enforced: **MSI** use `REBOOT=ReallySuppress /norestart`, **EXE** are invoked with `/norestart` to avoid any reboot inside SetupComplete.
 
 **Unattend hygiene.** After SetupComplete finishes, remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml`.
 
@@ -104,3 +97,23 @@ Applied at **specialize** (SYSTEM) using `Microsoft-Windows-Deployment/RunSynchr
 Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; local-account security questions disabled.
 
 - Applied at specialize via external `PreOOBE.cmd` (invoked from unattend).
+
+## Временное хранение пароля в Winlogon при автологоне
+
+Для `AutoAdminLogon` требуется `HKLM\...\Winlogon\DefaultPassword (REG_SZ)`.
+Это пароль в открытом виде и он хранится **временно** — ровно на фазу «взвод → первый вход под bootstrap».
+
+Меры снижения риска:
+- Пароль `bootstrap` — временный; после первого входа `CreatePrimaryAdmin.ps1` удаляет `DefaultPassword` и отключает автологон (`AutoAdminLogon=0`, `ForceAutoLogon=0`).
+- Логи не содержат паролей (логируются только факты и длина/классы при генерации).
+- Длительность хранения — только до первого входа `bootstrap`.
+
+## Политики входа: временное ослабление и возврат
+
+На фазе взвода:
+- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=1`.
+
+На откате:
+- `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0`.
+
+Гарантия возврата обеспечивается идемпотентной логикой `CreatePrimaryAdmin.ps1`.
