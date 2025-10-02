@@ -47,7 +47,8 @@ goto :eof
   endlocal & goto :eof
 
 :regadd
-  REM Usage: call :regadd "HKLM\path" "ValueName" REG_DWORD "0"
+  REM Usage: call :regadd "HKLM\path" "ValueName" ^
+        REG_DWORD "0"
   set "_rk=%~1"
   set "_rv=%~2"
   set "_rt=%~3"
@@ -70,38 +71,50 @@ goto :eof
 call :log [SECTION] PreOOBE start
 
 REM 1) Local account security questions — disable (no questions when resetting local account passwords)
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System"                   "NoLocalPasswordResetQuestions"                REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System"                   "NoLocalPasswordResetQuestions" ^
+        REG_DWORD "1"
 
 REM 2) OOBE Privacy Settings experience — disable (hide the privacy settings page during OOBE)
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\OOBE"                     "DisablePrivacyExperience"                     REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\OOBE"                     "DisablePrivacyExperience" ^
+        REG_DWORD "1"
 
 REM 3) Diagnostic data — set to 0 (Security). Supported on Enterprise/LTSC; minimizes data collection.
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "AllowTelemetry"                               REG_DWORD "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "AllowTelemetry" ^
+        REG_DWORD "0"
 
 REM 4) Tailored experiences with diagnostic data — disable
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableTailoredExperiencesWithDiagnosticData" REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableTailoredExperiencesWithDiagnosticData" ^
+        REG_DWORD "1"
 
 REM 5) Advertising ID — disable value and enforce via policy
 REM    - HKLM\...\AdvertisingInfo Enabled=0 (turns off Advertising ID)
 REM    - Policies\...\AdvertisingInfo DisabledByGroupPolicy=1 (enforces via policy)
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AdvertisingInfo"    "Enabled"                                      REG_DWORD "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo"          "DisabledByGroupPolicy"                        REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AdvertisingInfo"    "Enabled" ^
+        REG_DWORD "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo"          "DisabledByGroupPolicy" ^
+        REG_DWORD "1"
 
 REM 6) Input personalization (inking & typing) / online speech — disable
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization"             "AllowInputPersonalization"                    REG_DWORD "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization"             "AllowInputPersonalization" ^
+        REG_DWORD "0"
 
 REM 7) Location — disable Windows location provider and location services
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"       "DisableWindowsLocationProvider"               REG_DWORD "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"       "DisableLocation"                              REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"       "DisableWindowsLocationProvider" ^
+        REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"       "DisableLocation" ^
+        REG_DWORD "1"
 
 REM 8) Find my device — disable
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\FindMyDevice"                     "AllowFindMyDevice"                            REG_DWORD "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\FindMyDevice"                     "AllowFindMyDevice" ^
+        REG_DWORD "0"
 
 REM 9) Windows Consumer Features — disable (no suggested apps/consumer content)
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableWindowsConsumerFeatures"               REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableWindowsConsumerFeatures" ^
+        REG_DWORD "1"
 
 REM 10) Feedback notifications — do not show “Rate your experience” toasts
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "DoNotShowFeedbackNotifications"               REG_DWORD "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "DoNotShowFeedbackNotifications" ^
+        REG_DWORD "1"
 
 
 
