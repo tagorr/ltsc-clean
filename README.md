@@ -4,6 +4,10 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 
 ## Scope
 
+- Harden Windows 10 LTSC 2021 using **supported policies and servicing** only; no unofficial binaries or hacks.
+- Provide deterministic automation via `PreOOBE.cmd`, `SetupComplete.cmd`, and companion PowerShell helpers with **single-pass logging**.
+- Expect operators to supply deployment assets (media, `autounattend.xml`) separately; this repo tracks the scripts, decisions, and documentation only.
+
 ## Supported SKUs / Requirements
 
 > This baseline is intended for **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs.
@@ -14,11 +18,15 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 
 ## Files in this repo
 
-* `autounattend.xml` - unattended install answer file
-* `SetupComplete.cmd` - post-install baseline script
+* `SetupComplete.cmd` - post-install baseline script (post-OOBE hardening)
+* `PreOOBE.cmd` - specialize-phase privacy policies and bootstrap trigger
+* `BootstrapLocalAdmin.ps1` - temporary admin creation + autologon bootstrapper
+* `CreatePrimaryAdmin.ps1` - first-login wizard that finalizes the baseline
 * `DECISIONS.md` - design decisions and rationale
 * `BACKGROUND.md` - archived notes and history
 * `LICENSE` - MIT
+
+> `autounattend.xml` is maintained in a separate, access-controlled repository and is intentionally **not** committed here. Follow `DECISIONS.md` §7 for generation and storage guidance.
 
 ## Placement
 
@@ -33,11 +41,11 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
   ```
   \sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd
   ```
-* Runtime log:
+* Runtime logs:
 
-  ```
-  %WINDIR%\Panther\SetupComplete.log
-  ```
+  1. `%WINDIR%\Panther\PreOOBE.log` — specialize-phase policies and bootstrap status.
+  2. `%WINDIR%\Panther\SetupComplete.log` — post-setup baseline run (ISO-8601 timestamps).
+  3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` — consolidated DISM trace for all servicing actions.
 
 ### Media layout example
 
@@ -96,7 +104,7 @@ For the full verification list, see `DECISIONS.md` §9.
 
 ### Логирование
 
-- Таймстемпы **ISO-8601**. По умолчанию движок **WMIC**; опционально **PowerShell** по флагу `LOG_TS_ENGINE=POWERSHELL` (используется `Get-Date -Format o`).
+- Таймстемпы **ISO-8601**. По умолчанию движок **PowerShell** (`Get-Date -Format o`); опционально можно переключить на **WMIC** флагом `LOG_TS_ENGINE=WMIC`.
 - **Централизованный лог DISM**: `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`; RC трактуются как `0` success, `3010/1641` success+reboot.
 - Подавление ребутов установщиков: **MSI** запускаются с `REBOOT=ReallySuppress /norestart`, **EXE** — с эквивалентным `/norestart`.
 

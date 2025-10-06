@@ -1,5 +1,4 @@
 @echo off
-set "NEED_REBOOT=0"
 REM SPDX-License-Identifier: MIT
 REM Windows 10 LTSC 2021 - Clean ^& Quiet Baseline (Official Tools Only)
 REM Generated: 2025-09-15
@@ -13,7 +12,7 @@ if not exist "%WINDIR%\Panther" mkdir "%WINDIR%\Panther" >nul 2>&1
 if not exist "%WINDIR%\Logs\DISM" mkdir "%WINDIR%\Logs\DISM" >nul 2>&1
 
 :: ------------ config flags ------------
-set "LOG_TS_ENGINE=WMIC"
+set "LOG_TS_ENGINE=POWERSHELL"
 set "REBOOT_ON_RC=1"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
@@ -34,6 +33,11 @@ for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows
 REM Trim potential quotes
 set "ED=%ED:"=%"
 >>"%WINDIR%\Panther\SetupComplete.log" echo [INFO] Platform EditionID="%ED%"
+if /I not "%ED%"=="%REQUIRED_EDITION%" (
+  call :log "[ERROR] EditionID=%ED% (expected %REQUIRED_EDITION%). Aborting."
+  set "FAILED=1"
+  exit /b 1
+)
 REM --- DisplayVersion (robust, locale-safe) ---
 set "DV="
 for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v DisplayVersion 2^>nul') do if /I "%%A"=="DisplayVersion" set "DV=%%C"
@@ -59,10 +63,23 @@ goto :main
 :: ------------ functions ------------
 :log
 setlocal DisableDelayedExpansion
-for /f %%G in ('powershell -NoProfile -Command "[DateTime]::Now.ToString(\"yyyy-MM-ddTHH:mm:ss\")" 2^>nul') do set "TS=%%G"
-if not defined TS set "TS=%DATE:~6,4%-%DATE:~3,2%-%DATE:~0,2%T%TIME:~0,8%"
 set "MSG=%~1"
 if not defined MSG (endlocal & exit /b 0)
+set "TS="
+if /I "%LOG_TS_ENGINE%"=="WMIC" (
+  for /f "tokens=2 delims==." %%G in ('wmic os get LocalDateTime /value 2^>nul ^| find "="') do set "TS_RAW=%%G"
+  if defined TS_RAW (
+    call set "TS=%TS_RAW:~0,4%-%TS_RAW:~4,2%-%TS_RAW:~6,2%T%TS_RAW:~8,2%:%TS_RAW:~10,2%:%TS_RAW:~12,2%.%TS_RAW:~15,3%"
+  )
+  set "TS_RAW="
+)
+if not defined TS if /I "%LOG_TS_ENGINE%"=="POWERSHELL" (
+  for /f %%G in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do set "TS=%%G"
+)
+if not defined TS (
+  for /f %%G in ('powershell -NoProfile -Command "Get-Date -Format \"yyyy-MM-ddTHH:mm:ss\"" 2^>nul') do set "TS=%%G"
+)
+if not defined TS set "TS=%DATE:~6,4%-%DATE:~3,2%-%DATE:~0,2%T%TIME:~0,8%"
 <nul set /p "=[%TS%] %MSG%" >> "%LOG%"
 >> "%LOG%" echo(
 endlocal & exit /b 0
@@ -88,6 +105,11 @@ set "LG=%~2"
 if not defined FN goto :eof
 call :log "[INFO] %LG% - attempting disable"
 call :run_dism /Disable-Feature /FeatureName:%FN%
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "FAILED=1"
+  call :log "[ERROR] %LG% disable failed (RC=%RC%)"
+)
 goto :eof
 
 :remove_capability
@@ -104,6 +126,11 @@ if /I not "%_cap_state%"==" Installed" (
 set "_cap_state="
 call :log "[STEP] Remove capability %FR% (%CAP%)"
 call :run_dism /Remove-Capability /CapabilityName:%CAP%
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "FAILED=1"
+  call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
+)
 goto :eof
 
 :gate_build
@@ -148,22 +175,28 @@ REM ------------ RC handler ^& runners ------------
 set "COMP=%~1"
 set "RC=%~2"
 if "%RC%"=="0"    (call :log "[%COMP%] RC=0 (success)" & exit /b 0)
-if "%RC%"=="3010" (call :log "[%COMP%] RC=3010 (success, reboot required)" & set "NEEDS_REBOOT=1" & exit /b 0)
-if "%RC%"=="1641" (call :log "[%COMP%] RC=1641 (success, reboot initiated by installer)" & set "NEEDS_REBOOT=1" & exit /b 0)
+if "%RC%"=="3010" (call :log "[%COMP%] RC=3010 (success, reboot required)" & set "NEEDS_REBOOT=1" & call :flag_reboot & exit /b 0)
+if "%RC%"=="1641" (call :log "[%COMP%] RC=1641 (success, reboot initiated by installer)" & set "NEEDS_REBOOT=1" & call :flag_reboot & exit /b 0)
 call :log "[%COMP%] RC=%RC% (error)"
 set "FAILED=1"
 exit /b %RC%
 
 :run_dism
 REM usage: call :run_dism <DISM-args-without-/Online>
-setlocal
-set "CMD=dism /Online %* /Quiet /NoRestart >nul 2>nul"
+set "CMD=dism /Online %* /Quiet /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4 >nul 2>nul"
 call :log "[DISM] %CMD%"
 %CMD%
-set "RC=%errorlevel%"
-endlocal & set "RC=%RC%"
+set "RC=%ERRORLEVEL%"
 if "%RC%"=="3010" (
   call :log "[DISM] RC=3010 (success, reboot required)"
+  set "NEEDS_REBOOT=1"
+  call :flag_reboot
+  exit /b 0
+)
+if "%RC%"=="1641" (
+  call :log "[DISM] RC=1641 (success, reboot initiated by installer)"
+  set "NEEDS_REBOOT=1"
+  call :flag_reboot
   exit /b 0
 )
 if "%RC%"=="0" (
@@ -183,6 +216,7 @@ if "%RC%"=="-2146498541" (
   exit /b 0
 )
 call :log "[DISM] RC=%RC% (error)"
+set "FAILED=1"
 exit /b %RC%
 
 :run_msi
@@ -219,8 +253,6 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableF
 call :log "[SECTION] SmartScreen & Defender"
 
 REM ------------ SmartScreen ^& Defender (preferences only) ------------
-set "LMSG=[SECTION] SmartScreen ^& Defender"
-call :log
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableSmartScreen" "REG_DWORD" "0"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "SubmitSamplesConsent" "REG_DWORD" "2"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SpynetReporting" "REG_DWORD" "0"
@@ -338,8 +370,7 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "DisableOS
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Device Metadata" "PreventDeviceMetadataFromNetwork" "REG_DWORD" "1"
 
 REM ------------ UX ^& Power ------------
-set "LMSG=[SECTION] UX ^& Power"
-call :log
+call :log "[SECTION] UX ^& Power"
 call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" "REG_DWORD" "255"
 call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoRun" "REG_DWORD" "1"
 call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoPlay" "REG_DWORD" "1"
@@ -378,22 +409,33 @@ powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 :: ------------ Component cleanup ------------
 call :log "[SECTION] Component cleanup"
 call :run_dism /Cleanup-Image /StartComponentCleanup /ResetBase
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "FAILED=1"
+  call :log "[ERROR] Component cleanup failed (RC=%RC%)"
+)
 
 :: ------------ schedule reboot via RunOnce ------------
-if "%NEED_REBOOT%"=="1" (
-  reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v __baseline_reboot /t REG_SZ /d "%SystemRoot%\System32\shutdown.exe /r /t 5" /f >nul 2>&1
-) else (
-
-rem ==== B: compute reboot need from log (robust against setlocal/endlocal) ====
+if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
+  call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
+  set "NEEDS_REBOOT=1"
+  call :flag_reboot
+)
 
 call :log "[INFO] Evaluating reboot requirement"
-findstr /i /c:"RC=3010" /c:"RC=1641" "%LOG%" >nul && (call :flag_reboot)
-if exist "%REBOOT_FLAG%" (
+if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
+if not "%NEEDS_REBOOT%"=="1" (
+  findstr /i /c:"RC=3010" /c:"RC=1641" "%LOG%" >nul && (
+    call :flag_reboot
+    set "NEEDS_REBOOT=1"
+  )
+)
+
+if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
   reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "zz-SetupCompleteReboot" /t REG_SZ /d "%SystemRoot%\System32\shutdown.exe /r /t 5" /f >nul 2>&1
 ) else (
   call :log "[INFO] No reboot required"
-)
 )
 call :log "----- SetupComplete finished -----"
 exit /b %FAILED%

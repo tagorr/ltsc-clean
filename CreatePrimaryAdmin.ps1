@@ -153,7 +153,8 @@ try {
   Reg-Del $wl 'AutoLogonCount'
   Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0'
   Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0'
-  Reg-Add $wl 'IgnoreShiftOverride' 'REG_DWORD' '0'
+  Reg-Del $wl 'IgnoreShiftOverride'
+  Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0'
   Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
   Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
   try {

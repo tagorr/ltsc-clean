@@ -125,6 +125,14 @@ if "%FAILED%"=="0" (
 )
 
 rem Bootstrap: одноразовый локальный админ + автологон
+call :log [STEP] Launch BootstrapLocalAdmin.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\BootstrapLocalAdmin.ps1"
+set "PSRC=%ERRORLEVEL%"
+if not "%PSRC%"=="0" (
+  set "FAILED=1"
+  call :log [ERROR] BootstrapLocalAdmin.ps1 rc=%PSRC%
+) else (
+  call :log [OK] BootstrapLocalAdmin.ps1 rc=0
+)
 endlocal & exit /b %FAILED%
 

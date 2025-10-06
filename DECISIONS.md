@@ -5,7 +5,7 @@
 **Scope:** Windows 10 Enterprise 2021 LTSC (21H2, EditionID=EnterpriseS, build 19044+)
 **Repository:** [https://github.com/tagor-sian/win10-ltsc-2021-clean-quiet-baseline](https://github.com/tagor-sian/win10-ltsc-2021-clean-quiet-baseline)
 **License:** MIT
-**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks, RunOnce). Conservative, no hacks; deterministic and idempotent. Includes autounattend.xml and SetupComplete.cmd.
+**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks, RunOnce). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers); deployment answer files are managed separately.
 
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
@@ -82,14 +82,22 @@ This document records the decisions, rationale, scope boundaries, and verificati
 5. First interactive sign-in happens. If a RunOnce reboot was scheduled, it occurs immediately after the first sign-in; otherwise the system remains logged in without an automatic reboot.
 ## 3. File layout and key paths
 
-* Unattended answer file
+* Unattended answer file (stored outside this repo, delivered with the media)
   `autounattend.xml` on installation media root.
+
+* Pre-OOBE script inside image
+  `%WINDIR%\Setup\Scripts\PreOOBE.cmd`
 
 * SetupComplete script location on media
   `\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd`
 
-* Runtime log produced by SetupComplete
-  `%WINDIR%\Panther\SetupComplete.log`
+* Companion PowerShell helpers
+  `%WINDIR%\Setup\Scripts\BootstrapLocalAdmin.ps1`, `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1`
+
+* Runtime logs (review in this order)
+  1. `%WINDIR%\Panther\PreOOBE.log`
+  2. `%WINDIR%\Panther\SetupComplete.log`
+  3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
 
 * Script header in `SetupComplete.cmd` (compact):
 
@@ -122,10 +130,10 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 ---
 
-* **Timestamps:** ISO-8601 in logs. Default engine: WMIC (fast on LTSC 2021). Optional engine: PowerShell (`LOG_TS_ENGINE=POWERSHELL`, uses `Get-Date -Format o`). WMIC is deprecated in newer Windows; the switch exists for forward compatibility.
+* **Timestamps:** ISO-8601 in logs. Default engine: PowerShell (`Get-Date -Format o`). Optional engine: WMIC (`LOG_TS_ENGINE=WMIC`) for legacy hosts; WMIC is deprecated in newer Windows.
 * **Centralized DISM logging:** every DISM call goes through a runner that appends `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`.
 * **Return codes:** a single handler treats `0` as success; `3010/1641` as success with reboot required (sets `NEEDS_REBOOT=1`); anything else is failure and sets `FAILED=1`.
-* **Config flags (defaults):** `LOG_TS_ENGINE=WMIC`, `REBOOT_ON_RC=1`, `ALWAYS_REBOOT_AFTER_FIRST_LOGON=0`.
+* **Config flags (defaults):** `LOG_TS_ENGINE=POWERSHELL`, `REBOOT_ON_RC=1`, `ALWAYS_REBOOT_AFTER_FIRST_LOGON=0`.
 ## 5. Platform gate
 
 * The script validates it runs on Windows 10 Enterprise 2021 LTSC:
