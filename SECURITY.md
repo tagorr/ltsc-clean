@@ -114,6 +114,6 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 - `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=1`.
 
 На откате:
-- `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0`.
+- `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.
 
 Гарантия возврата обеспечивается идемпотентной логикой `CreatePrimaryAdmin.ps1`.
