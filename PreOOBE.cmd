@@ -116,8 +116,6 @@ REM 10) Feedback notifications — do not show “Rate your experience” toasts
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "DoNotShowFeedbackNotifications" ^
         REG_DWORD "1"
 
-
-
 if "%FAILED%"=="0" (
   call :log [SECTION] PreOOBE completed successfully
 ) else (
@@ -135,4 +133,3 @@ if not "%PSRC%"=="0" (
   call :log [OK] BootstrapLocalAdmin.ps1 rc=0
 )
 endlocal & exit /b %FAILED%
-
