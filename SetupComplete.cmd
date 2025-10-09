@@ -452,9 +452,12 @@ exit /b 0
 
 :after_telemetry_hardening
 :ts
-rem Build ISO8601 timestamp safely via PowerShell (present on LTSC 2021)
-for /f "usebackq delims=" %%T in (`powershell -NoLogo -NoProfile -Command "(Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')"`) do set "TS=%%T"
-exit /b
+  for /f %%# in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do (
+    set "TS=%%#"
+    goto :eof
+  )
+  set "TS=%DATE% %TIME%"
+goto :eof
 
 :fw_block_diagtrack
 setlocal EnableExtensions

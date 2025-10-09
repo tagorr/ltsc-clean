@@ -18,14 +18,6 @@ goto :main
 :: Subroutines
 :: --------------------------
 :ts
-  REM Timestamp: try WMIC, then PowerShell, then %DATE% %TIME%
-  set "TS="
-  for /f "tokens=2 delims==" %%# in ('wmic os get LocalDateTime /value 2^>nul ^| find "="') do set "_ldt=%%#"
-  if defined _ldt (
-    set "TS=!_ldt:~0,4!-!_ldt:~4,2!-!_ldt:~6,2!T!_ldt:~8,2!:!_ldt:~10,2!:!_ldt:~12,2!.!_ldt:~15,3!"
-    set "_ldt="
-    goto :eof
-  )
   for /f %%# in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do (
     set "TS=%%#"
     goto :eof
