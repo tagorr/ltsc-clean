@@ -203,18 +203,6 @@ if "%RC%"=="0" (
   call :log "[DISM] RC=0 (success)"
   exit /b 0
 )
-if "%RC%"=="-2146498554" (
-  call :log "[DISM] RC=0x800F0806 (pending operations) - defer until reboot"
-  exit /b 0
-)
-if "%RC%"=="-2146498548" (
-  call :log "[DISM] RC=0x800F080C (feature unknown on this SKU) - skip"
-  exit /b 0
-)
-if "%RC%"=="-2146498541" (
-  call :log "[DISM] RC=0x800F0813 (no operation / invalid install state) - skip now"
-  exit /b 0
-)
 call :log "[DISM] RC=%RC% (error)"
 set "FAILED=1"
 exit /b %RC%
