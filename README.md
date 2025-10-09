@@ -195,7 +195,7 @@ set "STRICT_DISPLAYVERSION=0"  :: 1 = строгий отказ при несо�
 1. На этапе `specialize/PreOOBE` под **SYSTEM** запускается `BootstrapLocalAdmin.ps1`.
 2. Скрипт:
    - создаёт/активирует локальную учётку `bootstrap` и задаёт пароль;
-   - снимает стопперы входа: `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очищает `LegalNotice*`, ставит `DontDisplayLastUserName=0`, `IgnoreShiftOverride=1`;
+   - снимает стопперы входа: `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очищает `LegalNotice*`, ставит `DontDisplayLastUserName=0`, `IgnoreShiftOverride=0 (REG_SZ, без промежуточного "1")`;
    - настраивает **автологон (AutoAdminLogon)** ТОЛЬКО для **консоли**:
      `DefaultUserName=bootstrap`, `DefaultDomainName=<имя_ПК>`, `DefaultPassword=<тот же пароль>`,
      `AutoAdminLogon=1 (REG_SZ)`, `ForceAutoLogon=1 (REG_SZ)`, `AutoLogonCount≥1 (REG_DWORD)`;

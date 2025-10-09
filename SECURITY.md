@@ -111,7 +111,7 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 ## Политики входа: временное ослабление и возврат
 
 На фазе взвода:
-- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=1`.
+- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=0 (REG_SZ, без промежуточного "1")`.
 
 На откате:
 - `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.

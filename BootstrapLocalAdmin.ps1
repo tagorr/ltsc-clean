@@ -102,7 +102,7 @@ try {
   & reg.exe DELETE "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v LegalNoticeCaption /f | Out-Null
   & reg.exe DELETE "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v LegalNoticeText    /f | Out-Null
   & reg.exe ADD    "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DontDisplayLastUserName /t REG_DWORD /d 0 /f | Out-Null
-  & reg.exe ADD    "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"     /v IgnoreShiftOverride     /t REG_SZ    /d 1 /f | Out-Null
+  & reg.exe ADD    "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"     /v IgnoreShiftOverride     /t REG_SZ    /d 0 /f | Out-Null
 } catch { Write-SetupLog "[INFO] Autologon hardening failed" }
 
 # 3) Arm one-time autologon
