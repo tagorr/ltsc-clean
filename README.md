@@ -104,7 +104,7 @@ For the full verification list, see `DECISIONS.md` §9.
 
 ### Логирование
 
-- Таймстемпы **ISO-8601**. По умолчанию движок **PowerShell** (`Get-Date -Format o`); опционально можно переключить на **WMIC** флагом `LOG_TS_ENGINE=WMIC`.
+- Таймстемпы **ISO-8601**. Движок: **PowerShell** (`Get-Date -Format o`).
 - **Централизованный лог DISM**: `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`; RC трактуются как `0` success, `3010/1641` success+reboot.
 - Подавление ребутов установщиков: **MSI** запускаются с `REBOOT=ReallySuppress /norestart`, **EXE** — с эквивалентным `/norestart`.
 

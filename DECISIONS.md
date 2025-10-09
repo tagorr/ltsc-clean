@@ -119,7 +119,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 ## 4. Logging and idempotence
 
 * A dedicated `:log` subroutine writes timestamped lines into `%WINDIR%\Panther\SetupComplete.log`.
-* Timestamp fallback chain: WMIC, then PowerShell, then `%DATE% %TIME%`.
+* Timestamp generation uses PowerShell (`Get-Date -Format o`), falling back to `%DATE% %TIME%` only if PowerShell fails.
 * Each step logs `[SECTION]` and `[STEP]`. Warnings and errors include numeric return codes.
 * Groups of related `reg add` operations use a local error flag to produce one consolidated warning.
 * Single commands use an immediate `if errorlevel 1` handler on the next line.
@@ -130,7 +130,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 ---
 
-* **Timestamps:** ISO-8601 in logs. Default engine: PowerShell (`Get-Date -Format o`). Optional engine: WMIC (`LOG_TS_ENGINE=WMIC`) for legacy hosts; WMIC is deprecated in newer Windows.
+* **Timestamps:** ISO-8601 in logs via PowerShell (`Get-Date -Format o`).
 * **Centralized DISM logging:** every DISM call goes through a runner that appends `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`.
 * **Return codes:** a single handler treats `0` as success; `3010/1641` as success with reboot required (sets `NEEDS_REBOOT=1`); anything else is failure and sets `FAILED=1`.
 * **Config flags (defaults):** `LOG_TS_ENGINE=POWERSHELL`, `REBOOT_ON_RC=1`, `ALWAYS_REBOOT_AFTER_FIRST_LOGON=0`.

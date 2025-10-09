@@ -72,7 +72,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 и метки времени. Персональные данные не логируются умышленно. Срок хранения определяйте политикой окружения;
 при необходимости удаляйте журнал после успешной валидации установки.
 
-**Timestamping & DISM logs.** Timestamps are **ISO-8601**. Default engine: **WMIC**; optional engine: **PowerShell** via `LOG_TS_ENGINE=POWERSHELL` (`Get-Date -Format o`). All DISM calls write to a centralized log: `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`. Return codes are handled uniformly: `0` = success; `3010/1641` = success, reboot required.
+**Timestamping & DISM logs.** Timestamps are **ISO-8601**, generated via **PowerShell** (`Get-Date -Format o`). All DISM calls write to a centralized log: `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`. Return codes are handled uniformly: `0` = success; `3010/1641` = success, reboot required.
 
 Installer reboot suppression is enforced: **MSI** use `REBOOT=ReallySuppress /norestart`, **EXE** are invoked with `/norestart` to avoid any reboot inside SetupComplete.
 
