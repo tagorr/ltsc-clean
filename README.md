@@ -136,6 +136,93 @@ Issues and pull requests are welcome. Please keep changes aligned with the proje
 - Reasoning: batch interpreters may misbehave with UTF-8 BOM; Windows tooling expects CRLF by default.
 
 **Contributing note.** To keep diffs clean and reviews easy: **pull requests that change only file encodings or line endings should avoid mixing those changes with unrelated edits**. If a PR unintentionally rewrites EOL/encoding across files, maintainers may ask to **revert the unrelated EOL-only diffs** or split them into a separate PR.
+## Проектные правила PowerShell/CLI
+
+### 0) Общий принцип
+- Все команды выдаются **для Windows PowerShell 5.1** (консоль «Запуск от имени администратора»).
+- Допускается вызов внешних утилит (`reg.exe`, `schtasks.exe`, `shutdown.exe`), но подавление/редиректы — **только в PowerShell-стиле**.
+- **Не** использовать `cmd /c`, если это явно не требуется.
+
+### 1) Переменные и кавычки
+- Использовать переменные PowerShell (`$wl`, `$env:COMPUTERNAME`) для путей/аргументов.
+- **Одинарные кавычки** `'...'` — по умолчанию (строка «как есть», без подстановки переменных).
+- **Двойные кавычки** "..." — только когда нужна подстановка переменных или выражений.
+
+### 2) Пути к реестру
+- Для **`reg.exe`** путь указывать в **обычном виде**: `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` (без `HKLM:\`).
+- Для **cmdlet’ов PowerShell** (`New/Set/Remove-ItemProperty`) путь указывать через **провайдер**: `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
+
+### 3) Подавление вывода
+- Скрыть обычный вывод (STDOUT / поток 1): `| Out-Null`
+- Скрыть ошибки (STDERR / поток 2): `2>$null`
+- «Тихий» режим для внешних утилит: дописывать **оба** — `… | Out-Null 2>$null`
+- **Запрещено** использовать `>nul` и `2>nul` (это синтаксис CMD, в PowerShell он некорректен).
+
+### 4) Перезагрузка
+- По умолчанию использовать: `shutdown.exe /r /t 0`  
+  (при необходимости принудительного закрытия приложений — `shutdown.exe /r /t 0 /f`).
+- **Не** заменять на `Restart-Computer`, если это явно не оговорено.
+
+### 5) Антипаттерны (запрещено)
+- Не смешивать в одном блоке `reg.exe` и PowerShell-cmdlet’ы **без причины**.
+- Не указывать пути вида `HKLM:\...` в командах **`reg.exe`**.
+- Не использовать «умные» кавычки и нестандартные символы — только обычные ASCII `' " - /`.
+- Не давать примеры/ключи из **PowerShell 7** (не совместимы с 5.1).
+
+## Playbooks (вставляемые блоки)
+
+### 5) Каноника для Winlogon/автологина (reg.exe из PowerShell)
+
+reg add $wl /v AutoLogonCount      /t REG_DWORD /d 2                       /f | Out-Null 2>$null
+reg add $wl /v IgnoreShiftOverride /t REG_SZ    /d 0                       /f | Out-Null 2>$null
+```
+
+**Сброс «липкого» последнего пользователя в LogonUI:**
+
+```powershell
+$logonUI = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI'
+reg delete $logonUI /v LastLoggedOnUser    /f | Out-Null 2>$null
+reg delete $logonUI /v LastLoggedOnSAMUser /f | Out-Null 2>$null
+```
+
+**Регистрация мастера в RunOnce:**
+
+```powershell
+$ro = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+reg add $ro /v CreatePrimaryAdmin /t REG_SZ /d 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\CreatePrimaryAdmin.ps1"' /f | Out-Null 2>$null
+```
+
+**Ребут:**
+
+```powershell
+shutdown.exe /r /t 0
+```
+
+*(если нужно принудительно закрыть приложения: `shutdown.exe /r /t 0 /f`)*
+
+### 6) Проверки (короткие)
+
+```powershell
+reg query 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+```
+
+```powershell
+reg query 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+```
+
+```powershell
+net user bootstrap
+```
+
+### 7) Отладочный режим
+
+Убрать подавление и вывести код возврата:
+
+```powershell
+reg add $wl /v AutoAdminLogon /t REG_SZ /d 1 /f
+"ExitCode: $LASTEXITCODE"
+```
+
 ## Further reading
 
 * `DECISIONS.md` - authoritative design decisions
