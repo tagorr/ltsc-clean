@@ -173,15 +173,7 @@ Issues and pull requests are welcome. Please keep changes aligned with the proje
 
 ### 5) Каноника для Winlogon/автологина (reg.exe из PowerShell)
 
-**Взвод (один автологон под `bootstrap`):**
-```powershell
-$wl = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-reg add $wl /v DefaultUserName     /t REG_SZ    /d bootstrap               /f | Out-Null 2>$null
-reg add $wl /v DefaultDomainName   /t REG_SZ    /d $env:COMPUTERNAME       /f | Out-Null 2>$null
-reg add $wl /v DefaultPassword     /t REG_SZ    /d "Bootstrap-Tmp#2025"    /f | Out-Null 2>$null
-reg add $wl /v AutoAdminLogon      /t REG_SZ    /d 1                       /f | Out-Null 2>$null
-reg add $wl /v ForceAutoLogon      /t REG_SZ    /d 1                       /f | Out-Null 2>$null
-reg add $wl /v AutoLogonCount      /t REG_DWORD /d 1                       /f | Out-Null 2>$null
+reg add $wl /v AutoLogonCount      /t REG_DWORD /d 2                       /f | Out-Null 2>$null
 reg add $wl /v IgnoreShiftOverride /t REG_SZ    /d 0                       /f | Out-Null 2>$null
 ```
 
