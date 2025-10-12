@@ -138,6 +138,18 @@ Issues and pull requests are welcome. Please keep changes aligned with the proje
 **Contributing note.** To keep diffs clean and reviews easy: **pull requests that change only file encodings or line endings should avoid mixing those changes with unrelated edits**. If a PR unintentionally rewrites EOL/encoding across files, maintainers may ask to **revert the unrelated EOL-only diffs** or split them into a separate PR.
 ## Проектные правила PowerShell/CLI
 
+### SCOPE OF APPLICABILITY (critical!)
+These rules apply **only** to:
+- interactive **Windows PowerShell 5.1** commands (console "Run as administrator");
+- project PowerShell scripts (`.ps1`).
+
+These rules do **not** apply to batch scripts (`.cmd/.bat`) such as `SetupComplete.cmd` and `PreOOBE.cmd`. For `.cmd/.bat` use **pure CMD syntax**:
+- variables: `%VAR%` (and `!VAR!` when Delayed Expansion is enabled);
+- redirection/suppression: `>nul` (STDOUT), `2>nul` (STDERR), both: `>nul 2>&1`;
+- control flow: `call :label`, `goto`, `if errorlevel`, `for /f`, etc.
+
+> Note: the "no `>nul/2>nul`" constraint applies **only** to PowerShell context. In `.cmd/.bat` these are valid constructs.
+
 ### 0) Общий принцип
 - Все команды выдаются **для Windows PowerShell 5.1** (консоль «Запуск от имени администратора»).
 - Допускается вызов внешних утилит (`reg.exe`, `schtasks.exe`, `shutdown.exe`), но подавление/редиректы — **только в PowerShell-стиле**.
@@ -168,6 +180,35 @@ Issues and pull requests are welcome. Please keep changes aligned with the proje
 - Не указывать пути вида `HKLM:\...` в командах **`reg.exe`**.
 - Не использовать «умные» кавычки и нестандартные символы — только обычные ASCII `' " - /`.
 - Не давать примеры/ключи из **PowerShell 7** (не совместимы с 5.1).
+- In `.cmd/.bat` files, **PowerShell syntax is forbidden** (`$variable`, `| Out-Null`, cmdlets) **unless wrapped** via `powershell.exe ...`.
+
+### Calling PowerShell from CMD scripts (when needed)
+**Short one-liner:**
+```
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "[DateTime]::Now.ToString('yyyy-MM-dd')"
+```
+- Inside `-Command "..."`: use **PowerShell syntax** (`$var`, cmdlets).
+- Outside (in `.cmd`): use **pure CMD** (`%VAR%`, `if errorlevel`, etc.).
+- To avoid quote escaping, prefer alternating quote types as shown, or use `-EncodedCommand`.
+
+**Capture PowerShell output into a CMD variable:**
+```
+for /f %%G in ('powershell.exe -NoProfile -NonInteractive -Command "[DateTime]::Now.ToString('o')" 2^>nul') do set "TS=%%G"
+```
+
+**For anything beyond a single expression, do not inline:**
+```
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Setup\Scripts\BootstrapLocalAdmin.ps1" -LogPath "%WINDIR%\Panther\PreOOBE.log"
+```
+> Alternative when quoting is painful: `-EncodedCommand <BASE64-UTF8>`.
+
+### Return codes (short)
+- **PowerShell:** after external tools check **`$LASTEXITCODE`** (not `$?`).
+- **CMD:** check **`%ERRORLEVEL%`** (`if errorlevel N ...`).
+- **Project policy:**
+  - `0` — success;
+  - `3010` / `1641` — success, reboot required. **Do not reboot inside `SetupComplete.cmd`**; reboot only in a controlled manner after first logon (e.g., via RunOnce).
+- For `DISM`/`reg.exe`, log RC; treat `3010` as a deferred reboot, not as an error.
 
 ## Playbooks (вставляемые блоки)
 
