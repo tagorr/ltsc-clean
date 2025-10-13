@@ -382,3 +382,20 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 **Контекст:** Скрипты могут запускаться повторно (ручные прогоны, кастомные сборки).
 **Решение:** Операции безопасны при повторе: допуск кода 1378 для `Administrators`, удаления значений — «молча» при отсутствии, выход только при целевом состоянии.
 **Последствия:** Стабильное поведение при регрессе/переустановках.
+
+## ADR-005: EOL policy (CRLF for scripts, LF for Markdown)
+
+**Date:** 2025-10-13
+
+**Context.** Windows script hosts (`*.ps1/*.cmd/*.bat`) expect CRLF line endings. Markdown and most tooling are LF-friendly. Mixed/incorrect EOLs caused CI and runtime issues.
+
+**Decision.**
+- `.ps1/.cmd/.bat` → CRLF via `.gitattributes` and a CI guard (`.github/workflows/eol-guard.yml`).
+- `.md` → LF.
+- Other text → `* text=auto` (Git attributes).
+
+**Consequences.**
+- Deterministic behavior on Windows hosts.
+- PRs that introduce LF-only lines in scripts are blocked by CI until fixed.
+- Editors should be configured accordingly (see `CONTRIBUTING.md`).
+
