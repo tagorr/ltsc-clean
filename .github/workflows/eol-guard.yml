@@ -1,5 +1,7 @@
 name: EOL guard (scripts must be CRLF)
-on: pull_request
+
+on:
+  pull_request:
 
 jobs:
   check-eol:
@@ -8,10 +10,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Robust check: every line in *.ps1/*.cmd/*.bat must end with CR (\r),
+      # i.e., the whole file must use CRLF. If any line lacks \r, it's LF-only -> fail.
       - name: Fail if *.ps1/*.cmd/*.bat contain LF-only endings
+        shell: bash
         run: |
-          set -e
-          offenders=$(git grep -I -n -P '(?<!\r)\n' -- '*.ps1' '*.cmd' '*.bat' || true)
+          set -euo pipefail
+          offenders=$(
+            git ls-files -z -- '*.ps1' '*.cmd' '*.bat' \
+            | xargs -0 -I{} sh -c "awk '(/\r$/){next} {exit 1} END{exit 0}' '{}' || echo '{}'"
+          )
           if [ -n "$offenders" ]; then
             echo "::error::Found LF-only line endings in scripts (expect CRLF):"
             echo "$offenders"
