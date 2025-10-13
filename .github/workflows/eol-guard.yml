@@ -1,0 +1,19 @@
+name: EOL guard (scripts must be CRLF)
+on: pull_request
+
+jobs:
+  check-eol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail if *.ps1/*.cmd/*.bat contain LF-only endings
+        run: |
+          set -e
+          offenders=$(git grep -I -n -P '(?<!\r)\n' -- '*.ps1' '*.cmd' '*.bat' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::Found LF-only line endings in scripts (expect CRLF):"
+            echo "$offenders"
+            exit 1
+          fi
