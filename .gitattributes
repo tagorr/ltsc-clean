@@ -1,10 +1,10 @@
 # Scripts must be CRLF
-*.ps1  text eol=crlf
-*.cmd  text eol=crlf
-*.bat  text eol=crlf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
 
 # Markdown is LF-friendly
-*.md   text eol=lf
+*.md  text eol=lf
 
 # Default: detect text vs binary automatically
-*      text=auto
+* text=auto
