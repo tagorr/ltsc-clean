@@ -126,16 +126,37 @@ MIT
 
 `@tagor-sian` - [https://github.com/tagor-sian](https://github.com/tagor-sian)
 
+## EOL policy & CI guard
+
+This repo enforces line endings:
+
+- **Scripts**: `*.ps1`, `*.cmd`, `*.bat` → **CRLF**
+- **Markdown**: `*.md` → **LF**
+- **Other text**: auto-detected via Git attributes
+
+Enforcement:
+
+1. **.gitattributes** (normalization at the repo level):
+   ```gitattributes
+   *.ps1 text eol=crlf
+   *.cmd text eol=crlf
+   *.bat text eol=crlf
+   *.md  text eol=lf
+   *     text=auto
+   ```
+2. **CI** `.github/workflows/eol-guard.yml` (PR-blocking check): the job fails if any script contains LF-only lines.
+
+**What happens on PRs?**
+If a change introduces LF-only lines in `*.ps1/*.cmd/*.bat`, the workflow **fails** and merge is blocked until line endings are fixed.
+
+See also: [CONTRIBUTING.md](CONTRIBUTING.md) for editor tips and local checks, and the rationale in [DECISIONS.md](DECISIONS.md).
+
 ## Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for PR rules, PowerShell 5.1 style, and EOL requirements.
 
-Issues and pull requests are welcome. Please keep changes aligned with the project principles: official tools only, deterministic and idempotent behavior, and no reboots inside SetupComplete.
+## Decisions (ADR)
+See [DECISIONS.md](DECISIONS.md) for the rationale behind key choices.
 
-### File encoding & EOL
-- All scripts (`*.cmd`, `*.bat`, `*.ps1`) and deployment XMLs are stored as **UTF-8 (no BOM)** with **CRLF** line endings.
-- Markdown and other docs can use LF or CRLF consistently (repo policy prefers LF for `.md`).
-- Reasoning: batch interpreters may misbehave with UTF-8 BOM; Windows tooling expects CRLF by default.
-
-**Contributing note.** To keep diffs clean and reviews easy: **pull requests that change only file encodings or line endings should avoid mixing those changes with unrelated edits**. If a PR unintentionally rewrites EOL/encoding across files, maintainers may ask to **revert the unrelated EOL-only diffs** or split them into a separate PR.
 ## Проектные правила PowerShell/CLI
 
 ### SCOPE OF APPLICABILITY (critical!)
