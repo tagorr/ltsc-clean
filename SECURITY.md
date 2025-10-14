@@ -39,6 +39,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ## Operational notes
 
 * The baseline is designed to be idempotent. Re-running the post-install script should not introduce drift.
+* Stage B rollback (Winlogon cleanup, RunOnce removal, bootstrap disable) runs only after Stage A succeeds, reducing lockout risk if account provisioning fails.
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
 

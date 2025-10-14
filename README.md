@@ -74,6 +74,14 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 3. Script applies the baseline once.
 4. First interactive sign-in happens. If servicing returned **3010/1641** (reboot required) or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, a single reboot is scheduled via **RunOnce** and occurs immediately after the first sign-in; otherwise **no reboot is scheduled**.
 
+### Idempotent master flow (CreatePrimaryAdmin.ps1)
+
+- Stage A is idempotent: ADSI pre-check handles existing Administrators membership and treats `net.exe` return codes 0/1378 as success; logs `A: SKIP (already member)` when nothing to change.
+- Stage B executes only after Stage A succeeds; it rolls back Winlogon autologon keys, deactivates `bootstrap`, and clears RunOnce entries.
+- Diagnostics checklist: confirm Administrators membership, Winlogon keys restored, and RunOnce cleaned.
+
+External tools are invoked directly (`net.exe`, `reg.exe`), no `cmd /c`.
+
 ### Post-install hygiene
 * Remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml` after `SetupComplete` finishes.
 ## What this baseline does
