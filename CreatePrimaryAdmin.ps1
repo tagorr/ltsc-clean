@@ -67,11 +67,11 @@ function New-StrongPassword([int]$Length = 20) {
 }
 
 function Get-LocalUserExists([string]$User) {
-  & cmd /c "net user `"$User`"" | Out-Null
+  & net.exe user "$User" | Out-Null 2>$null
   return ($LASTEXITCODE -eq 0)
 }
 function Ensure-InAdministrators([string]$User) {
-  & cmd /c "net localgroup Administrators `"$User`" /add" | Out-Null
+  & net.exe localgroup Administrators "$User" /add | Out-Null 2>$null
   $code = $LASTEXITCODE
   if ($code -eq 0) {
     Write-SetupLog "Added $User to Administrators"
@@ -80,9 +80,10 @@ function Ensure-InAdministrators([string]$User) {
   } else {
     throw "net localgroup Administrators exitcode $code"
   }
+  return $code
 }
 function Ensure-InGroup([string]$Group, [string]$User) {
-  & cmd /c "net localgroup `"$Group`" `"$User`" /add" | Out-Null
+  & net.exe localgroup "$Group" "$User" /add | Out-Null 2>$null
   $code = $LASTEXITCODE
   if ($code -eq 0 -or $code -eq 1378) {
     Write-SetupLog "Ensured $User in '$Group'"
@@ -108,82 +109,131 @@ function Set-UserAdsi([string]$User, [string]$FullName, [string]$Description, [s
   }
 }
 
+function Test-AdministratorsMembership([string]$User) {
+  try {
+    $group = [ADSI]("WinNT://$env:COMPUTERNAME/Administrators,group")
+    foreach ($member in @($group.psbase.Invoke('Members'))) {
+      $name = $member.GetType().InvokeMember('Name','GetProperty',$null,$member,$null)
+      if ($name -and ($name -ieq $User)) { return $true }
+    }
+  } catch {
+    Write-SetupLog "ADSI membership check failed for Administrators: $($_.Exception.Message)" 'WARN'
+  }
+  return $false
+}
+
 $rc = 0
+$StageA_Succeeded = $false
+$StageA_RC = 0
+
+Write-SetupLog "Begin A: Primary admin creation/config"
 try {
-  if (-not $RollbackOnly) {
-    Write-SetupLog "Begin A: Primary admin creation/config"
+  if ($RollbackOnly) {
+    Write-SetupLog "RollbackOnly specified: skipping Stage A"
+    Write-Verbose "Stage A: RollbackOnly requested; marking as succeeded"
+    $StageA_Succeeded = $true
+  } else {
     $pwd = if ($PasswordPlain) { $PasswordPlain } else { New-StrongPassword 20 }
     if ($PasswordPlain) { if ($VerboseLog) { Write-SetupLog "Using explicit password via -PasswordPlain" 'DEBUG' } }
     else { if ($VerboseLog) { Write-SetupLog "Generated strong password (len $($pwd.Length), all classes present)" 'DEBUG' } }
 
+    Write-Verbose "Stage A: checking if $PrimaryUser exists"
     $exists = Get-LocalUserExists $PrimaryUser
     if (-not $exists) {
-      & cmd /c "net user `"$PrimaryUser`" `"$pwd`" /add" | Out-Null
+      Write-Verbose "Stage A: creating local user $PrimaryUser"
+      & net.exe user "$PrimaryUser" "$pwd" /add | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to create user $PrimaryUser (exitcode $LASTEXITCODE)" }
-      & cmd /c "net user `"$PrimaryUser`" /active:yes" | Out-Null
+      & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
+      if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
       Write-SetupLog "User $PrimaryUser created and activated"
     } else {
       if ($PasswordPlain) {
-        & cmd /c "net user `"$PrimaryUser`" `"$pwd`"" | Out-Null
+        Write-Verbose "Stage A: updating password for $PrimaryUser"
+        & net.exe user "$PrimaryUser" "$pwd" | Out-Null 2>$null
         if ($LASTEXITCODE -ne 0) { throw "Failed to set password for $PrimaryUser (exitcode $LASTEXITCODE)" }
         Write-SetupLog "Password updated for $PrimaryUser"
       } else {
         Write-SetupLog "User $PrimaryUser exists; password unchanged"
       }
-      & cmd /c "net user `"$PrimaryUser`" /active:yes" | Out-Null
+      & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
+      if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
     }
 
     Set-UserAdsi -User $PrimaryUser -FullName $FullName -Description $Description -NeverExpire:$PasswordNeverExpires
-    Ensure-InAdministrators $PrimaryUser
+
+    Write-Verbose "Stage A: verifying Administrators membership via ADSI"
+    $isAdminMember = Test-AdministratorsMembership $PrimaryUser
+    if ($isAdminMember) {
+      Write-SetupLog "A: SKIP (already member)"
+    } else {
+      Write-Verbose "Stage A: adding $PrimaryUser to Administrators"
+      $addCode = Ensure-InAdministrators $PrimaryUser
+      if ($addCode -eq 1378) {
+        Write-SetupLog "A: SKIP (already member)"
+      }
+    }
+
     if ($AddToRemoteDesktopUsers) { Ensure-InGroup 'Remote Desktop Users' $PrimaryUser }
-    Write-SetupLog "End A: success"
-  } else {
-    Write-SetupLog "RollbackOnly specified: skipping Stage A"
+    $StageA_Succeeded = $true
   }
 }
 catch {
-  Write-SetupLog "End A: FAILED - $($_.Exception.Message)" 'ERROR'
+  $StageA_RC = 1
+  Write-SetupLog ("End A (FAIL, RC={0}) - {1}" -f $StageA_RC, $_.Exception.Message) 'ERROR'
   $rc = 1
 }
 
-try {
+if ($StageA_Succeeded) {
+  $StageA_RC = 0
+  Write-SetupLog "End A (SUCCESS, RC=0)"
+}
+
+if ($StageA_Succeeded) {
   Write-SetupLog "Begin B: Autologon cleanup & policy restore"
-  $wl = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-  Reg-Del $wl 'DefaultPassword'
-  Reg-Del $wl 'AutoLogonCount'
-  Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0'
-  Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0'
-  Reg-Del $wl 'IgnoreShiftOverride'
-  Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0'
-  Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
-  Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
   try {
-    & cmd /c "net user bootstrap /active:no" | Out-Null
+    Write-Verbose "Stage B: resetting Winlogon autologon state"
+    $wl = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    Reg-Del $wl 'DefaultPassword'
+    Reg-Del $wl 'AutoLogonCount'
+    Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0'
+    Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0'
+    Reg-Del $wl 'IgnoreShiftOverride'
+    Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0'
+    Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
+    Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
+
+    Write-Verbose "Stage B: deactivating bootstrap account"
+    & net.exe user bootstrap /active:no | Out-Null 2>$null
     if ($LASTEXITCODE -eq 0) { Write-SetupLog "bootstrap deactivated" }
     else { if ($VerboseLog) { Write-SetupLog "bootstrap deactivate exitcode $LASTEXITCODE (ignored)" 'DEBUG' } }
-  } catch {}
-  try {
-    $ro = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
-    $me = $MyInvocation.MyCommand.Path
-    $props = Get-ItemProperty -LiteralPath $ro -ErrorAction SilentlyContinue
-    if ($props) {
-      foreach ($n in ($props | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name)) {
-        $v = (Get-ItemPropertyValue -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue) 2>$null
-        if (($n -eq 'CreatePrimaryAdmin') -or ($v -is [string] -and $me -and ($v -match [regex]::Escape($me))) -or ($v -is [string] -and $v -match 'CreatePrimaryAdmin\.ps1')) {
-          try { Remove-ItemProperty -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue } catch {}
+
+    Write-Verbose "Stage B: cleaning RunOnce entries"
+    try {
+      $ro = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+      $me = $MyInvocation.MyCommand.Path
+      $props = Get-ItemProperty -LiteralPath $ro -ErrorAction SilentlyContinue
+      if ($props) {
+        foreach ($n in ($props | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name)) {
+          $v = (Get-ItemPropertyValue -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue) 2>$null
+          if (($n -eq 'CreatePrimaryAdmin') -or ($v -is [string] -and $me -and ($v -match [regex]::Escape($me))) -or ($v -is [string] -and $v -match 'CreatePrimaryAdmin\.ps1')) {
+            try { Remove-ItemProperty -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue } catch {}
+          }
         }
+        & reg.exe DELETE HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce /v CreatePrimaryAdmin /f | Out-Null 2>$null # Defensive sweep for stubborn values
       }
-      Start-Process reg.exe -ArgumentList @('DELETE','HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce','/v','CreatePrimaryAdmin','/f') -WindowStyle Hidden -Wait | Out-Null
+      Write-SetupLog "RunOnce cleaned"
+    } catch {
+      Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
     }
-    Write-SetupLog "RunOnce cleaned"
-  } catch {
-    Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
+
+    Write-SetupLog "End B (SUCCESS)"
   }
-  Write-SetupLog "End B: success"
-}
-catch {
-  Write-SetupLog "End B: FAILED - $($_.Exception.Message)" 'ERROR'
-  if ($rc -eq 0) { $rc = 2 }
+  catch {
+    Write-SetupLog ("End B (FAIL) - {0}" -f $_.Exception.Message) 'ERROR'
+    if ($rc -eq 0) { $rc = 2 }
+  }
+} else {
+  Write-SetupLog ("Stage B skipped (Stage A failed, RC={0})" -f $StageA_RC) 'WARN'
 }
 
 if ($Reboot) {

@@ -383,7 +383,22 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 **Решение:** Операции безопасны при повторе: допуск кода 1378 для `Administrators`, удаления значений — «молча» при отсутствии, выход только при целевом состоянии.
 **Последствия:** Стабильное поведение при регрессе/переустановках.
 
-## ADR-005: EOL policy (CRLF for scripts, LF for Markdown)
+## ADR-005: Idempotent Stage A; guard Stage B
+
+**Date:** 2025-10-15
+
+**Context:** Previous runs of `CreatePrimaryAdmin.ps1` could attempt to re-add a user to Administrators and proceed with Winlogon rollback even when Stage A partially failed.
+
+**Decision:**
+- Stage A performs an ADSI membership pre-check and treats `net.exe localgroup` return codes `0` and `1378` as success, logging `A: SKIP (already member)` when no change is needed.
+- Stage B (Winlogon and RunOnce rollback, `bootstrap` deactivation) executes only after Stage A reports success.
+- Ban `cmd /c` wrappers in Windows PowerShell 5.1; invoke `net.exe` directly to preserve `$LASTEXITCODE` and reduce noise.
+
+**Consequences:**
+- Re-running the script is safe: existing Administrators membership is detected and Stage B is skipped on Stage A failure.
+- Guarding Stage B prevents unwanted Winlogon resets if account provisioning fails, reducing lockout risk.
+
+## ADR-006: EOL policy (CRLF for scripts, LF for Markdown)
 
 **Date:** 2025-10-13
 
