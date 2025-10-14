@@ -369,6 +369,8 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 **Решение:** Все ключи Winlogon/политик пишем через `reg.exe` с явным `REG_SZ`/`REG_DWORD`.
 **Последствия:** Больше «шумного» кода, но предсказуемые типы и надёжность.
 
+Дополнение: Прямой вызов `reg.exe` в PS 5.1: `& reg.exe … | Out-Null 2>$null`; читаем `$LASTEXITCODE`. Для `DELETE` допустимые RC: `{0,2}` (идемпотентность).
+
 ## ADR-003: RNG-шим для WinPS 5.1
 
 **Дата:** 2025-10-02
