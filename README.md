@@ -183,6 +183,7 @@ These rules do **not** apply to batch scripts (`.cmd/.bat`) such as `SetupComple
 - Все команды выдаются **для Windows PowerShell 5.1** (консоль «Запуск от имени администратора»).
 - Допускается вызов внешних утилит (`reg.exe`, `schtasks.exe`, `shutdown.exe`), но подавление/редиректы — **только в PowerShell-стиле**.
 - **Не** использовать `cmd /c`, если это явно не требуется.
+- В PowerShell 5.1 внешние утилиты вызываем напрямую (`& reg.exe …`, `& net.exe …`) с подавлением `| Out-Null 2>$null`; после `reg.exe` используем `$LASTEXITCODE`. `cmd /c` и `Start-Process` для этих вызовов — не используем.
 
 ### 1) Переменные и кавычки
 - Использовать переменные PowerShell (`$wl`, `$env:COMPUTERNAME`) для путей/аргументов.
