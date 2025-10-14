@@ -24,23 +24,29 @@ function Write-SetupLog([string]$Message, [string]$Level = 'INFO') {
 
 function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data) {
   try {
-    $args = @('ADD', $Key, '/v', $Name, '/t', $Type, '/d', $Data, '/f')
-    Start-Process reg.exe -ArgumentList $args -WindowStyle Hidden -Wait | Out-Null
-    if ($VerboseLog) { Write-SetupLog "Reg ADD $Key\$Name <$Type> = '$Data'" 'DEBUG' }
+    & reg.exe ADD $Key /v $Name /t $Type /d $Data /f | Out-Null 2>$null
+    $rc = $LASTEXITCODE
+    if ($VerboseLog) { Write-SetupLog ("Reg ADD {0}\{1} <{2}> = '{3}' (RC={4})" -f $Key,$Name,$Type,$Data,$rc) 'DEBUG' }
+    if ($rc -ne 0) { Write-SetupLog ("Reg ADD failed: {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'WARN' }
   } catch {
     Write-SetupLog "Reg ADD failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
   }
 }
+
 function Reg-Del([string]$Key, [string]$Name) {
   try {
-    $args = @('DELETE', $Key, '/v', $Name, '/f')
-    Start-Process reg.exe -ArgumentList $args -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue | Out-Null
-    if ($VerboseLog) { Write-SetupLog "Reg DEL $Key\$Name" 'DEBUG' }
+    & reg.exe DELETE $Key /v $Name /f | Out-Null 2>$null
+    $rc = $LASTEXITCODE
+    # Idempotent delete: RC=0 (deleted) or RC=2 (value not found) is OK for our flow
+    if ($rc -eq 0 -or $rc -eq 2) {
+      if ($VerboseLog) { Write-SetupLog ("Reg DEL {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'DEBUG' }
+    } else {
+      Write-SetupLog ("Reg DEL failed: {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'WARN'
+    }
   } catch {
     Write-SetupLog "Reg DEL failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
   }
 }
-
 function Invoke-RngFill([byte[]]$Buffer) {
   $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
   try { $rng.GetBytes($Buffer) } finally { $rng.Dispose() }
