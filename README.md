@@ -110,6 +110,18 @@ External tools are invoked directly (`net.exe`, `reg.exe`), no `cmd /c`.
 
 For the full verification list, see `DECISIONS.md` §9.
 
+## Troubleshooting: Autologon → Master → Cleanup
+
+1. **Пароль автолога:** `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword` должен совпадать с паролем учётки `bootstrap` (частая ошибка: `Boo…` vs `B00…`).
+2. **Ctrl+Alt+Del:** временно держим `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=1` пока автологон отрабатывает.
+3. **RunOnce пуст:** проверьте, что `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` содержит запись `CreatePrimaryAdmin`.
+4. **Stage A идемпотентность:** код `1378` (`Already a member`) от `net.exe localgroup` — норма и не должен стопорить прогон.
+5. **Баг интерполяции `$User:`:** фикс `${User}:` включён (подробности — `DECISIONS.md`, ADR про Stage A/Stage B).
+6. **Wow6432Node:** запись должна идти в `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, а не в `...\Wow6432Node\...`.
+7. **Диагностический запуск:** при необходимости добавьте одноразовый `.cmd` в `HKLM\RunOnce`, который логирует старт/финиш и вызывает `CreatePrimaryAdmin.ps1 -Verbose` (важно сохранить CRLF в `.cmd`).
+
+**Пост-условия успешного прогона:** `AutoAdminLogon=0`, `ForceAutoLogon=0`, `DefaultPassword` отсутствует, `RunOnce` очищен, учётка `bootstrap` отключена, `primaryadmin` входит в `Administrators`.
+
 ### Логирование
 
 - Таймстемпы **ISO-8601**. Движок: **PowerShell** (`Get-Date -Format o`).
