@@ -111,7 +111,7 @@ function Set-UserAdsi([string]$User, [string]$FullName, [string]$Description, [s
     $u.SetInfo()
     if ($VerboseLog) { Write-SetupLog "ADSI updated for $User (FullName/Description/Flags)" 'DEBUG' }
   } catch {
-    Write-SetupLog "ADSI update failed for $User: $($_.Exception.Message)" 'WARN'
+    Write-SetupLog "ADSI update failed for ${User}: $($_.Exception.Message)" 'WARN'
   }
 }
 

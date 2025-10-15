@@ -25,3 +25,21 @@
 ## PR rules
 - Minimal diffs grouped per file; no cosmetic changes outside hunks.
 - PR description must check: edition gate, DISM RC policy, unified `/LogPath`, log locations, `IgnoreShiftOverride`, and formatting (UTF-8/CRLF).
+
+## Runbook — one-command smoke path
+**Run in an elevated _Windows PowerShell 5.1_ console.**
+
+```powershell
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoLogonCount   /t REG_DWORD /d 2 /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableCAD    /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultUserName   /t REG_SZ    /d bootstrap /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultPassword   /t REG_SZ    /d <bootstrap-pass> /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultDomainName /t REG_SZ    /d "$env:COMPUTERNAME" /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon    /t REG_SZ    /d 1 /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v ForceAutoLogon    /t REG_SZ    /d 1 /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v CreatePrimaryAdmin /t REG_SZ /d "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $env:WINDIR\Setup\Scripts\CreatePrimaryAdmin.ps1" /f
+shutdown.exe /r /t 0
+```
+
+*After reboot, verify from README: AutoAdminLogon=0, ForceAutoLogon=0, DefaultPassword removed, RunOnce empty, `bootstrap` disabled, and `primaryadmin` is in Administrators.*
+**Known fix:** message `ADSI update failed for ${User}:` — see `DECISIONS.md` (ADR about Stage A/Stage B and `$User:` interpolation).

@@ -12,6 +12,13 @@ This document records the decisions, rationale, scope boundaries, and verificati
 ---
 ---
 
+## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
+
+- **Context:** Stage A мог падать на сообщении `ADSI update failed for $User:` — PowerShell 5.1 некорректно парсил `$User:` и прерывал выполнение во время ADSI-обновления.
+- **Decision:** точечно заменить текст на `ADSI update failed for ${User}:` без иных правок скрипта.
+- **Consequences:** устранён фатальный стопор Stage A; прогнозируемость прогона повысилась.
+- **Related:** см. “Idempotent Stage A; guard Stage B” про идемпотентность Stage A и защиту Stage B.
+
 ## 2A. Переезд сервисинга из XML в SetupComplete
 - **Constraint (SKU):** Target **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs. Reason: `AllowTelemetry=0` (Security level) is supported on Enterprise.
 
