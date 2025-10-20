@@ -29,17 +29,23 @@
 ## Runbook — one-command smoke path
 **Run in an elevated _Windows PowerShell 5.1_ console.**
 
-```powershell
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoLogonCount   /t REG_DWORD /d 2 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableCAD    /t REG_DWORD /d 1 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultUserName   /t REG_SZ    /d bootstrap /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultPassword   /t REG_SZ    /d <bootstrap-pass> /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v DefaultDomainName /t REG_SZ    /d "$env:COMPUTERNAME" /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon    /t REG_SZ    /d 1 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v ForceAutoLogon    /t REG_SZ    /d 1 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v CreatePrimaryAdmin /t REG_SZ /d "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $env:WINDIR\Setup\Scripts\CreatePrimaryAdmin.ps1" /f
-shutdown.exe /r /t 0
-```
+```cmd
+schtasks /Create /TN "\L2C\CreatePrimaryAdmin" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1""" /SC ONLOGON /RU SYSTEM /RL HIGHEST /F
+````
 
-*After reboot, verify from README: AutoAdminLogon=0, ForceAutoLogon=0, DefaultPassword removed, RunOnce empty, `bootstrap` disabled, and `primaryadmin` is in Administrators.*
+**Дисклеймер:** это ручной инженерный тест. Внутри `SetupComplete.cmd` ребут **не** выполняется; возможен только отложенный ребут при `RC=3010/1641`.
+
+*After the task fires, verify from README: AutoAdminLogon=0, ForceAutoLogon=0, DefaultPassword/AutoLogonCount removed, DisableCAD=0 в обеих ветках, `bootstrap` disabled, `primaryadmin` ∈ Administrators, задача `\L2C\CreatePrimaryAdmin` удалена, в `C:\ProgramData` лежит `l2c_master_<timestamp>.log`.*
+
+**Валидация на стенде:**
+
+1. `SetupComplete.cmd` логирует секцию Bootstrap (маркер `[BOOTSTRAP] PW_SOURCE=...`), постановку `DisableCAD=1`, запись Winlogon и создание задачи `\L2C\CreatePrimaryAdmin`.
+2. При первом входе задача запускается под SYSTEM, `CreatePrimaryAdmin.ps1` пишет `Begin/End Stage A/B` в `C:\ProgramData\l2c_master_<ts>.log`.
+3. После завершения Stage B: Winlogon «схлопнут», `bootstrap` отключён, `DisableCAD=0` в `Policies\System` и `Winlogon`, `HKLM\...\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, файл `%WINDIR%\Setup\Scripts\.bootstrap.pw` отсутствует, задача `\L2C\CreatePrimaryAdmin` удалена.
+
+**Повторная проверка (snapshots/новая ВМ):**
+
+* Запустить `schtasks /Query /TN "\L2C\CreatePrimaryAdmin"`; при отсутствии задачи зарегистрировать её снова (см. README → «Регистрация мастера в Планировщике»). Убедиться, что `.bootstrap.pw` отсутствует перед ручным перезапуском (или имеет стендовый пароль с корректным ACL/атрибутами).
+* Выполнить `schtasks /Run /TN "\L2C\CreatePrimaryAdmin"` и убедиться, что Stage B повторно очищает Winlogon, удаляет задачу и создаёт свежий лог `l2c_master_<ts>.log`.
+
 **Known fix:** message `ADSI update failed for ${User}:` — see `DECISIONS.md` (ADR about Stage A/Stage B and `$User:` interpolation).
