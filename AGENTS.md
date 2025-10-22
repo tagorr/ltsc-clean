@@ -8,19 +8,21 @@
 
 ## Invariants
 - **No immediate reboots** inside `SetupComplete.cmd`. Reboot only via RunOnce when `RC ∈ {3010, 1641}`.
-- Formatting: UTF-8 **no BOM**, **CRLF** line endings everywhere, no trailing spaces; do not reformat outside changed @@ hunks.
+- **EOL:** скрипты (`.cmd/.ps1`) — CRLF; документация (`.md`) — LF.
 - Documentation must match behavior (paths/logs/steps). Details live in `README.md` and `DECISIONS.md`.
 - **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; avoid `cmd /c` unless required; `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Проектные правила PowerShell/CLI**.
 - `reg.exe` вызываем напрямую; после вызова читаем `$LASTEXITCODE`; для `DELETE` RC `{0,2}` считаются нормой.
 
 - In `.cmd/.bat` files, direct PowerShell syntax is **not allowed**. Use only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
+- В `.cmd/.bat` запрещено включать `EnableDelayedExpansion`; переменные читаем в `%VAR%`, ветвления реализуем через метки/подпрограммы (`goto`, `call :sub`) без зависимостей от внутри-блочного пере-расширения.
 ## Policies
 - **Edition gate:** `EditionID == REQUIRED_EDITION` → otherwise **FAIL**.
 - **DISM RC policy:** `0` → OK; `3010/1641` → OK **and** schedule RunOnce `zz-SetupCompleteReboot`; any other RC → **FAIL** (`FAILED=1`, `exit /b <RC>`).
 - **DISM log:** single path for all calls — `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (use `/LogPath` + `/LogLevel:4`).
 - **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (ISO-8601), and the DISM log above.
 - **Winlogon:** `HKLM\...\Winlogon\IgnoreShiftOverride` = **REG_SZ "0"** (not `REG_DWORD`), with no intermediate `"1"`.
-- **PreOOBE:** invoke `BootstrapLocalAdmin.ps1`, log the `rc`, set `FAILED=1` when `rc≠0`.
+- **SetupComplete:** вызывает `BootstrapLocalAdmin.ps1`; PreOOBE не трогает Winlogon/Passwordless/RunOnce/Tasks.
+- При любом сбое Bootstrap/self-test выполняется recovery; задача `\L2C\CreatePrimaryAdmin` в recovery **не** регистрируется.
 
 ## PR rules
 - Minimal diffs grouped per file; no cosmetic changes outside hunks.
@@ -31,7 +33,7 @@
 
 ```cmd
 schtasks /Create /TN "\L2C\CreatePrimaryAdmin" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1""" /SC ONLOGON /RU SYSTEM /RL HIGHEST /F
-````
+```
 
 **Дисклеймер:** это ручной инженерный тест. Внутри `SetupComplete.cmd` ребут **не** выполняется; возможен только отложенный ребут при `RC=3010/1641`.
 
