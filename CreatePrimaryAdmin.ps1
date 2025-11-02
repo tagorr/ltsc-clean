@@ -197,21 +197,42 @@ if ($StageA_Succeeded) {
 if ($StageA_Succeeded) {
   Write-SetupLog "Begin B: Autologon cleanup & policy restore"
   try {
+    $finalLogEntries = @()
+    $finalLogEntries += ("[{0}] Stage B finalize begin" -f ([DateTime]::UtcNow.ToString('o')))
+
     Write-Verbose "Stage B: resetting Winlogon autologon state"
     $wl = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     Reg-Del $wl 'DefaultPassword'
-    Reg-Del $wl 'AutoLogonCount'
     Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0'
     Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0'
+    Reg-Add $wl 'AutoLogonCount' 'REG_DWORD' '0'
     Reg-Del $wl 'IgnoreShiftOverride'
     Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0'
     Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
     Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
+    $finalLogEntries += ("[{0}] Winlogon and logon policies reset" -f ([DateTime]::UtcNow.ToString('o')))
 
     Write-Verbose "Stage B: deactivating bootstrap account"
     & net.exe user bootstrap /active:no | Out-Null 2>$null
-    if ($LASTEXITCODE -eq 0) { Write-SetupLog "bootstrap deactivated" }
-    else { if ($VerboseLog) { Write-SetupLog "bootstrap deactivate exitcode $LASTEXITCODE (ignored)" 'DEBUG' } }
+    $bootstrapRC = $LASTEXITCODE
+    if ($bootstrapRC -eq 0) { Write-SetupLog "bootstrap deactivated" }
+    else { if ($VerboseLog) { Write-SetupLog "bootstrap deactivate exitcode $bootstrapRC (ignored)" 'DEBUG' } }
+    $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
+
+    Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
+    $taskDeleteRC = -1
+    try {
+      & schtasks.exe /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
+      $taskDeleteRC = $LASTEXITCODE
+      if ($taskDeleteRC -eq 0) {
+        Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
+      } elseif ($VerboseLog) {
+        Write-SetupLog ("Scheduled task delete exitcode {0} (ignored)" -f $taskDeleteRC) 'DEBUG'
+      }
+    } catch {
+      Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
+    }
+    $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
 
     Write-Verbose "Stage B: cleaning RunOnce entries"
     try {
@@ -230,6 +251,19 @@ if ($StageA_Succeeded) {
       Write-SetupLog "RunOnce cleaned"
     } catch {
       Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
+    }
+
+    $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
+
+    try {
+      $masterLogName = 'l2c_master_{0}.log' -f (Get-Date -Format 'yyyy-MM-dd_HHmmss')
+      $masterLogPath = Join-Path $env:ProgramData $masterLogName
+      $finalLogEntries += ("[{0}] Stage B finalize end" -f ([DateTime]::UtcNow.ToString('o')))
+      $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+      [System.IO.File]::WriteAllLines($masterLogPath, $finalLogEntries, $utf8NoBom)
+      Write-SetupLog ("Master log created: {0}" -f $masterLogPath)
+    } catch {
+      Write-SetupLog "Master log creation failed: $($_.Exception.Message)" 'WARN'
     }
 
     Write-SetupLog "End B (SUCCESS)"
