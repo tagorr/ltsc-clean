@@ -274,17 +274,21 @@ if errorlevel 1 (
   call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
 )
 
-REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin ===
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "CreatePrimaryAdmin" /f >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" (
-  call :log "[INFO] Cleared legacy RunOnce entry CreatePrimaryAdmin (RC=0)"
-) else (
-  if "%RC%"=="2" (
-    call :log "[INFO] Legacy RunOnce entry CreatePrimaryAdmin already absent (RC=2)"
+REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin (only if task created) ===
+if not "%FAILED%"=="1" (
+  reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "CreatePrimaryAdmin" /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if "%RC%"=="0" (
+    call :log "[INFO] Cleared legacy RunOnce entry CreatePrimaryAdmin (RC=0)"
   ) else (
-    call :log "[WARN] Failed to clear legacy RunOnce entry CreatePrimaryAdmin (RC=%RC%)"
+    if "%RC%"=="2" (
+      call :log "[INFO] Legacy RunOnce entry CreatePrimaryAdmin already absent (RC=2)"
+    ) else (
+      call :log "[WARN] Failed to clear legacy RunOnce entry CreatePrimaryAdmin (RC=%RC%)"
+    )
   )
+) else (
+  call :log "[WARN] Skipping RunOnce cleanup because scheduling task failed"
 )
 
 REM === [L2C] Recovery gate (no extra registrations on failure) ===
