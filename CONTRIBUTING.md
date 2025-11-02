@@ -28,6 +28,7 @@ Thanks for your interest in contributing!
 - .cmd guidelines: no Delayed Expansion; test RC via %ERRORLEVEL%; branch via `goto`/`call :sub`.
 - PowerShell target: Windows PowerShell 5.1; avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets; prefer plain args or files.
 - Minimal-diff principle: change only the lines required by the PR’s scope.
+- Docs convention: в Markdown-документации для команд используй **одна команда = один fenced-блок** с тегом языка (`cmd` или `powershell`) для копирования одной кнопкой; без многострочных блоков с несколькими командами.
 
 **Local quick check (optional)**
 ```bash
