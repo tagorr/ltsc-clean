@@ -253,6 +253,25 @@ if ($StageA_Succeeded) {
       Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
     }
 
+    # Stage B: remove transient password source file (best-effort)
+    try {
+      $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
+      if (Test-Path -LiteralPath $pwPath) {
+        Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
+        Write-SetupLog "bootstrap.pw removed"
+      } else {
+        if ($VerboseLog) { Write-SetupLog "bootstrap.pw not found (ok)" 'DEBUG' }
+      }
+    } catch {
+      Write-SetupLog ("bootstrap.pw delete warning: {0}" -f $_.Exception.Message) 'WARN'
+    }
+
+    Write-SetupLog "End B (SUCCESS)"
+      Write-SetupLog "RunOnce cleaned"
+    } catch {
+      Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
+    }
+
     $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
 
     try {
