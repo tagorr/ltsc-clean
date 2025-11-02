@@ -118,7 +118,15 @@ For the full verification list, see `DECISIONS.md` §9.
 
 1. **Пароль автолога:** `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword` должен совпадать с паролем учётки `bootstrap` (частая ошибка: `Boo…` vs `B00…`).
 2. **Ctrl+Alt+Del:** временно держим `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=1` пока автологон отрабатывает.
-3. **Scheduled Task присутствует:** убедитесь, что существует задача `\\L2C\\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Highest). Проверить: `schtasks /Query /TN \L2C\CreatePrimaryAdmin`. Запуск через RunOnce для CreatePrimaryAdmin больше не используется.
+3. **Scheduled Task присутствует:** убедитесь, что существует задача `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Highest). Проверить:
+```cmd
+schtasks /Query /TN "\L2C\CreatePrimaryAdmin"
+```
+Для ручного запуска (smoke):
+```cmd
+schtasks /Run /TN "\L2C\CreatePrimaryAdmin"
+```
+Запуск через RunOnce для CreatePrimaryAdmin больше не используется.
 4. **Stage A идемпотентность:** код `1378` (`Already a member`) от `net.exe localgroup` — норма и не должен стопорить прогон.
 5. **Баг интерполяции `$User:`:** фикс `${User}:` включён (подробности — `DECISIONS.md`, ADR про Stage A/Stage B).
 6. **Wow6432Node:** запись должна идти в `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, а не в `...\Wow6432Node\...`.
@@ -457,5 +465,6 @@ reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v Di
 * `DefaultPassword` пуст/не совпадает; `AutoAdminLogon`/`ForceAutoLogon` **не REG_SZ**;
 * `DefaultDomainName` ≠ имя ПК; включены `LegalNotice*` или `DontDisplayLastUserName=1`;
 * `DevicePasswordLessBuildVersion=2`, `DisableCAD=0`.
+
 
 **Видно логон в Enhanced** — это нормально: автологон работает только в **консоль**. В Basic увидите сразу рабочий стол `bootstrap`.
