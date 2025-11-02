@@ -78,8 +78,5 @@ catch {
         Write-Error $_
     }
 }
-finally {
-    try { Stop-Transcript | Out-Null } catch { }
-}
 
 exit $exitCode
