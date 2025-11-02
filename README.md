@@ -73,6 +73,9 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 2. Finish OOBE. Windows runs `SetupComplete.cmd` as SYSTEM.
 3. Script applies the baseline once.
 4. First interactive sign-in happens. If servicing returned **3010/1641** (reboot required) or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, a single reboot is scheduled via **RunOnce** and occurs immediately after the first sign-in; otherwise **no reboot is scheduled**.
+    - Primary-admin bootstrap is launched by a **Scheduled Task**:  
+      `\L2C\CreatePrimaryAdmin` (OnLogon, **RUN AS SYSTEM**, **Run with highest**).
+      RunOnce is no longer used for launching CreatePrimaryAdmin; it may still be used for a one-time reboot when required.
 
 ### Idempotent master flow (CreatePrimaryAdmin.ps1)
 
@@ -84,6 +87,7 @@ External tools are invoked directly (`net.exe`, `reg.exe`), no `cmd /c`.
 
 ### Post-install hygiene
 * Remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml` after `SetupComplete` finishes.
+* Удалите `%WINDIR%\Setup\Scripts\.bootstrap.pw`, если файл больше не нужен после завершения Stage B.
 ## What this baseline does
 
 > We do **not** disable the **WinHttpAutoProxySvc**; WPAD is controlled via supported WinINET/WinHTTP keys.
@@ -114,11 +118,22 @@ For the full verification list, see `DECISIONS.md` §9.
 
 1. **Пароль автолога:** `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword` должен совпадать с паролем учётки `bootstrap` (частая ошибка: `Boo…` vs `B00…`).
 2. **Ctrl+Alt+Del:** временно держим `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=1` пока автологон отрабатывает.
-3. **RunOnce пуст:** проверьте, что `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` содержит запись `CreatePrimaryAdmin`.
+3. **Scheduled Task присутствует:** убедитесь, что существует задача `\\L2C\\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Highest). Проверить: `schtasks /Query /TN \L2C\CreatePrimaryAdmin`. Запуск через RunOnce для CreatePrimaryAdmin больше не используется.
 4. **Stage A идемпотентность:** код `1378` (`Already a member`) от `net.exe localgroup` — норма и не должен стопорить прогон.
 5. **Баг интерполяции `$User:`:** фикс `${User}:` включён (подробности — `DECISIONS.md`, ADR про Stage A/Stage B).
 6. **Wow6432Node:** запись должна идти в `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`, а не в `...\Wow6432Node\...`.
 7. **Диагностический запуск:** при необходимости добавьте одноразовый `.cmd` в `HKLM\RunOnce`, который логирует старт/финиш и вызывает `CreatePrimaryAdmin.ps1 -Verbose` (важно сохранить CRLF в `.cmd`).
+
+### Autologon priming (SetupComplete)
+
+SetupComplete only primes Winlogon autologon **if** `%WINDIR%\Setup\Scripts\.bootstrap.pw` exists.  
+Keys: `DefaultUserName=bootstrap`, `DefaultDomainName=<COMPUTERNAME>`, `DefaultPassword=<file contents>`, `AutoAdminLogon=1`, `ForceAutoLogon=1`, `AutoLogonCount=2`.  
+Policies while primed: `DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`.
+
+**Bootstrap password source file**  
+Path: `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, single line).  
+ACL: SYSTEM:(F), Administrators:(F); attributes: Hidden+System.  
+The file is sensitive; remove it after Stage B if not needed.
 
 **Пост-условия успешного прогона:** `AutoAdminLogon=0`, `ForceAutoLogon=0`, `DefaultPassword` отсутствует, `RunOnce` очищен, учётка `bootstrap` отключена, `primaryadmin` входит в `Administrators`.
 
