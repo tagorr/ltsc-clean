@@ -2,7 +2,7 @@
 REM SPDX-License-Identifier: MIT
 REM Windows 10 LTSC 2021 - Clean ^& Quiet Baseline (Official Tools Only)
 REM Generated: 2025-09-15
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 
 :: ------------ logging ------------
 set "LOG=%WINDIR%\Panther\SetupComplete.log"
@@ -228,6 +228,69 @@ call :handle_rc "EXE" %RC%
 exit /b %RC%
 
 :main
+
+REM === [L2C] Winlogon bootstrap + CAD/NGC policies (idempotent) ===
+set "WL=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+set "SYS=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc"
+
+REM Источник пароля (создастся BootstrapLocalAdmin.ps1):
+set "PWFILE=%WINDIR%\Setup\Scripts\.bootstrap.pw"
+set "BOOTSTRAP_PW="
+
+if exist "%PWFILE%" (
+  for /f "usebackq delims=" %%P in ("%PWFILE%") do if not defined BOOTSTRAP_PW set "BOOTSTRAP_PW=%%P"
+) else (
+  call :log "[WARN] .bootstrap.pw not found; skipping Winlogon DefaultPassword"
+)
+
+REM Временные политики входа
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "%WL%"  /v IgnoreShiftOverride          /t REG_SZ    /d 0 /f >nul 2>&1
+
+REM Автологон только если известен пароль bootstrap
+if defined BOOTSTRAP_PW (
+  for /f "tokens=2 delims==" %%C in ('wmic computersystem get name /value ^| findstr /i "Name="') do set "COMPUTERNAME_EX=%%C"
+  reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
+  reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME_EX%" /f >nul 2>&1
+  reg add "%WL%" /v DefaultPassword    /t REG_SZ    /d "%BOOTSTRAP_PW%" /f >nul 2>&1
+  reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+  reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+  reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
+  call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
+) else (
+  call :log "[WARN] Winlogon autologon not primed (no password source)"
+)
+
+REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
+schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
+  /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
+  /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+if errorlevel 1 (
+  call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%ERRORLEVEL%)"
+  set "FAILED=1"
+) else (
+  call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
+)
+
+REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin ===
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "CreatePrimaryAdmin" /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  call :log "[INFO] Cleared legacy RunOnce entry CreatePrimaryAdmin (RC=0)"
+) else (
+  if "%RC%"=="2" (
+    call :log "[INFO] Legacy RunOnce entry CreatePrimaryAdmin already absent (RC=2)"
+  ) else (
+    call :log "[WARN] Failed to clear legacy RunOnce entry CreatePrimaryAdmin (RC=%RC%)"
+  )
+)
+
+REM === [L2C] Recovery gate (no extra registrations on failure) ===
+if "%FAILED%"=="1" (
+  call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
+)
 
 :: ------------ Edge Update policies ------------
 call :log "[SECTION] Edge Update policies"
