@@ -110,6 +110,13 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 - Логи не содержат паролей (логируются только факты и длина/классы при генерации).
 - Длительность хранения — только до первого входа `bootstrap`.
 
+## Temporary autologon & secret handling
+
+* While primed, Winlogon holds `DefaultPassword`; Stage B removes it and restores `DisableCAD=0` and `Ngc...=2`.
+* `.bootstrap.pw` is created by `BootstrapLocalAdmin.ps1` and is **not** logged or echoed.
+* ACL: SYSTEM/Admins only; Hidden+System; UTF-8 no BOM.
+* Risk window exists until Stage B completes. If unattended flow is interrupted, sign in as `bootstrap` and finish Stage B; then remove `.bootstrap.pw` if not needed.
+
 ## Политики входа: временное ослабление и возврат
 
 На фазе взвода:
