@@ -266,13 +266,8 @@ if ($StageA_Succeeded) {
       Write-SetupLog ("bootstrap.pw delete warning: {0}" -f $_.Exception.Message) 'WARN'
     }
 
-    Write-SetupLog "End B (SUCCESS)"
-      Write-SetupLog "RunOnce cleaned"
-    } catch {
-      Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
-    }
-
     $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
+
 
     try {
       $masterLogName = 'l2c_master_{0}.log' -f (Get-Date -Format 'yyyy-MM-dd_HHmmss')
@@ -300,3 +295,4 @@ if ($Reboot) {
   Start-Process -FilePath 'shutdown.exe' -ArgumentList @('/r','/t','0') -WindowStyle Hidden
 }
 exit $rc
+
