@@ -16,10 +16,6 @@ if (-not $PasswordPlain -or $PasswordPlain -eq '') {
     $PasswordPlain = -join ($bytes | ForEach-Object { $chars[ $_ % $chars.Count ] })
 }
 
-$ts = Get-Date -Format 'yyyy-MM-dd_HHmmss'
-$LogPath = Join-Path $env:ProgramData "l2c_bootstrap_$ts.log"
-Start-Transcript -Path $LogPath -Append | Out-Null
-
 $ErrorActionPreference = 'Stop'
 
 $exitCode = 0
