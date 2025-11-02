@@ -423,3 +423,23 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 - PRs that introduce LF-only lines in scripts are blocked by CI until fixed.
 - Editors should be configured accordingly (see `CONTRIBUTING.md`).
 
+## ADRs – 2025-11
+
+### ADR: Scheduler over RunOnce for primary-admin bootstrap
+
+- Decision: Use `schtasks` (OnLogon, SYSTEM, Highest) to run `CreatePrimaryAdmin.ps1`.
+- Rationale: reliability, service isolation, no race with shell init; avoids RunOnce persistence on failures.
+- Status: adopted in `SetupComplete.cmd`.
+
+### ADR: No Delayed Expansion in .cmd
+
+- Decision: `EnableDelayedExpansion` is forbidden in `.cmd/.bat`.
+- Rationale: escaping pitfalls with `!`, unpredictable parsing in localized environments; simpler RC handling.
+- Status: removed from `SetupComplete.cmd`.
+
+### ADR: `.bootstrap.pw` as transient secret
+
+- Decision: password source stored at `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM).
+- Rationale: decouple user lifecycle from registry; deterministic handoff to Winlogon priming.
+- Security: ACL to SYSTEM/Admins; recommend deletion after Stage B.
+
