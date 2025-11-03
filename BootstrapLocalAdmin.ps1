@@ -5,7 +5,7 @@ param(
 
 # Generate default password if not supplied (A-Za-z2-9 and safe symbols)
 if (-not $PasswordPlain -or $PasswordPlain -eq '') {
-    $chars = ('A'..'Z') + ('a'..'z') + ('2'..'9') + @('#','@','%','_','-')
+    $chars = ('A'..'Z') + ('a'..'z') + ('2'..'9') + @('#','@','_','-')
     $rnd = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
     $bytes = New-Object byte[] (24)
     try {

@@ -236,10 +236,10 @@ set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\N
 
 REM Источник пароля (создастся BootstrapLocalAdmin.ps1):
 set "PWFILE=%WINDIR%\Setup\Scripts\.bootstrap.pw"
-set "BOOTSTRAP_PW="
+set "HAS_BOOTSTRAP_PW="
 
 if exist "%PWFILE%" (
-  for /f "usebackq delims=" %%P in ("%PWFILE%") do if not defined BOOTSTRAP_PW set "BOOTSTRAP_PW=%%P"
+  for /f "usebackq delims=" %%P in ("%PWFILE%") do if not defined HAS_BOOTSTRAP_PW set "HAS_BOOTSTRAP_PW=1"
 ) else (
   call :log "[WARN] .bootstrap.pw not found; skipping Winlogon DefaultPassword"
 )
@@ -250,11 +250,10 @@ reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "%WL%"  /v IgnoreShiftOverride          /t REG_SZ    /d 0 /f >nul 2>&1
 
 REM Автологон только если известен пароль bootstrap
-if defined BOOTSTRAP_PW (
-  for /f "tokens=2 delims==" %%C in ('wmic computersystem get name /value ^| findstr /i "Name="') do set "COMPUTERNAME_EX=%%C"
+if defined HAS_BOOTSTRAP_PW (
   reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
-  reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME_EX%" /f >nul 2>&1
-  reg add "%WL%" /v DefaultPassword    /t REG_SZ    /d "%BOOTSTRAP_PW%" /f >nul 2>&1
+  reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
+  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\\Scripts\\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
   reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
   reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
   reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
