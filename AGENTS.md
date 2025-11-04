@@ -41,7 +41,8 @@ schtasks /Create /TN "\L2C\CreatePrimaryAdmin" /TR "powershell.exe -NoProfile -E
 
 **Валидация на стенде:**
 
-1. `SetupComplete.cmd` логирует секцию Bootstrap (маркер `[BOOTSTRAP] PW_SOURCE=...`), постановку `DisableCAD=1`, запись Winlogon и создание задачи `\L2C\CreatePrimaryAdmin`.
+1. PreOOBE/BootstrapLocalAdmin.ps1 logs the [BOOTSTRAP] section (marker `[BOOTSTRAP] PW_SOURCE=...`), sets `DisableCAD=1`, writes Winlogon values, and
+   registers the `\L2C\CreatePrimaryAdmin` task.
 2. При первом входе задача запускается под SYSTEM, `CreatePrimaryAdmin.ps1` пишет `Begin/End Stage A/B` в `C:\ProgramData\l2c_master_<ts>.log`.
 3. После завершения Stage B: Winlogon «схлопнут», `bootstrap` отключён, `DisableCAD=0` в `Policies\System` и `Winlogon`, `HKLM\...\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, файл `%WINDIR%\Setup\Scripts\.bootstrap.pw` отсутствует, задача `\L2C\CreatePrimaryAdmin` удалена.
 
