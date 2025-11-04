@@ -21,7 +21,8 @@
 - **DISM log:** single path for all calls — `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (use `/LogPath` + `/LogLevel:4`).
 - **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (ISO-8601), and the DISM log above.
 - **Winlogon:** `HKLM\...\Winlogon\IgnoreShiftOverride` = **REG_SZ "0"** (not `REG_DWORD`), with no intermediate `"1"`.
-- **SetupComplete:** вызывает `BootstrapLocalAdmin.ps1`; PreOOBE не трогает Winlogon/Passwordless/RunOnce/Tasks.
+- PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/RunOnce/Tasks.
+**SetupComplete.cmd:** servicing/logging only; schedules a single conditional reboot via RunOnce when RC ∈ {3010, 1641}. No immediate reboot inside `SetupComplete.cmd`.
 - При любом сбое Bootstrap/self-test выполняется recovery; задача `\L2C\CreatePrimaryAdmin` в recovery **не** регистрируется.
 
 ## PR rules
