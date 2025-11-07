@@ -1,7 +1,5 @@
 # Windows 10 LTSC 2021 - Clean & Quiet Baseline (Official Tools Only)
 
-
-
 **Status:** Adopted
 
 **Version:** 1.0.0
@@ -14,21 +12,13 @@
 
 **Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks, RunOnce). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers); deployment answer files are managed separately.
 
-
-
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
-
-
 ---
 
 ---
-
-
 
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: 뿯↽ ${User}:)
-
-
 
 - **Context:** Stage A мог падать на сообщении `ADSI update failed for $User:` — PowerShell 5.1 некорректно парсил `$User:` и прерывал выполнение во время ADSI-обновления.
 
@@ -38,49 +28,29 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 - **Related:** см. “Idempotent Stage A; guard Stage B” про идемпотентность Stage A и защиту Stage B.
 
-
-
 ## 2A. Переезд сервисинга из XML в SetupComplete
 
 - **Constraint (SKU):** Target **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs. Reason: `AllowTelemetry=0` (Security level) is supported on Enterprise.
 
-
-
 **Решение.** Все операции DISM, политики (IE/Edge, DO, телеметрия, OneDrive и т.п.) выполняются в `SetupComplete.cmd`. В `autounattend.xml` остаются только базовые фазы (`windowsPE`, `generalize`, `specialize`, `oobeSystem`), без `FirstLogonCommands`.
-
-
 
 **Мотивация.** Предсказуемость фаз, единая точка логирования, отсутствие гонок во время OOBE, идемпотентность. Перезагрузка не делается внутри SetupComplete, а планируется через RunOnce.
 
-
-
 **Ограничения.** `SetupComplete.cmd` не вызывает `shutdown`. Перезагрузка возможна только через `RunOnce` при RC 3010/1641 или флаге `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
-
-
 
 ---
 
-
-
 ## 3A. Контракт между файлами
-
-
 
 * `autounattend.xml`: без `FirstLogonCommands`, без `RunSynchronous`, без `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`. Локали en-US на WinPE и oobeSystem.
 
 * `SetupComplete.cmd`: весь пост-инсталл, DISM/политики/службы/задачи, подробное логирование, платформа-гейт на LTSC 2021, идемпотентность, запись RunOnce на единственный ребут.
 
-
-
 ---
-
-
 
 ## 6A. Таблица переноса настроек из XML
 
 - **Pre-OOBE delivery:** `PreOOBE.cmd` is **embedded** into `install.wim` at `Windows\Setup\Scripts\`, and is invoked from unattend (`specialize`/`RunSynchronous`).
-
-
 
 | Функция               | Раньше (XML) | Теперь (SetupComplete) | Как выполняется |
 
@@ -104,15 +74,9 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 | RunOnce на ребут      | —            | SetupComplete           |`HKLM\...\RunOnce` + `shutdown /r` (условно при RC 3010/1641 или флаге ALWAYS_REBOOT_AFTER_FIRST_LOGON=1)|
 
-
-
 ---
 
-
-
 ## 6B. Профиль OOBE и инварианты XML
-
-
 
 * Нет авто-создания пользователя и автологина.
 
@@ -124,15 +88,9 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * en-US локали в WinPE и oobeSystem.
 
-
-
 ---
 
-
-
 ## 6C. Правила качества
-
-
 
 * Все операции DISM сопровождаются предчеком и логированием.
 
@@ -140,11 +98,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * В `SetupComplete.cmd` запрещены прямые перезагрузки.
 
-
-
 ## 1. Objectives and principles
-
-
 
 * Build a clean, quiet, predictable Windows 10 LTSC 2021 workstation profile.
 
@@ -156,15 +110,9 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * No reboots inside SetupComplete. A single reboot may be scheduled via RunOnce only when servicing returned 3010/1641 or when ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 is set.
 
-
-
 ---
 
-
-
 ## 2. Installation flow
-
-
 
 1. Install from media with `autounattend.xml` (en-US defaults, accept EULA, correct image index, OOBE flows toward local account creation).
 
@@ -178,37 +126,25 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 ## 3. File layout and key paths
 
-
-
 * Unattended answer file (stored outside this repo, delivered with the media)
 
   `autounattend.xml` on installation media root.
-
-
 
 * Pre-OOBE script inside image
 
   `%WINDIR%\Setup\Scripts\PreOOBE.cmd`
 
-
-
 * SetupComplete script location on media
 
   `\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd`
-
-
 
 * Companion PowerShell helpers
 
   `%WINDIR%\Setup\Scripts\BootstrapLocalAdmin.ps1`, `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1`
 
-
-
 PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/RunOnce/Tasks.
 
 **SetupComplete.cmd:** servicing/logging only; schedules a single conditional reboot via RunOnce when RC ∈ {3010, 1641}. No immediate reboot inside `SetupComplete.cmd`.
-
-
 
 * **EOL:** scripts (.cmd/.ps1) — CRLF; documentation (.md) — LF.
 
@@ -220,11 +156,7 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
 
-
-
 * Script header in `SetupComplete.cmd` (compact):
-
-
 
   ```bat
 
@@ -238,8 +170,6 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   REM Project: Windows 10 LTSC 2021 - Clean & Quiet Baseline (Official Tools Only)
 
-
-
   setlocal EnableExtensions EnableDelayedExpansion
 
   set "LOGFILE=%WINDIR%\Panther\SetupComplete.log"
@@ -250,15 +180,9 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   ```
 
-
-
 ---
 
-
-
 ## 4. Logging and idempotence
-
-
 
 * A dedicated `:log` subroutine writes timestamped lines into `%WINDIR%\Panther\SetupComplete.log`.
 
@@ -274,15 +198,9 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
 * Installers are invoked with reboot suppression: **MSI** via `REBOOT=ReallySuppress /norestart`; **EXE** with an equivalent `/norestart` switch to avoid reboots inside SetupComplete.
 
-
-
 * **Unattend hygiene:** after `SetupComplete` finishes, remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml`.
 
-
-
 ---
-
-
 
 * **Timestamps:** ISO-8601 in logs via PowerShell (`Get-Date -Format o`).
 
@@ -294,11 +212,7 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
 ## 5. Platform gate
 
-
-
 * The script validates it runs on Windows 10 Enterprise 2021 LTSC:
-
-
 
   * `EditionID=EnterpriseS`
 
@@ -306,15 +220,9 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   * `CurrentBuild >= 19044`
 
-
-
 См. раздел **뿯½5.1** ниже для подробностей и примера кода проверки.
 
-
-
 ---
-
-
 
 **Mismatch policy (clarified):**
 
@@ -326,11 +234,7 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   - `0` 뿯↽ log **WARN** and **continue** (best‑effort).
 
-
-
 ### 5.1 Platform gate — подробности и код
-
-
 
 ```bat
 
@@ -350,11 +254,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 ## 6. Major decisions and rationale
 
-
-
 ### 6.1 Microsoft Edge
-
-
 
 * Control Edge via **supported policies** only:
 
@@ -368,13 +268,9 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 ### 6.2 SmartScreen and Windows Defender
 
-
-
 * SmartScreen is disabled for Explorer and for Edge as per profile requirements.
 
 * Windows Defender is minimized using supported preferences:
-
-
 
   * No cloud protection and no sample submissions.
 
@@ -384,11 +280,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * If later a local-only PUA detection is desired, `PUAProtection=1` can be considered. Current baseline uses `0`.
 
-
-
 ### 6.3 Telemetry, Diagnostics, and WER
-
-
 
 * Enterprise-allowed diagnostics level: `AllowTelemetry=0`.
 
@@ -396,37 +288,23 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * `WerSvc` is disabled. Tasks under Diagnostics and WER are disabled with soft handling if missing.
 
-
-
 ### 6.4 Delivery Optimization
 
-
-
 * Delivery Optimization is set to HTTP-only:
-
-
 
   * `HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization\DODownloadMode=0`
 
 * Rationale: quiet online baseline with no P2P. Mode 0 is supported and reliable across LTSC. Mode 99 (Simple) is more restrictive and typically used for air-gapped scenarios, which is outside this baseline.
 
-
-
 ### 6.5 Network quieting: WPAD, WinHTTP, LLMNR, IPv6 transition
 
-
-
 * WPAD disabled on both stacks:
-
-
 
   * WinINET policy: `HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings\DisableWpad=1`
 
   * WinHTTP key: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp\DisableWpad=1`
 
   * Reset WinHTTP proxy to direct:
-
-
 
     ```
 
@@ -438,13 +316,9 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * LLMNR disabled:
 
-
-
   * `HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\EnableMulticast=0`
 
 * IPv6 transition technologies disabled if present:
-
-
 
   * `netsh interface teredo set state disabled`
 
@@ -452,11 +326,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
   * `netsh interface isatap set state disabled`
 
-
-
 ### 6.6 OneDrive
-
-
 
 * Block the Next Gen Sync Client via policy:
 
@@ -466,31 +336,19 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 ### 6.7 Services
 
-
-
 * Disabled services with guarded checks:
-
-
 
   * `SysMain`, `WSearch`, `Spooler`, `DiagTrack`, `dmwappushsvc`, `WerSvc`, `WebClient`
 
 * Nonexistent services are logged as info and do not count as failures.
 
-
-
 ### 6.8 Features and Capabilities
-
-
 
 * SMBv1 and PowerShell 2.0 are disabled only if they are enabled, using DISM with no restart.
 
 * Capabilities are removed with correct return code handling:
 
-
-
   * Quick Assist:
-
-
 
     ```
 
@@ -500,8 +358,6 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
   * SNMP Client:
 
-
-
     ```
 
     dism /online /remove-capability /capabilityname:SNMP.Client~~~~0.0.1.0
@@ -509,8 +365,6 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
     ```
 
   * WMI SNMP Provider:
-
-
 
     ```
 
@@ -520,8 +374,6 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * DISM return codes are interpreted precisely:
 
-
-
   * `0` success
 
   * `3010` success, restart required
@@ -530,49 +382,31 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Output is appended to the script log for diagnostics.
 
-
-
 ### 6.9 Windows Update
 
-
-
 * Notify-only updates:
-
-
 
   * `AUOptions=2`
 
 * Exclude drivers from quality updates:
 
-
-
   * `ExcludeWUDriversInQualityUpdate=1`
 
 * No preview builds:
-
-
 
   * `ManagePreviewBuilds=1`, `ManagePreviewBuildsPolicyValue=1`
 
 * No other Microsoft products:
 
-
-
   * `AllowMUUpdateService=0`
 
 * Block OS upgrade offers:
-
-
 
   * `DisableOSUpgrade=1`
 
 * Device metadata from Internet is off to reduce background network noise.
 
-
-
 ### 6.10 UX tweaks
-
-
 
 * Autorun and AutoPlay disabled.
 
@@ -582,11 +416,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Power plan "Ultimate Performance" activated if it exists.
 
-
-
 ### 6.11 Component cleanup and reboot
-
-
 
 * **Component Store:** `Dism /Online /Cleanup-Image /StartComponentCleanup [/ResetBase]` is executed via the DISM runner (central log + RC handling).
 
@@ -595,8 +425,6 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 * **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, set `NEEDS_REBOOT=1` and schedule a RunOnce `shutdown /r` to occur after the first interactive logon. Optional “always reboot after first logon” is off by default and can be enabled via `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
 
 ## 7. What we explicitly do not do
-
-
 
 * Do not disable WinHttpAutoProxySvc. WPAD is controlled by supported keys instead.
 
@@ -608,15 +436,9 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Do not embed reboots inside SetupComplete.
 
-
-
 ---
 
-
-
 ## 8. Risks and trade-offs
-
-
 
 * SmartScreen disabled and Defender minimized by design. This reduces protection surface and is a conscious trade-off for a silent profile. Consumers of the baseline must understand and accept the risk.
 
@@ -624,15 +446,9 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * With WPAD disabled, environments that later introduce a proxy will require explicit WinHTTP proxy configuration.
 
-
-
 ---
 
-
-
 ## 9. Verification checklist after install
-
-
 
 * Log exists at `%WINDIR%\Panther\SetupComplete.log` with no `[ERROR]`. Warnings are understood.
 
@@ -656,31 +472,19 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Component cleanup executed. Reboot happened only once via RunOnce.
 
-
-
 ---
 
-
-
 ## 10. Change control and versioning
-
-
 
 * Bump `Version:` in script header and `DECISIONS.md` when behavior changes, not for comment-only edits.
 
 * Any new feature must meet the principles: official tooling, deterministic, idempotent, no reboots inside SetupComplete.
 
-
-
 ---
-
-
 
 We do not append dated addenda; each decision is integrated into its canonical section (flow, logging, servicing, or feature-specific subsections). The git history acts as the chronological record of changes.
 
 ## 11. References in repository
-
-
 
 * `README.md` - quick start, file placement, how to read the log, minimal how-to.
 
@@ -694,49 +498,27 @@ We do not append dated addenda; each decision is integrated into its canonical s
 
 * `SetupComplete.cmd` - post-install baseline script.
 
-
-
 ---
 
-
-
 ## 12. Maintainer
-
-
 
 * Maintainer: `@tagor-sian`
 
   [https://github.com/tagor-sian](https://github.com/tagor-sian)
 
-
-
 Contributions are welcome via issues and pull requests. Please keep changes aligned with the principles: official tools only, deterministic and idempotent behavior, and no reboots inside SetupComplete.
-
-
 
 ## Update (2025-09-19)
 
-
-
 **Disk selection:** Use Windows Setup UI intentionally: set `OSImage/WillShowUI=Always`, omit `InstallTo` and `InstallToAvailablePartition`. Rationale: avoid unintended writes on multi-disk hosts; preserve control on prod.
-
-
 
 **Policy application timing:** Apply privacy & local-account policies in `specialize` via `Microsoft-Windows-Deployment/RunSynchronous` so they take effect **before OOBE**.
 
-
-
 **Privacy scope covered:** Disable Privacy Experience UI; enforce OFF state for diagnostics, tailored experiences, advertising ID, input personalization/online speech, location, find-my-device.
-
-
 
 - **Decision:** Critical HKLM policies for OOBE are moved from inline `RunSynchronousCommand` to external `PreOOBE.cmd` (pass `specialize`), invoked by a **single** command. Motivation: XML validity, readability, escaping limits, centralized logging and RC.
 
-
-
 ## ADR-001: AutoAdminLogon только для консоли (Console)
-
-
 
 **Дата:** 2025-10-02
 
@@ -746,11 +528,7 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 **Последствия:** В VMConnect **Enhanced** (RDP) всегда будет экран входа — это ожидаемо и не является ошибкой автолога.
 
-
-
 ## ADR-002: Запись реестра через `reg.exe` с явными типами
-
-
 
 **Дата:** 2025-10-02
 
@@ -760,15 +538,9 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 **Последствия:** Больше 뿯½шумного뿯½ кода, но предсказуемые типы и надёжность.
 
-
-
 Дополнение: Прямой вызов `reg.exe` в PS 5.1: `& reg.exe … | Out-Null 2>$null`; читаем `$LASTEXITCODE`. Для `DELETE` допустимые RC: `{0,2}` (идемпотентность).
 
-
-
 ## ADR-003: RNG-шим для WinPS 5.1
-
-
 
 **Дата:** 2025-10-02
 
@@ -778,11 +550,7 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 **Последствия:** Нет внешних зависимостей; одинаковая криптография на всех хостах.
 
-
-
 ## ADR-004: Идемпотентность 뿯½взвод/откат뿯½
-
-
 
 **Дата:** 2025-10-02
 
@@ -792,19 +560,11 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 **Последствия:** Стабильное поведение при регрессе/переустановках.
 
-
-
 ## ADR-005: Idempotent Stage A; guard Stage B
-
-
 
 **Date:** 2025-10-15
 
-
-
 **Context:** Previous runs of `CreatePrimaryAdmin.ps1` could attempt to re-add a user to Administrators and proceed with Winlogon rollback even when Stage A partially failed.
-
-
 
 **Decision:**
 
@@ -814,27 +574,17 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - Ban `cmd /c` wrappers in Windows PowerShell 5.1; invoke `net.exe` directly to preserve `$LASTEXITCODE` and reduce noise.
 
-
-
 **Consequences:**
 
 - Re-running the script is safe: existing Administrators membership is detected and Stage B is skipped on Stage A failure.
 
 - Guarding Stage B prevents unwanted Winlogon resets if account provisioning fails, reducing lockout risk.
 
-
-
 ## ADR-006: EOL policy (CRLF for scripts, LF for Markdown)
-
-
 
 **Date:** 2025-10-13
 
-
-
 **Context.** Windows script hosts (`*.ps1/*.cmd/*.bat`) expect CRLF line endings. Markdown and most tooling are LF-friendly. Mixed/incorrect EOLs caused CI and runtime issues.
-
-
 
 **Decision.**
 
@@ -844,8 +594,6 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - Other text 뿯↽ `* text=auto` (Git attributes).
 
-
-
 **Consequences.**
 
 - Deterministic behavior on Windows hosts.
@@ -854,15 +602,9 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - Editors should be configured accordingly (see `CONTRIBUTING.md`).
 
-
-
 ## ADRs – 2025-11
 
-
-
 ### ADR: Scheduler over RunOnce for primary-admin bootstrap
-
-
 
 - Decision: Use `schtasks` (OnLogon, SYSTEM, Highest) to run `CreatePrimaryAdmin.ps1`.
 
@@ -870,11 +612,7 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - Status: adopted in `SetupComplete.cmd`.
 
-
-
 ### ADR: No Delayed Expansion in .cmd
-
-
 
 - Decision: `EnableDelayedExpansion` is forbidden in `.cmd/.bat`.
 
@@ -882,17 +620,11 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - Status: removed from `SetupComplete.cmd`.
 
-
-
 ### ADR: `.bootstrap.pw` as transient secret
-
-
 
 - Decision: password source stored at `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM).
 
 - Rationale: decouple user lifecycle from registry; deterministic handoff to Winlogon priming.
 
 - Security: ACL to SYSTEM/Admins; recommend deletion after Stage B.
-
-
 
