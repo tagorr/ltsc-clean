@@ -18,7 +18,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 ---
 
-## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: 뿯↽ ${User}:)
+## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
 
 - **Context:** Stage A мог падать на сообщении `ADSI update failed for $User:` — PowerShell 5.1 некорректно парсил `$User:` и прерывал выполнение во время ADSI-обновления.
 
