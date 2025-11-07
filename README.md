@@ -385,7 +385,8 @@ set "STRICT_DISPLAYVERSION=0"  :: 1 = строгий отказ при несо�
 
 Кратко, как должно работать «в бою»:
 
-1. На этапе `specialize/PreOOBE` под **SYSTEM** запускается `BootstrapLocalAdmin.ps1`.
+1. PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/RunOnce/Tasks.
+**SetupComplete.cmd:** servicing/logging only; schedules a single conditional reboot via RunOnce when RC ∈ {3010, 1641}. No immediate reboot inside `SetupComplete.cmd`.
 2. Скрипт:
    - создаёт/активирует локальную учётку `bootstrap` и задаёт пароль;
    - снимает стопперы входа: `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очищает `LegalNotice*`, ставит `DontDisplayLastUserName=0`, `IgnoreShiftOverride=0 (REG_SZ, без промежуточного "1")`;
