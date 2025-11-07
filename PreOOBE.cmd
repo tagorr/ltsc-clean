@@ -3,7 +3,7 @@ REM Windows 10 LTSC 2021 Clean & Quiet — PreOOBE (specialize)
 REM Applies privacy/account policies BEFORE OOBE, logs to Panther
 REM Encoding: UTF-8 (no BOM), EOL: CRLF
 
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 title PreOOBE ^& account policies
 
 set "LOGDIR=%WINDIR%\Panther"
@@ -26,17 +26,10 @@ goto :main
 goto :eof
 
 :log
-  setlocal EnableDelayedExpansion
-  set "msg="
-  :log_more
-    if "%~1"=="" goto log_emit
-    set "msg=!msg! %~1"
-    shift
-    goto log_more
-  :log_emit
-  call :ts
-  >>"%LOGFILE%" echo [!TS!]!msg!
-  endlocal & goto :eof
+  set "msg=%*"
+  for /f %%G in ('powershell.exe -NoProfile -NonInteractive -Command "Get-Date -Format o"') do set "ts=%%G"
+  >>"%LOGFILE%" echo [%ts%] %msg%
+  exit /b 0
 
 :regadd
   REM Usage: call :regadd "HKLM\path" "ValueName" ^
@@ -47,13 +40,14 @@ goto :eof
   set "_rd=%~4"
   call :log [STEP] reg add "%_rk%" "%_rv%" %_rt% "%_rd%"
   reg add "%_rk%" /v "%_rv%" /t %_rt% /d %_rd% /f >nul 2>&1
-  if errorlevel 1 (
+  set "_rc=%ERRORLEVEL%"
+  if not "%_rc%"=="0" (
     set "FAILED=1"
-    call :log [ERROR] rc=!errorlevel! at "%_rk%" "%_rv%"
+    call :log [ERROR] rc=%_rc% at "%_rk%" "%_rv%"
   ) else (
     call :log [OK] "%_rk%" "%_rv%"
   )
-  set "_rk=" & set "_rv=" & set "_rt=" & set "_rd="
+  set "_rk=" & set "_rv=" & set "_rt=" & set "_rd=" & set "_rc="
   exit /b 0
 
 :: --------------------------

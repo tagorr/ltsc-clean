@@ -21,7 +21,8 @@
 - **DISM log:** single path for all calls — `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (use `/LogPath` + `/LogLevel:4`).
 - **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (ISO-8601), and the DISM log above.
 - **Winlogon:** `HKLM\...\Winlogon\IgnoreShiftOverride` = **REG_SZ "0"** (not `REG_DWORD`), with no intermediate `"1"`.
-- **SetupComplete:** вызывает `BootstrapLocalAdmin.ps1`; PreOOBE не трогает Winlogon/Passwordless/RunOnce/Tasks.
+- PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/RunOnce/Tasks.
+**SetupComplete.cmd:** servicing/logging only; schedules a single conditional reboot via RunOnce when RC ∈ {3010, 1641}. No immediate reboot inside `SetupComplete.cmd`.
 - При любом сбое Bootstrap/self-test выполняется recovery; задача `\L2C\CreatePrimaryAdmin` в recovery **не** регистрируется.
 
 ## PR rules
@@ -41,7 +42,8 @@ schtasks /Create /TN "\L2C\CreatePrimaryAdmin" /TR "powershell.exe -NoProfile -E
 
 **Валидация на стенде:**
 
-1. `SetupComplete.cmd` логирует секцию Bootstrap (маркер `[BOOTSTRAP] PW_SOURCE=...`), постановку `DisableCAD=1`, запись Winlogon и создание задачи `\L2C\CreatePrimaryAdmin`.
+1. PreOOBE/BootstrapLocalAdmin.ps1 logs the [BOOTSTRAP] section (marker `[BOOTSTRAP] PW_SOURCE=...`), sets `DisableCAD=1`, writes Winlogon values, and
+   registers the `\L2C\CreatePrimaryAdmin` task.
 2. При первом входе задача запускается под SYSTEM, `CreatePrimaryAdmin.ps1` пишет `Begin/End Stage A/B` в `C:\ProgramData\l2c_master_<ts>.log`.
 3. После завершения Stage B: Winlogon «схлопнут», `bootstrap` отключён, `DisableCAD=0` в `Policies\System` и `Winlogon`, `HKLM\...\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, файл `%WINDIR%\Setup\Scripts\.bootstrap.pw` отсутствует, задача `\L2C\CreatePrimaryAdmin` удалена.
 
