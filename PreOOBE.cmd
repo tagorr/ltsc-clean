@@ -27,7 +27,7 @@ goto :eof
 
 :log
   set "msg=%*"
-  for /f %%G in ('powershell.exe -NoProfile -NonInteractive -Command "[DateTime]::Now.ToString('yyyy-MM-dd_HH:mm:ss.fff')"') do set "ts=%%G"
+  for /f %%G in ('powershell.exe -NoProfile -NonInteractive -Command "Get-Date -Format o"') do set "ts=%%G"
   >>"%LOGFILE%" echo [%ts%] %msg%
   exit /b 0
 
