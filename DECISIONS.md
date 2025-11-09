@@ -18,6 +18,11 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 ---
 
+## Process policy: Agent execution model
+
+- Codex CLI is the sole automation agent; its operational rules live in `AGENTS.md` under the “Codex CLI Contract”.
+- A full `docs/INTERACTION_CONTRACT.md` will follow in a separate commit to capture the detailed interaction workflow.
+
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
 
 - **Context:** Stage A мог падать на сообщении `ADSI update failed for $User:` — PowerShell 5.1 некорректно парсил `$User:` и прерывал выполнение во время ADSI-обновления.
@@ -627,4 +632,3 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 - Rationale: decouple user lifecycle from registry; deterministic handoff to Winlogon priming.
 
 - Security: ACL to SYSTEM/Admins; recommend deletion after Stage B.
-
