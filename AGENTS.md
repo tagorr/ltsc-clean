@@ -15,6 +15,42 @@
 
 - In `.cmd/.bat` files, direct PowerShell syntax is **not allowed**. Use only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
 - В `.cmd/.bat` запрещено включать `EnableDelayedExpansion`; переменные читаем в `%VAR%`, ветвления реализуем через метки/подпрограммы (`goto`, `call :sub`) без зависимостей от внутри-блочного пере-расширения.
+
+## Codex CLI Contract
+
+Codex CLI runs locally against this repository’s working copy. Follow these rules.
+
+### Scope
+- Single source of truth: `main`.
+- Environment: Windows 10/11, PowerShell 5.1, cmd.exe, Git for Windows.
+- Allowed files: only those explicitly requested in the prompt or in this contract. Minimal diffs only.
+
+### Command contract
+- Run cmd commands only as:
+  cmd.exe /c "…"
+- Use double quotes only in cmd. Never wrap cmd lines in single quotes.
+- Call Windows PowerShell 5.1 explicitly:
+  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive …
+  Do not hardcode drive letters for system paths.
+- Never run Git from inside `.git` subfolders.
+- Before a risky step, print `cd` and the exact command, then execute it and show output. Abort on non-zero exit codes.
+
+### Shell roles
+- `cmd.exe` is the primary shell for hooks and Git plumbing.
+- PowerShell 5.1 is a tool to run validators, not the outer shell for pipelines.
+
+### EOL/BOM policy
+- `*.md` stored LF. `.cmd/.bat/.ps1` stored CRLF.
+- UTF-8 without BOM everywhere. Zero bytes forbidden.
+- Local guard: githooks/pre-commit.cmd materializes staged files then runs tools/check-eol-bom.ps1 -IncludePaths.
+- CI guard reproduces the same checks on windows-latest.
+
+### Minimal-diff rule
+Touch only what is required. No reformatting outside changed hunks. Preserve EOLs.
+
+### Session hygiene
+Prefer one task per CLI session. If scope or shell rules change, start a fresh session.
+
 ## Policies
 - **Edition gate:** `EditionID == REQUIRED_EDITION` → otherwise **FAIL**.
 - **DISM RC policy:** `0` → OK; `3010/1641` → OK **and** schedule RunOnce `zz-SetupCompleteReboot`; any other RC → **FAIL** (`FAILED=1`, `exit /b <RC>`).
