@@ -185,6 +185,7 @@ cmd.exe /c "del /q .git\_rg"
 
 
 ### 4) Validate BOM and NUL bytes (PowerShell one-liner)
+*Note: single quotes inside the PowerShell `-Command` text below are part of PowerShell syntax and do **not** violate the “no single quotes in CMD” rule.*
 Marker:  
 ```cmd
 cmd.exe /c "echo VALIDATE BOM/NUL docs/INTERACTION_CONTRACT.md"
@@ -238,8 +239,8 @@ cmd.exe /c "if errorlevel 1 exit /b 1"
 
 
 ## Acceptance checklist
-1. All steps used `cmd.exe /c "..."` with a single pair of ASCII double quotes.  
-2. No single quotes used. No extra quote layers.  
+1. Every **CMD** invocation used `cmd.exe /c "..."` with exactly one outer pair of ASCII double quotes (no extra outer layers).
+2. No single quotes in the **CMD layer**. Single quotes **are allowed** inside PowerShell `-Command` text. No smart quotes anywhere.
 3. New or modified Markdown files are UTF-8 without BOM and LF, validated by the BOM/NUL one-liner and `git ls-files --eol`.  
 4. Git operations executed from repo root, not from `.git`. Work-tree and repo root checks passed.  
 5. Staged list shown before commit. Commit done with `-m` or `-F`, no env vars.  
