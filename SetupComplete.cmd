@@ -533,6 +533,10 @@ if defined L2C_FIRST_BAD_RC (
   echo [RC] returning first failing rc=%L2C_FIRST_BAD_RC%>>"%LOG%"
   exit /b %L2C_FIRST_BAD_RC%
 )
+if "%FAILED%"=="1" (
+  echo [RC] returning FAILED fallback rc=1>>"%LOG%"
+  exit /b 1
+)
 echo [RC] returning 0>>"%LOG%"
 exit /b 0
 
