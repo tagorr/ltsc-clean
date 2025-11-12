@@ -54,15 +54,21 @@ try {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($pwPath, $PasswordPlain, $utf8NoBom)
 
-    # Reset ACL: SYSTEM:(F), Administrators:(F) only
-    $acl = New-Object System.Security.AccessControl.FileSecurity
-    $rule1 = New-Object System.Security.AccessControl.FileSystemAccessRule('SYSTEM','FullControl','Allow')
-    $rule2 = New-Object System.Security.AccessControl.FileSystemAccessRule('Administrators','FullControl','Allow')
-    $acl.SetOwner([System.Security.Principal.NTAccount]'SYSTEM')
-    $acl.SetAccessRuleProtection($true, $false)  # disable inheritance
-    [void]$acl.AddAccessRule($rule1)
-    [void]$acl.AddAccessRule($rule2)
-    Set-Acl -Path $pwPath -AclObject $acl
+    # Reset ACL: SYSTEM:(F), Administrators:(F) only, locale-agnostic
+    $adminsSid = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'
+    $adminsNt  = $adminsSid.Translate([System.Security.Principal.NTAccount])
+
+    $acl = Get-Acl -LiteralPath $pwPath
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
+
+    $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule 'SYSTEM','FullControl','Allow'
+    $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsNt,'FullControl','Allow'
+
+    [void]$acl.AddAccessRule($ruleSystem)
+    [void]$acl.AddAccessRule($ruleAdmins)
+
+    Set-Acl -LiteralPath $pwPath -AclObject $acl
 
     # Hide as system/hidden
     $item = Get-Item $pwPath

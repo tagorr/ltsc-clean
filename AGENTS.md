@@ -74,14 +74,14 @@ schtasks /Create /TN "\L2C\CreatePrimaryAdmin" /TR "powershell.exe -NoProfile -E
 
 **Дисклеймер:** это ручной инженерный тест. Внутри `SetupComplete.cmd` ребут **не** выполняется; возможен только отложенный ребут при `RC=3010/1641`.
 
-*After the task fires, verify from README: AutoAdminLogon=0, ForceAutoLogon=0, DefaultPassword/AutoLogonCount removed, DisableCAD=0 в обеих ветках, `bootstrap` disabled, `primaryadmin` ∈ Administrators, задача `\L2C\CreatePrimaryAdmin` удалена, в `C:\ProgramData` лежит `l2c_master_<timestamp>.log`.*
+*After the task fires, verify from README: AutoAdminLogon=0, ForceAutoLogon=0, DefaultPassword/AutoLogonCount removed, `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=0`, `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, `bootstrap` disabled, `primaryadmin` ∈ Administrators, задача `\L2C\CreatePrimaryAdmin` удалена, в `C:\ProgramData` лежит `l2c_master_<timestamp>.log`.*
+*SetupComplete.cmd exits with the first failing RC (anything other than 0/3010/1641) to surface servicing errors.*
 
 **Валидация на стенде:**
 
-1. PreOOBE/BootstrapLocalAdmin.ps1 logs the [BOOTSTRAP] section (marker `[BOOTSTRAP] PW_SOURCE=...`), sets `DisableCAD=1`, writes Winlogon values, and
-   registers the `\L2C\CreatePrimaryAdmin` task.
-2. При первом входе задача запускается под SYSTEM, `CreatePrimaryAdmin.ps1` пишет `Begin/End Stage A/B` в `C:\ProgramData\l2c_master_<ts>.log`.
-3. После завершения Stage B: Winlogon «схлопнут», `bootstrap` отключён, `DisableCAD=0` в `Policies\System` и `Winlogon`, `HKLM\...\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, файл `%WINDIR%\Setup\Scripts\.bootstrap.pw` отсутствует, задача `\L2C\CreatePrimaryAdmin` удалена.
+1. `PreOOBE.cmd` (pass specialize) применяет ранние privacy/security-политики и запускает `BootstrapLocalAdmin.ps1`. Bootstrap создаёт/освежает временного `bootstrap`-админа, записывает `%WINDIR%\Setup\Scripts\.bootstrap.pw` с ACL только для SYSTEM + Administrators и на этом заканчивает (Winlogon и Planer не трогает).
+2. `SetupComplete.cmd` при наличии `.bootstrap.pw` подготавливает Winlogon-автологон для `bootstrap`, регистрирует `\L2C\CreatePrimaryAdmin` (SYSTEM, Highest, OnLogon), затем выполняет всё хардениг/servicing. RC `3010/1641` приводят к единственному RunOnce `zz-SetupCompleteReboot`, любые другие RC немедленно завершают скрипт с ошибкой (и фиксируются как *first failing RC*).
+3. На первом входе задача под SYSTEM запускает `CreatePrimaryAdmin.ps1`: Stage A создаёт/чинит основного администратора, Stage B схлопывает Winlogon-автологон, отключает `bootstrap`, удаляет `.bootstrap.pw`, возвращает `DisableCAD=0` в `Policies\System` и `Ngc\DevicePasswordLessBuildVersion=2`, удаляет задачу и пишет `C:\ProgramData\l2c_master_<ts>.log`.
 
 **Повторная проверка (snapshots/новая ВМ):**
 
