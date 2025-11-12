@@ -114,46 +114,62 @@ if not "%RC%"=="0" (
 )
 goto :eof
 
-:get_cap_state
-rem %1 = capability name, %2 = out var
-setlocal EnableExtensions DisableDelayedExpansion
-set "cap=%~1"
-set "state="
-for /f "usebackq tokens=1,* delims=:" %%A in (`
-  dism.exe /online /Get-CapabilityInfo /CapabilityName:%cap% /English ^| findstr /R /C:"^ *State *:"
-`) do (
-  set "state=%%B"
-)
-if not defined state (
-  endlocal & set "%~2=Unknown" & exit /b 0
-)
-set "state=%state: =%"
-endlocal & set "%~2=%state%" & exit /b 0
-
 :remove_capability
 REM usage: call :remove_capability CapabilityName Friendly
 set "CAP=%~1"
 set "FR=%~2"
-call :get_cap_state "%CAP%" _cap_state
-echo [CAP] %CAP% state=%_cap_state%>>"%LOG%"
+if not defined CAP goto :_cap_cleanup
+set "_cap_state="
+for /f "tokens=2 delims=:" %%S in ('dism /Online /Get-CapabilityInfo /CapabilityName:%CAP% /English ^| findstr /C:"State :"') do (
+  set "_cap_state=%%S"
+)
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  set "FAILED=1"
+  call :log "[ERROR] Capability state retrieval failed for %FR% (%CAP%) (RC=%RC%)"
+  goto :_cap_cleanup
+)
+if not defined _cap_state (
+  set "FAILED=1"
+  call :log "[ERROR] Capability state missing for %FR% (%CAP%)"
+  goto :_cap_cleanup
+)
+set "_cap_state=%_cap_state: =%"
+if not defined _cap_state (
+  set "FAILED=1"
+  call :log "[ERROR] Capability state parse failed for %FR% (%CAP%)"
+  goto :_cap_cleanup
+)
+echo [CAP] %FR% state=%_cap_state%>>"%LOG%"
 if /i "%_cap_state%"=="Installed" goto :_cap_remove
 if /i "%_cap_state%"=="Staged" goto :_cap_remove
 if /i "%_cap_state%"=="NotPresent" (
-  echo [CAP] %CAP% already not present, skip>>"%LOG%"
-  goto :eof
+  echo [CAP] %FR% not present, skip removal>>"%LOG%"
+  goto :_cap_cleanup
 )
-echo [CAP] %CAP% unknown state, skip>>"%LOG%"
-goto :eof
+if /i "%_cap_state%"=="Unknown" (
+  echo [CAP] %FR% unknown, skip removal>>"%LOG%"
+  goto :_cap_cleanup
+)
+echo [CAP] %FR% state=%_cap_state% -> skip removal>>"%LOG%"
+goto :_cap_cleanup
 
 :_cap_remove
 call :log "[STEP] Remove capability %FR% (%CAP%)"
 call :run_dism /Remove-Capability /CapabilityName:%CAP%
 set "RC=%ERRORLEVEL%"
 call :track_rc %RC%
-if not "%RC%"=="0" (
-  set "FAILED=1"
-  call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
+if "%RC%"=="0" (
+  echo [CAP] %FR% removal succeeded>>"%LOG%"
+  goto :_cap_cleanup
 )
+set "FAILED=1"
+call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
+goto :_cap_cleanup
+
+:_cap_cleanup
+set "_cap_state="
 goto :eof
 
 :gate_build
