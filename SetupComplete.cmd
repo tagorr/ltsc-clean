@@ -17,6 +17,7 @@ set "REBOOT_ON_RC=1"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
 set "FAILED=0"
+set "L2C_FIRST_BAD_RC="
 call :log "----- SetupComplete started -----"
 
 :: --- compatibility controls ---
@@ -106,27 +107,49 @@ if not defined FN goto :eof
 call :log "[INFO] %LG% - attempting disable"
 call :run_dism /Disable-Feature /FeatureName:%FN%
 set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
 if not "%RC%"=="0" (
   set "FAILED=1"
   call :log "[ERROR] %LG% disable failed (RC=%RC%)"
 )
 goto :eof
 
+:get_cap_state
+rem %1 = capability name, %2 = out var
+setlocal EnableExtensions DisableDelayedExpansion
+set "cap=%~1"
+set "state="
+for /f "usebackq tokens=1,* delims=:" %%A in (`
+  dism.exe /online /Get-CapabilityInfo /CapabilityName:%cap% /English ^| findstr /R /C:"^ *State *:"
+`) do (
+  set "state=%%B"
+)
+if not defined state (
+  endlocal & set "%~2=Unknown" & exit /b 0
+)
+set "state=%state: =%"
+endlocal & set "%~2=%state%" & exit /b 0
+
 :remove_capability
 REM usage: call :remove_capability CapabilityName Friendly
 set "CAP=%~1"
 set "FR=%~2"
-REM Check if capability is installed; if not, skip quietly
-for /f "tokens=1,2 delims=:" %%A in ('dism /online /Get-Capabilities ^| findstr /I /C:"%CAP%" ^| findstr /I "Installed"') do set "_cap_state=%%B"
-if /I not "%_cap_state%"==" Installed" (
-  call :log "[INFO] %FR% not installed (or name not recognized); skipping"
-  set "_cap_state="
+call :get_cap_state "%CAP%" _cap_state
+echo [CAP] %CAP% state=%_cap_state%>>"%LOG%"
+if /i "%_cap_state%"=="Installed" goto :_cap_remove
+if /i "%_cap_state%"=="Staged" goto :_cap_remove
+if /i "%_cap_state%"=="NotPresent" (
+  echo [CAP] %CAP% already not present, skip>>"%LOG%"
   goto :eof
 )
-set "_cap_state="
+echo [CAP] %CAP% unknown state, skip>>"%LOG%"
+goto :eof
+
+:_cap_remove
 call :log "[STEP] Remove capability %FR% (%CAP%)"
 call :run_dism /Remove-Capability /CapabilityName:%CAP%
 set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
 if not "%RC%"=="0" (
   set "FAILED=1"
   call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
@@ -181,12 +204,23 @@ call :log "[%COMP%] RC=%RC% (error)"
 set "FAILED=1"
 exit /b %RC%
 
+:track_rc
+rem %1 = RC
+set "RC=%~1"
+if "%RC%"=="0" exit /b 0
+if "%RC%"=="3010" exit /b 0
+if "%RC%"=="1641" exit /b 0
+if defined L2C_FIRST_BAD_RC exit /b 0
+set "L2C_FIRST_BAD_RC=%RC%"
+exit /b 0
+
 :run_dism
 REM usage: call :run_dism <DISM-args-without-/Online>
 set "CMD=dism /Online %* /Quiet /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4 >nul 2>nul"
 call :log "[DISM] %CMD%"
 %CMD%
 set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
 if "%RC%"=="3010" (
   call :log "[DISM] RC=3010 (success, reboot required)"
   set "NEEDS_REBOOT=1"
@@ -214,6 +248,7 @@ shift
 call :log "[MSI] msiexec /i \"%MSI%\" /qn REBOOT=ReallySuppress /norestart %*"
 msiexec /i "%MSI%" /qn REBOOT=ReallySuppress /norestart %*
 set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
 call :handle_rc "MSI" %RC%
 exit /b %RC%
 
@@ -224,6 +259,7 @@ shift
 call :log "[EXE] \"%EXE%\" /quiet /norestart %*"
 "%EXE%" /quiet /norestart %*
 set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
 call :handle_rc "EXE" %RC%
 exit /b %RC%
 
@@ -464,6 +500,7 @@ powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 call :log "[SECTION] Component cleanup"
 call :run_dism /Cleanup-Image /StartComponentCleanup /ResetBase
 set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
 if not "%RC%"=="0" (
   set "FAILED=1"
   call :log "[ERROR] Component cleanup failed (RC=%RC%)"
@@ -489,10 +526,19 @@ if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
   reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "zz-SetupCompleteReboot" /t REG_SZ /d "%SystemRoot%\System32\shutdown.exe /r /t 5" /f >nul 2>&1
 ) else (
-  call :log "[INFO] No reboot required"
+call :log "[INFO] No reboot required"
 )
 call :log "----- SetupComplete finished -----"
-exit /b %FAILED%
+if defined L2C_FIRST_BAD_RC (
+  echo [RC] returning first failing rc=%L2C_FIRST_BAD_RC%>>"%LOG%"
+  exit /b %L2C_FIRST_BAD_RC%
+)
+if "%FAILED%"=="1" (
+  echo [RC] returning FAILED fallback rc=1>>"%LOG%"
+  exit /b 1
+)
+echo [RC] returning 0>>"%LOG%"
+exit /b 0
 
 REM ===== Helpers (Telemetry hardening) =====
 :svc_disable
