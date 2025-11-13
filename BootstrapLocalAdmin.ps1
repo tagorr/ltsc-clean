@@ -36,8 +36,12 @@ try {
         throw [System.Exception]::new("Failed to set password/activate '$u' (rc=$LASTEXITCODE).")
     }
 
+    # Resolve Administrators via SID to stay locale-agnostic
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]'S-1-5-32-544'
+    $adminsAccount = $adminsSid.Translate([System.Security.Principal.NTAccount])
+    $adminGroup = $adminsAccount.Value.Split('\')[-1]
+
     # Add to Administrators (1378 = already a member)
-    $adminGroup = ([System.Security.Principal.SecurityIdentifier]'S-1-5-32-544').Translate([System.Security.Principal.NTAccount]).Value.Split('\')[-1]
     & net.exe localgroup $adminGroup $u /add | Out-Null 2>$null
     $rc = $LASTEXITCODE
     if ($rc -ne 0 -and $rc -ne 1378) {
@@ -55,20 +59,22 @@ try {
     [System.IO.File]::WriteAllText($pwPath, $PasswordPlain, $utf8NoBom)
 
     # Reset ACL: SYSTEM:(F), Administrators:(F) only, locale-agnostic
-    $adminsSid = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'
-    $adminsNt  = $adminsSid.Translate([System.Security.Principal.NTAccount])
+    try {
+        $acl = Get-Acl -LiteralPath $pwPath
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
 
-    $acl = Get-Acl -LiteralPath $pwPath
-    $acl.SetAccessRuleProtection($true, $false)
-    $acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
+        $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule 'NT AUTHORITY\SYSTEM','FullControl','Allow'
+        $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsAccount,'FullControl','Allow'
 
-    $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule 'SYSTEM','FullControl','Allow'
-    $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsNt,'FullControl','Allow'
+        [void]$acl.AddAccessRule($ruleSystem)
+        [void]$acl.AddAccessRule($ruleAdmins)
 
-    [void]$acl.AddAccessRule($ruleSystem)
-    [void]$acl.AddAccessRule($ruleAdmins)
-
-    Set-Acl -LiteralPath $pwPath -AclObject $acl
+        Set-Acl -LiteralPath $pwPath -AclObject $acl
+    } catch {
+        Write-Error ("[ERROR] Failed to apply ACL to '{0}': {1}" -f $pwPath, $_.Exception.Message)
+        throw
+    }
 
     # Hide as system/hidden
     $item = Get-Item $pwPath
