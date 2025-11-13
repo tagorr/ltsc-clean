@@ -632,3 +632,42 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 - Rationale: decouple user lifecycle from registry; deterministic handoff to Winlogon priming.
 
 - Security: ACL to SYSTEM/Admins; recommend deletion after Stage B.
+
+## [2025-11-12] Harden bootstrap/admin provisioning chain (SetupComplete / BootstrapLocalAdmin / CreatePrimaryAdmin)
+
+### Context
+
+- Capability removal in `SetupComplete.cmd` relied on `dism /Online /Get-Capabilities | findstr "Installed"` which breaks on non-English output.
+- Winlogon autologon flipped `AutoAdminLogon`/`ForceAutoLogon` even if the PowerShell write of `DefaultPassword` failed, leaving a stuck autologon without credentials.
+- `schtasks /Create \L2C\CreatePrimaryAdmin` was not tracked via `:track_rc`, so failures could be invisible to L2C_FIRST_BAD_RC and exit codes even when task creation failed.
+- Stage B of `CreatePrimaryAdmin.ps1` cleaned Winlogon, RunOnce, the scheduled task, and `.bootstrap.pw`, but many failure paths only emitted DEBUG/WARN entries and did not encode the cleanup result for later tooling.
+- `.bootstrap.pw` ACLs were recreated using localized “Administrators” names instead of translating the Administrators SID, leaving room for locale regressions.
+
+### Decision
+
+- `SetupComplete.cmd` now calls `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English`, parses the `State :` line, and treats DISM/parse failures as `[ERROR]` with `FAILED=1` + `:track_rc`.
+- Capability removal only runs for known states (`Installed`, `Staged`); other states log explicit skip reasons rather than silently continuing.
+- Winlogon autologon switches are configured only if the `DefaultPassword` PowerShell call returns RC=0; on error the script logs `[ERROR]`, sets `FAILED=1`, and leaves autologon off.
+- `schtasks /Create \L2C\CreatePrimaryAdmin` always captures `%ERRORLEVEL%`, logs failures with `[ERROR]`, calls `:track_rc`, and sets `FAILED=1`.
+- Final RC policy: `SetupComplete.cmd` returns `L2C_FIRST_BAD_RC` if set; otherwise it returns `1` when `FAILED==1`, else `0`. Each path logs the specific `[RC] returning ...` line.
+- `BootstrapLocalAdmin.ps1` resolves the Administrators group via SID `S-1-5-32-544`, reuses the translated `NTAccount` for both `net localgroup` and ACLs, and replaces inherited ACLs on `.bootstrap.pw` with only SYSTEM + Administrators FullControl inside a guarded `try` block.
+- Stage B of `CreatePrimaryAdmin.ps1` now:
+  - Deletes `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword`, and resets `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount`.
+  - Logs `net user bootstrap /active:no` success or WARN with the exact RC.
+  - Logs WARN for non-zero RCs from `schtasks.exe /Delete` and still surfaces caught exceptions as WARN.
+  - Removes RunOnce entries via `Remove-ItemProperty -ErrorAction Stop`, logging WARN per entry on failure, and checks the defensive `reg.exe DELETE` RC (warns unless RC ∈ {0,2}).
+  - Tracks `.bootstrap.pw` cleanup in `pwCleanupState`, logging INFO for removal, WARN for missing files, and ERROR for exceptions, then records the state in the Stage B master log summary.
+
+### Consequences / Impact
+
+- Capability removal is locale-agnostic and reports failures through `[ERROR]` + non-zero exit codes, enabling CI/ops to detect servicing regressions.
+- `SetupComplete.cmd` now propagates the first failing RC or a generic FAILED fallback, so monitoring and deployment tooling can rely on exit codes instead of tailing logs.
+- Winlogon autologon now has an all-or-nothing contract: either the password write succeeds and autologon is primed, or autologon stays off with explicit error logging.
+- `.bootstrap.pw` is guaranteed to be ACLed with only SYSTEM and local Administrators; any deviation aborts bootstrap rather than silently weakening protections.
+- Stage B produces deterministic post-bootstrap state (Winlogon, RunOnce, scheduled tasks) and emits machine-readable entries for `.bootstrap.pw` cleanup, improving forensic and automation coverage.
+- Operators can treat WARN/ERROR patterns (missing password file, task delete RC, etc.) as actionable signals without guessing whether the cleanup actually ran.
+
+### Follow-ups / References
+
+- `SECURITY.md` documents `.bootstrap.pw` handling requirements and must be updated first if future changes relax ACL expectations.
+- `AGENTS.md` continues to enforce locale-agnostic DISM usage, RC policy, SID-based admin resolution, and strict `.bootstrap.pw` cleanup/logging for any future edits to these scripts.
