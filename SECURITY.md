@@ -114,8 +114,11 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 
 * While primed, Winlogon holds `DefaultPassword`; Stage B removes it and restores `DisableCAD=0` and `Ngc...=2`.
 * `.bootstrap.pw` is created by `BootstrapLocalAdmin.ps1` and is **not** logged or echoed.
-* ACL: SYSTEM/Admins only; Hidden+System; UTF-8 no BOM.
-* Risk window exists until Stage B completes. If unattended flow is interrupted, sign in as `bootstrap` and finish Stage B; then remove `.bootstrap.pw` if not needed.
+* ACL is enforced at creation: inheritance is disabled and the ACL is replaced with explicit FullControl for `NT AUTHORITY\SYSTEM` and the local Administrators group (resolved via SID `S-1-5-32-544`), plus Hidden+System attributes and UTF-8 (no BOM).
+* If ACL application fails, bootstrap aborts (Stage A fails closed) rather than proceeding with a weakened or inherited ACL.
+* Risk window exists until Stage B completes. Stage B always attempts to delete `.bootstrap.pw` and records the cleanup state (`removed`, `missing`, or `error`) in its master log summary. Retaining `.bootstrap.pw` beyond Stage B should be exceptional and done only with equivalent ACLs and an explicit operational procedure.
+* WARN/ERROR entries about `.bootstrap.pw` in Stage B logs are intentional signals; operators should treat them as triggers for manual review rather than noise.
+* Any relaxation of these `.bootstrap.pw` requirements (ACL shape, retention beyond Stage B, logging guarantees) must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
 
 ## Политики входа: временное ослабление и возврат
 
