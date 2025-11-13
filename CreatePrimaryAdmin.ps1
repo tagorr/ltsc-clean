@@ -202,6 +202,8 @@ if ($StageA_Succeeded) {
 
     Write-Verbose "Stage B: resetting Winlogon autologon state"
     $wl = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    Reg-Del $wl 'DefaultUserName'
+    Reg-Del $wl 'DefaultDomainName'
     Reg-Del $wl 'DefaultPassword'
     Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0'
     Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0'
@@ -215,8 +217,11 @@ if ($StageA_Succeeded) {
     Write-Verbose "Stage B: deactivating bootstrap account"
     & net.exe user bootstrap /active:no | Out-Null 2>$null
     $bootstrapRC = $LASTEXITCODE
-    if ($bootstrapRC -eq 0) { Write-SetupLog "bootstrap deactivated" }
-    else { if ($VerboseLog) { Write-SetupLog "bootstrap deactivate exitcode $bootstrapRC (ignored)" 'DEBUG' } }
+    if ($bootstrapRC -eq 0) {
+      Write-SetupLog "bootstrap deactivated"
+    } else {
+      Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
+    }
     $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
 
     Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
@@ -226,8 +231,8 @@ if ($StageA_Succeeded) {
       $taskDeleteRC = $LASTEXITCODE
       if ($taskDeleteRC -eq 0) {
         Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
-      } elseif ($VerboseLog) {
-        Write-SetupLog ("Scheduled task delete exitcode {0} (ignored)" -f $taskDeleteRC) 'DEBUG'
+      } elseif ($taskDeleteRC -ne 0) {
+        Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
       }
     } catch {
       Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
@@ -243,10 +248,18 @@ if ($StageA_Succeeded) {
         foreach ($n in ($props | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name)) {
           $v = (Get-ItemPropertyValue -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue) 2>$null
           if (($n -eq 'CreatePrimaryAdmin') -or ($v -is [string] -and $me -and ($v -match [regex]::Escape($me))) -or ($v -is [string] -and $v -match 'CreatePrimaryAdmin\.ps1')) {
-            try { Remove-ItemProperty -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue } catch {}
+            try {
+              Remove-ItemProperty -LiteralPath $ro -Name $n -ErrorAction Stop
+            } catch {
+              Write-SetupLog ("RunOnce entry '{0}' removal failed: {1}" -f $n, $_.Exception.Message) 'WARN'
+            }
           }
         }
         & reg.exe DELETE HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce /v CreatePrimaryAdmin /f | Out-Null 2>$null # Defensive sweep for stubborn values
+        $runOnceRc = $LASTEXITCODE
+        if ($runOnceRc -ne 0 -and $runOnceRc -ne 2) {
+          Write-SetupLog ("RunOnce reg delete rc={0}" -f $runOnceRc) 'WARN'
+        }
       }
       Write-SetupLog "RunOnce cleaned"
     } catch {
@@ -254,19 +267,26 @@ if ($StageA_Succeeded) {
     }
 
     # Stage B: remove transient password source file (best-effort)
+    $pwCleanupState = 'unknown'
     try {
       $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
       if (Test-Path -LiteralPath $pwPath) {
         Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
         Write-SetupLog "bootstrap.pw removed"
+        $pwCleanupState = 'removed'
       } else {
-        if ($VerboseLog) { Write-SetupLog "bootstrap.pw not found (ok)" 'DEBUG' }
+        Write-SetupLog "bootstrap.pw not found during Stage B cleanup" 'WARN'
+        $pwCleanupState = 'missing'
       }
     } catch {
-      Write-SetupLog ("bootstrap.pw delete warning: {0}" -f $_.Exception.Message) 'WARN'
+      Write-SetupLog ("bootstrap.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
+      $pwCleanupState = 'error'
     }
 
     $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
+    if ($pwCleanupState -ne 'unknown') {
+      $finalLogEntries += ("[{0}] bootstrap.pw cleanup state={1}" -f ([DateTime]::UtcNow.ToString('o')), $pwCleanupState)
+    }
 
 
     try {
