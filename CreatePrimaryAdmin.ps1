@@ -311,6 +311,12 @@ if ($StageA_Succeeded) {
       Write-SetupLog "Master log creation failed: $($_.Exception.Message)" 'WARN'
     }
 
+    $flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'
+    if (Test-Path -LiteralPath $flag) {
+      Write-SetupLog 'Reboot flag detected, initiating restart'
+      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
+    }
+
     Write-SetupLog "End B (SUCCESS)"
   }
   catch {
