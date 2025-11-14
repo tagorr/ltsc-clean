@@ -139,6 +139,17 @@ try {
     Write-Verbose "Stage A: RollbackOnly requested; marking as succeeded"
     $StageA_Succeeded = $true
   } else {
+    if (-not $PasswordPlain) {
+      $pwFile = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
+      if (Test-Path -LiteralPath $pwFile) {
+        $PasswordPlain = (Get-Content -LiteralPath $pwFile -Raw).Trim()
+      }
+    }
+    if (-not $PasswordPlain) {
+      Write-SetupLog 'Primary admin secret is missing (.bootstrap.pw not found or empty, and -PasswordPlain not provided). Aborting Stage A and skipping Stage B.' 'ERROR'
+      Write-Error 'Primary admin secret is missing (.bootstrap.pw not found or empty, and -PasswordPlain not provided). Aborting Stage A and skipping Stage B.'
+      exit 1
+    }
     $pwd = if ($PasswordPlain) { $PasswordPlain } else { New-StrongPassword 20 }
     if ($PasswordPlain) { if ($VerboseLog) { Write-SetupLog "Using explicit password via -PasswordPlain" 'DEBUG' } }
     else { if ($VerboseLog) { Write-SetupLog "Generated strong password (len $($pwd.Length), all classes present)" 'DEBUG' } }
