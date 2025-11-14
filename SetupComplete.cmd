@@ -322,16 +322,20 @@ if defined HAS_BOOTSTRAP_PW (
 )
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
-schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
-  /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
-  /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  call :track_rc %RC%
-  call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
-  set "FAILED=1"
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" (
+  schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
+    /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
+    /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :track_rc %RC%
+    call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
+    set "FAILED=1"
+  ) else (
+    call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
+  )
 ) else (
-  call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
+  call :log "[INFO] Recovery mode, skipping \L2C\CreatePrimaryAdmin registration (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%)."
 )
 
 REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin (only if task created) ===
