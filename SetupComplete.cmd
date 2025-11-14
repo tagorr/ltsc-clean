@@ -553,7 +553,7 @@ if not "%NEEDS_REBOOT%"=="1" (
 
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
-  reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "zz-SetupCompleteReboot" /t REG_SZ /d "%SystemRoot%\System32\shutdown.exe /r /t 5" /f >nul 2>&1
+  echo need-reboot>"%REBOOT_FLAG%"
 ) else (
 call :log "[INFO] No reboot required"
 )
@@ -624,5 +624,5 @@ if errorlevel 1 (
 )
 
 :flag_reboot
-2>nul (>>"%REBOOT_FLAG%" echo .)
+2>nul (echo need-reboot>"%REBOOT_FLAG%")
 exit /b 0
