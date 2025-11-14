@@ -14,6 +14,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $LogPath = Join-Path $env:WINDIR 'Panther\SetupComplete.log'
+$MasterLogPath = Join-Path $env:ProgramData ("l2c_master_{0:yyyyMMdd_HHmmss}.log" -f (Get-Date))
+try {
+  $MasterLogDir = Split-Path -Parent $MasterLogPath
+  if ($MasterLogDir -and -not (Test-Path -LiteralPath $MasterLogDir)) {
+    New-Item -ItemType Directory -Path $MasterLogDir -Force | Out-Null
+  }
+} catch {}
 
 function Write-SetupLog([string]$Message, [string]$Level = 'INFO') {
   try {
@@ -148,6 +155,8 @@ try {
     if (-not $PasswordPlain) {
       Write-SetupLog 'Primary admin secret is missing (.bootstrap.pw not found or empty, and -PasswordPlain not provided). Aborting Stage A and skipping Stage B.' 'ERROR'
       Write-Error 'Primary admin secret is missing (.bootstrap.pw not found or empty, and -PasswordPlain not provided). Aborting Stage A and skipping Stage B.'
+      Add-Content -LiteralPath $MasterLogPath -Encoding UTF8 -Value 'OUTCOME: ABORTED - primary admin secret missing'
+      Write-SetupLog 'OUTCOME: ABORTED - primary admin secret missing' 'ERROR'
       exit 1
     }
     $pwd = if ($PasswordPlain) { $PasswordPlain } else { New-StrongPassword 20 }
@@ -301,12 +310,10 @@ if ($StageA_Succeeded) {
 
 
     try {
-      $masterLogName = 'l2c_master_{0}.log' -f (Get-Date -Format 'yyyy-MM-dd_HHmmss')
-      $masterLogPath = Join-Path $env:ProgramData $masterLogName
       $finalLogEntries += ("[{0}] Stage B finalize end" -f ([DateTime]::UtcNow.ToString('o')))
       $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-      [System.IO.File]::WriteAllLines($masterLogPath, $finalLogEntries, $utf8NoBom)
-      Write-SetupLog ("Master log created: {0}" -f $masterLogPath)
+      [System.IO.File]::WriteAllLines($MasterLogPath, $finalLogEntries, $utf8NoBom)
+      Write-SetupLog ("Master log created: {0}" -f $MasterLogPath)
     } catch {
       Write-SetupLog "Master log creation failed: $($_.Exception.Message)" 'WARN'
     }
@@ -316,11 +323,14 @@ if ($StageA_Succeeded) {
       Write-SetupLog 'Reboot flag detected, initiating restart'
       & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
     }
-
+    Add-Content -LiteralPath $MasterLogPath -Encoding UTF8 -Value 'OUTCOME: SUCCESS'
+    Write-SetupLog 'OUTCOME: SUCCESS'
     Write-SetupLog "End B (SUCCESS)"
   }
   catch {
     Write-SetupLog ("End B (FAIL) - {0}" -f $_.Exception.Message) 'ERROR'
+    Add-Content -LiteralPath $MasterLogPath -Encoding UTF8 -Value ("OUTCOME: FAIL - {0}" -f $_.Exception.Message)
+    Write-SetupLog ("OUTCOME: FAIL - {0}" -f $_.Exception.Message) 'ERROR'
     if ($rc -eq 0) { $rc = 2 }
   }
 } else {
