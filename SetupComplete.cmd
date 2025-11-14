@@ -539,7 +539,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] Component cleanup failed (RC=%RC%)"
 )
 
-:: ------------ schedule reboot via RunOnce ------------
+:: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
   call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
   set "NEEDS_REBOOT=1"
