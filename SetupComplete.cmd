@@ -17,6 +17,7 @@ set "REBOOT_ON_RC=1"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
 set "FAILED=0"
+set "HAS_BOOTSTRAP_PW=0"
 set "L2C_FIRST_BAD_RC="
 call :log "----- SetupComplete started -----"
 
@@ -288,21 +289,29 @@ set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\N
 
 REM Источник пароля (создастся BootstrapLocalAdmin.ps1):
 set "PWFILE=%WINDIR%\Setup\Scripts\.bootstrap.pw"
-set "HAS_BOOTSTRAP_PW="
-
 if exist "%PWFILE%" (
-  for /f "usebackq delims=" %%P in ("%PWFILE%") do if not defined HAS_BOOTSTRAP_PW set "HAS_BOOTSTRAP_PW=1"
-) else (
-  call :log "[WARN] .bootstrap.pw not found; skipping Winlogon DefaultPassword"
+  for /f "usebackq delims=" %%P in ("%PWFILE%") do (
+    if not "%%~P"=="" set "HAS_BOOTSTRAP_PW=1" & goto :after_pw_check
+  )
+)
+:after_pw_check
+if not "%HAS_BOOTSTRAP_PW%"=="1" (
+  set "FAILED=1"
+  call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
 )
 
 REM Временные политики входа
-reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
-reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
-reg add "%WL%"  /v IgnoreShiftOverride          /t REG_SZ    /d 0 /f >nul 2>&1
+if "%HAS_BOOTSTRAP_PW%"=="1" (
+  rem Temp logon relax, only if secret present
+  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
+  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+) else (
+  call :log "[INFO] Skipping temp logon tweaks (no .bootstrap.pw)."
+)
+reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
 
 REM Автологон только если известен пароль bootstrap
-if defined HAS_BOOTSTRAP_PW (
+if "%HAS_BOOTSTRAP_PW%"=="1" (
   reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
   reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
@@ -322,16 +331,20 @@ if defined HAS_BOOTSTRAP_PW (
 )
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
-schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
-  /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
-  /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  call :track_rc %RC%
-  call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
-  set "FAILED=1"
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" (
+  schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
+    /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
+    /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :track_rc %RC%
+    call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
+    set "FAILED=1"
+  ) else (
+    call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
+  )
 ) else (
-  call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
+  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%)."
 )
 
 REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin (only if task created) ===
@@ -531,7 +544,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] Component cleanup failed (RC=%RC%)"
 )
 
-:: ------------ schedule reboot via RunOnce ------------
+:: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
   call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
   set "NEEDS_REBOOT=1"
@@ -549,7 +562,7 @@ if not "%NEEDS_REBOOT%"=="1" (
 
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
-  reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v "zz-SetupCompleteReboot" /t REG_SZ /d "%SystemRoot%\System32\shutdown.exe /r /t 5" /f >nul 2>&1
+  echo need-reboot>"%REBOOT_FLAG%"
 ) else (
 call :log "[INFO] No reboot required"
 )
@@ -559,6 +572,9 @@ if defined L2C_FIRST_BAD_RC (
   exit /b %L2C_FIRST_BAD_RC%
 )
 if "%FAILED%"=="1" (
+  rem Revert temp logon tweaks on abort
+  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
   echo [RC] returning 1 (FAILED fallback)>>"%LOG%"
   exit /b 1
 )
@@ -620,5 +636,5 @@ if errorlevel 1 (
 )
 
 :flag_reboot
-2>nul (>>"%REBOOT_FLAG%" echo .)
+2>nul (echo need-reboot>"%REBOOT_FLAG%")
 exit /b 0
