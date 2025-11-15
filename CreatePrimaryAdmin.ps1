@@ -6,7 +6,6 @@ param(
   [string]$PasswordPlain = '',
   [switch]$PasswordNeverExpires,
   [switch]$AddToRemoteDesktopUsers,
-  [switch]$Reboot,
   [switch]$RollbackOnly,
   [switch]$VerboseLog
 )
@@ -24,9 +23,56 @@ try {
 
 function Write-SetupLog([string]$Message, [string]$Level = 'INFO') {
   try {
-    $ts = [DateTime]::UtcNow.ToString('o')
-    Add-Content -LiteralPath $LogPath -Value "[$ts] [CreatePrimaryAdmin] $Level $Message" -Encoding UTF8 -ErrorAction SilentlyContinue
+    $ts   = [DateTime]::UtcNow.ToString('o')
+    $line = "[{0}] [CreatePrimaryAdmin] {1} {2}" -f $ts, $Level, $Message
+
+    # Ensure directory exists (best-effort, silent)
+    try {
+      $dir = Split-Path -Parent $LogPath
+      if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        [void][System.IO.Directory]::CreateDirectory($dir)
+      }
+    } catch {}
+
+    $enc = New-Object System.Text.UTF8Encoding($false)  # UTF-8 without BOM
+    $sw  = New-Object System.IO.StreamWriter($LogPath, $true, $enc)  # append
+    try {
+      $sw.WriteLine($line)
+    } finally {
+      $sw.Dispose()
+    }
   } catch {}
+}
+
+function Resolve-LocalGroupName {
+  param(
+    [Parameter(Mandatory = $true)][string]$Sid,
+    [Parameter(Mandatory = $true)][string]$Label
+  )
+  try {
+    $val = ([System.Security.Principal.SecurityIdentifier]$Sid).Translate([System.Security.Principal.NTAccount]).Value
+    return ($val -split '\\')[-1]
+  } catch {
+    throw "Unable to resolve $Label ($Sid): $($_.Exception.Message)"
+  }
+}
+
+try {
+  $script:AdministratorsGroupName = Resolve-LocalGroupName -Sid 'S-1-5-32-544' -Label 'Administrators'
+} catch {
+  $script:AdministratorsGroupName = 'Administrators'
+  Write-SetupLog ("Fallback to literal Administrators: {0}" -f $_.Exception.Message) 'WARN'
+}
+try {
+  $script:RemoteDesktopGroupName  = Resolve-LocalGroupName -Sid 'S-1-5-32-555' -Label 'Remote Desktop Users'
+} catch {
+  $script:RemoteDesktopGroupName = 'Remote Desktop Users'
+  Write-SetupLog ("Fallback to literal Remote Desktop Users: {0}" -f $_.Exception.Message) 'WARN'
+}
+
+if ($VerboseLog) {
+  Write-SetupLog ("Resolved Administrators -> {0}" -f $script:AdministratorsGroupName) 'DEBUG'
+  Write-SetupLog ("Resolved Remote Desktop Users -> {0}" -f $script:RemoteDesktopGroupName) 'DEBUG'
 }
 
 function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data) {
@@ -63,7 +109,7 @@ function New-StrongPassword([int]$Length = 20) {
   $upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".ToCharArray()
   $lower = "abcdefghijklmnopqrstuvwxyz".ToCharArray()
   $digits = "0123456789".ToCharArray()
-  $sym   = "!@#$%^&*-_=+".ToCharArray()
+  $sym   = "!@#$^*-_=+".ToCharArray()
   $all = ($upper + $lower + $digits + $sym)
   $bytes = New-Object byte[] ($Length)
   Invoke-RngFill $bytes
@@ -84,14 +130,14 @@ function Get-LocalUserExists([string]$User) {
   return ($LASTEXITCODE -eq 0)
 }
 function Ensure-InAdministrators([string]$User) {
-  & net.exe localgroup Administrators "$User" /add | Out-Null 2>$null
+  & net.exe localgroup "$script:AdministratorsGroupName" "$User" /add | Out-Null 2>$null
   $code = $LASTEXITCODE
   if ($code -eq 0) {
-    Write-SetupLog "Added $User to Administrators"
+    Write-SetupLog ("Added {0} to {1}" -f $User,$script:AdministratorsGroupName)
   } elseif ($code -eq 1378) {
-    Write-SetupLog "$User already in Administrators" 'DEBUG'
+    Write-SetupLog ("{0} already in {1}" -f $User,$script:AdministratorsGroupName) 'DEBUG'
   } else {
-    throw "net localgroup Administrators exitcode $code"
+    throw ("net localgroup {0} exitcode {1}" -f $script:AdministratorsGroupName,$code)
   }
   return $code
 }
@@ -99,7 +145,7 @@ function Ensure-InGroup([string]$Group, [string]$User) {
   & net.exe localgroup "$Group" "$User" /add | Out-Null 2>$null
   $code = $LASTEXITCODE
   if ($code -eq 0 -or $code -eq 1378) {
-    Write-SetupLog "Ensured $User in '$Group'"
+    Write-SetupLog ("Ensured {0} in {1}" -f $User,$Group)
   } else {
     throw "net localgroup '$Group' exitcode $code"
   }
@@ -124,13 +170,13 @@ function Set-UserAdsi([string]$User, [string]$FullName, [string]$Description, [s
 
 function Test-AdministratorsMembership([string]$User) {
   try {
-    $group = [ADSI]("WinNT://$env:COMPUTERNAME/Administrators,group")
+    $group = [ADSI]("WinNT://$env:COMPUTERNAME/$script:AdministratorsGroupName,group")
     foreach ($member in @($group.psbase.Invoke('Members'))) {
       $name = $member.GetType().InvokeMember('Name','GetProperty',$null,$member,$null)
       if ($name -and ($name -ieq $User)) { return $true }
     }
   } catch {
-    Write-SetupLog "ADSI membership check failed for Administrators: $($_.Exception.Message)" 'WARN'
+    Write-SetupLog ("ADSI membership check failed for {0}: {1}" -f $script:AdministratorsGroupName,$_.Exception.Message) 'WARN'
   }
   return $false
 }
@@ -158,9 +204,8 @@ try {
       $StageAAbortReason = 'primary admin secret missing (.bootstrap.pw not found or empty, and -PasswordPlain not provided)'
       throw [System.InvalidOperationException]::new($StageAAbortReason)
     }
-    $pwd = if ($PasswordPlain) { $PasswordPlain } else { New-StrongPassword 20 }
-    if ($PasswordPlain) { if ($VerboseLog) { Write-SetupLog "Using explicit password via -PasswordPlain" 'DEBUG' } }
-    else { if ($VerboseLog) { Write-SetupLog "Generated strong password (len $($pwd.Length), all classes present)" 'DEBUG' } }
+    $pwd = $PasswordPlain
+    if ($VerboseLog) { Write-SetupLog "Using explicit password via -PasswordPlain" 'DEBUG' }
 
     Write-Verbose "Stage A: checking if $PrimaryUser exists"
     $exists = Get-LocalUserExists $PrimaryUser
@@ -191,14 +236,14 @@ try {
     if ($isAdminMember) {
       Write-SetupLog "A: SKIP (already member)"
     } else {
-      Write-Verbose "Stage A: adding $PrimaryUser to Administrators"
+      Write-Verbose ("Stage A: adding {0} to {1}" -f $PrimaryUser,$script:AdministratorsGroupName)
       $addCode = Ensure-InAdministrators $PrimaryUser
       if ($addCode -eq 1378) {
         Write-SetupLog "A: SKIP (already member)"
       }
     }
 
-    if ($AddToRemoteDesktopUsers) { Ensure-InGroup 'Remote Desktop Users' $PrimaryUser }
+    if ($AddToRemoteDesktopUsers) { Ensure-InGroup $script:RemoteDesktopGroupName $PrimaryUser }
     $StageA_Succeeded = $true
     $StageA_RC = 0
   }
@@ -238,7 +283,12 @@ try {
   Reg-Del $wl 'IgnoreShiftOverride'
   Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0'
   Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
-  Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
+  if ($isRecovery) {
+    Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '0'
+    Write-SetupLog 'Recovery mode: forcing DevicePasswordLessBuildVersion=0 for troubleshooting' 'WARN'
+  } else {
+    Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
+  }
   $finalLogEntries += ("[{0}] Winlogon and logon policies reset" -f ([DateTime]::UtcNow.ToString('o')))
 
   if (-not $isRecovery) {
@@ -298,20 +348,26 @@ try {
   }
 
   # Stage B: remove transient password source file (best-effort)
-  $pwCleanupState = 'unknown'
-  try {
-    $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
-    if (Test-Path -LiteralPath $pwPath) {
-      Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
-      Write-SetupLog "bootstrap.pw removed"
-      $pwCleanupState = 'removed'
-    } else {
-      Write-SetupLog "bootstrap.pw not found during Stage B cleanup" 'WARN'
-      $pwCleanupState = 'missing'
+  $pwCleanupState = 'skipped'
+  if (-not $isRecovery) {
+    $pwCleanupState = 'unknown'
+    try {
+      $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
+      if (Test-Path -LiteralPath $pwPath) {
+        Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
+        Write-SetupLog "bootstrap.pw removed"
+        $pwCleanupState = 'removed'
+      } else {
+        Write-SetupLog "bootstrap.pw not found during Stage B cleanup" 'WARN'
+        $pwCleanupState = 'missing'
+      }
+    } catch {
+      Write-SetupLog ("bootstrap.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
+      $pwCleanupState = 'error'
     }
-  } catch {
-    Write-SetupLog ("bootstrap.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
-    $pwCleanupState = 'error'
+  } else {
+    Write-SetupLog 'Recovery mode: preserving bootstrap.pw for another Stage A attempt' 'WARN'
+    $pwCleanupState = 'preserved'
   }
 
   $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
@@ -358,18 +414,18 @@ catch {
 
 $flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'
 if (Test-Path -LiteralPath $flag) {
+  # Reboot handling: (recovery path) clear flag, do NOT reboot
   if ($isRecovery) {
     Write-SetupLog 'Reboot flag present, recovery mode, not rebooting to allow operator fix' 'WARN'
+    Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+    Write-SetupLog 'Recovery mode: cleared _needs_reboot.flag without reboot; manual intervention required' 'WARN'
   } else {
+    # Reboot handling: (normal path) clear flag, then reboot
     Write-SetupLog 'Reboot flag detected, initiating restart'
+    Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
     & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
+    exit $rc
   }
-  Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
 }
 
-if ($Reboot) {
-  Write-SetupLog "Reboot requested"
-  Start-Process -FilePath 'shutdown.exe' -ArgumentList @('/r','/t','0') -WindowStyle Hidden
-}
 exit $rc
-
