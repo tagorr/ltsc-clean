@@ -301,9 +301,14 @@ if not "%HAS_BOOTSTRAP_PW%"=="1" (
 )
 
 REM Временные политики входа
-reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
-reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
-reg add "%WL%"  /v IgnoreShiftOverride          /t REG_SZ    /d 0 /f >nul 2>&1
+if "%HAS_BOOTSTRAP_PW%"=="1" (
+  rem Temp logon relax, only if secret present
+  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
+  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+) else (
+  call :log "[INFO] Skipping temp logon tweaks (no .bootstrap.pw)."
+)
+reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
 
 REM Автологон только если известен пароль bootstrap
 if "%HAS_BOOTSTRAP_PW%"=="1" (
@@ -567,6 +572,9 @@ if defined L2C_FIRST_BAD_RC (
   exit /b %L2C_FIRST_BAD_RC%
 )
 if "%FAILED%"=="1" (
+  rem Revert temp logon tweaks on abort
+  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
   echo [RC] returning 1 (FAILED fallback)>>"%LOG%"
   exit /b 1
 )
