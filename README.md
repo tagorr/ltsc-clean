@@ -44,7 +44,7 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 
   ```text
   \sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd
-````
+  ```
 
 * Runtime logs:
 
