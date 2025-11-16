@@ -8,7 +8,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 * Target: Windows 10 Enterprise LTSC 2021 workstations (21H2, EnterpriseS, build 19044+).
 * Environment: standalone or simple networks without corporate integration or automatic proxy discovery requirements.
-* Philosophy: official tools only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks, RunOnce), deterministic and idempotent behavior, no reboots inside SetupComplete.
+* Philosophy: official tools only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks; RunOnce is used only for optional diagnostic helpers), deterministic and idempotent behavior, no reboots inside SetupComplete.
 
 ## Intentional trade-offs
 
@@ -39,7 +39,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ## Operational notes
 
 * The baseline is designed to be idempotent. Re-running the post-install script should not introduce drift.
-* Stage B rollback (Winlogon cleanup, RunOnce removal, bootstrap disable) runs only after Stage A succeeds, reducing lockout risk if account provisioning fails.
+* Stage B rollback (Winlogon cleanup, removal of any lab RunOnce helpers, bootstrap disable in normal mode) runs only after Stage A succeeds, reducing lockout risk if account provisioning fails.
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
 * **Temporary debug note:** если для диагностики временно заменяли `utilman.exe` на `cmd.exe`, восстановите оригинальный `utilman.exe` сразу после тестов, чтобы исключить эскалацию с экрана входа.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
@@ -54,10 +54,10 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 * This project is provided under the MIT License, without warranty. Review and adapt the baseline to your risk profile before production use.
 
-### Дополнительные уточнения
+### Additional clarifications
 
-* UAC остаётся включён (не понижается).
-* Никаких перезагрузок из SetupComplete; ребут планируется через RunOnce при RC 3010/1641 или флаге `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
+* UAC remains enabled (it is not lowered).
+* `SetupComplete.cmd` never calls `shutdown.exe` and never schedules a reboot via RunOnce. When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits. The actual reboot is performed only by Stage B `CreatePrimaryAdmin.ps1` after the first interactive logon in the **normal** path; in the **recovery** path Stage B merely logs and deletes the flag without rebooting.
 
 ## Compatibility controls & safety
 
@@ -65,8 +65,16 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 `STRICT_DISPLAYVERSION=0` позволяет продолжить выполнение на близких версиях Windows.
 Это сознательный компромисс переносимости. Риски: часть шагов может не примениться или примениться иначе
-из‑за изменений в компонентной базе. Для продакшн‑сценариев в неконтролируемых окружениях рекомендуем
+из-за изменений в компонентной базе. Для продакшн-сценариев в неконтролируемых окружениях рекомендуем
 включать `STRICT_DISPLAYVERSION=1` и фиксировать `REQUIRED_*` под целевой выпуск.
+
+### Controlled reboot (Panther flag)
+
+* `SetupComplete.cmd` never calls `shutdown.exe` and never plans a reboot via RunOnce.
+* When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits.
+* Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads the Panther flag after the first interactive logon, logs the reboot requirement, deletes the flag and, in the **normal** path, performs a single controlled `shutdown.exe /r /t 0`.
+* In the **recovery** path Stage B logs and deletes the Panther flag without rebooting.
+* Any new `shutdown.exe` invocations or RunOnce-based reboot logic must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
 
 ## Logs
 
@@ -113,6 +121,7 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 ## Temporary autologon & secret handling
 
 * While primed, Winlogon holds `DefaultPassword`; Stage B removes it and restores `DisableCAD=0` and `Ngc...=2`.
+* Winlogon autologon follows an all-or-nothing model: `SetupComplete.cmd` first writes `DefaultPassword` via PowerShell / `reg.exe`, checks the return code, and only if it is `0` enables `AutoAdminLogon` and `ForceAutoLogon`. On any error, autologon remains disabled, an `[ERROR]` entry is written to the log, and the pipeline falls back to the recovery path instead of leaving a half-primed autologon.
 * `.bootstrap.pw` is created by `BootstrapLocalAdmin.ps1` and is **not** logged or echoed.
 * ACL is enforced at creation: inheritance is disabled and the ACL is replaced with explicit FullControl for `NT AUTHORITY\SYSTEM` and the local Administrators group (resolved via SID `S-1-5-32-544`), plus Hidden+System attributes and UTF-8 (no BOM).
 * If ACL application fails, bootstrap aborts (Stage A fails closed) rather than proceeding with a weakened or inherited ACL.
@@ -129,3 +138,11 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 - `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.
 
 Гарантия возврата обеспечивается идемпотентной логикой `CreatePrimaryAdmin.ps1`.
+
+In the normal Stage B path:
+
+* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` is deleted, and, if the Panther flag is present, it is logged, deleted and a single controlled reboot is issued via `shutdown.exe /r /t 0`.
+
+In the recovery Stage B path:
+
+* `DevicePasswordLessBuildVersion` remains `0`, the `bootstrap` account and the `\L2C\CreatePrimaryAdmin` task stay enabled for diagnostics, and, if the Panther flag is present, it is only logged and deleted without rebooting.
