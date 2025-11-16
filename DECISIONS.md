@@ -33,15 +33,15 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 - **Related:** см. “Idempotent Stage A; guard Stage B” про идемпотентность Stage A и защиту Stage B.
 
-## 2A. Переезд сервисинга из XML в SetupComplete
+## 2A. Move servicing from XML into SetupComplete
 
 - **Constraint (SKU):** Target **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs. Reason: `AllowTelemetry=0` (Security level) is supported on Enterprise.
 
-**Решение.** Все операции DISM, политики (IE/Edge, DO, телеметрия, OneDrive и т.п.) выполняются в `SetupComplete.cmd`. В `autounattend.xml` остаются только базовые фазы (`windowsPE`, `generalize`, `specialize`, `oobeSystem`), без `FirstLogonCommands`.
+**Decision.** All DISM operations and policies (IE/Edge, Delivery Optimization, telemetry, OneDrive, etc.) run in `SetupComplete.cmd`. The `autounattend.xml` stays minimal (`windowsPE`, `generalize`, `specialize`, `oobeSystem` only), with no `FirstLogonCommands`.
 
-**Мотивация.** Предсказуемость фаз, единая точка логирования, отсутствие гонок во время OOBE, идемпотентность. Перезагрузка не делается внутри SetupComplete, а планируется через RunOnce.
+**Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the “Panther flag”).
 
-**Ограничения.** `SetupComplete.cmd` не вызывает `shutdown`. Перезагрузка возможна только через `RunOnce` при RC 3010/1641 или флаге `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
+**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe` and must not create RunOnce entries for shutdown. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`.
 
 ---
 
@@ -49,7 +49,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * `autounattend.xml`: без `FirstLogonCommands`, без `RunSynchronous`, без `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`. Локали en-US на WinPE и oobeSystem.
 
-* `SetupComplete.cmd`: весь пост-инсталл, DISM/политики/службы/задачи, подробное логирование, платформа-гейт на LTSC 2021, идемпотентность, запись RunOnce на единственный ребут.
+* `SetupComplete.cmd`: all post install work (DISM, policies, services, tasks), detailed logging, a platform gate for LTSC 2021, idempotent behavior, and, when required, computation of `NEEDS_REBOOT` and writing the Panther flag.
 
 ---
 
@@ -77,7 +77,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 | Delivery Optimization | Разные места | SetupComplete           | Политики DO (Mode 0) |
 
-| RunOnce на ребут      | —            | SetupComplete           |`HKLM\...\RunOnce` + `shutdown /r` (условно при RC 3010/1641 или флаге ALWAYS_REBOOT_AFTER_FIRST_LOGON=1)|
+| `Panther flag` reboot signal | —            | SetupComplete           |`%REBOOT_FLAG%` → `Panther flag` (conditionally when servicing RC is `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; Stage B of `CreatePrimaryAdmin.ps1` consumes the flag)|
 
 ---
 
@@ -101,7 +101,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * Скрипты идемпотентны, повторный запуск безопасен.
 
-* В `SetupComplete.cmd` запрещены прямые перезагрузки.
+* `SetupComplete.cmd` never performs a direct reboot and never calls `shutdown.exe`; it only decides whether a reboot is required and signals that via the Panther flag.
 
 ## 1. Objectives and principles
 
@@ -113,7 +113,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * Deterministic and idempotent execution. Safe to re-run without harmful side effects.
 
-* No reboots inside SetupComplete. A single reboot may be scheduled via RunOnce only when servicing returned 3010/1641 or when ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 is set.
+* No reboots occur inside SetupComplete. A single reboot only happens when the `Panther flag` is present (servicing RC `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`). Stage B of `CreatePrimaryAdmin.ps1` is the only unattended component that consumes the `Panther flag` and calls `shutdown.exe`, and it must respect recovery mode (no automatic reboot when running in recovery).
 
 ---
 
@@ -125,9 +125,9 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 3. All post-install configuration runs once, with detailed logging and guarded checks.
 
-4. Post-install configuration completes. A reboot is scheduled via RunOnce **only** when servicing returned `3010/1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set.
+4. Post-install configuration completes. `SetupComplete.cmd` writes the `Panther flag` only when servicing returned `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; in all other cases the flag is not created and no reboot is requested.
 
-5. First interactive sign-in happens. If a RunOnce reboot was scheduled, it occurs immediately after the first sign-in; otherwise the system remains logged in without an automatic reboot.
+5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1` (Stage A and Stage B). In normal mode, Stage B performs its cleanup, checks for the `Panther flag`, logs the requirement, calls `shutdown.exe /r /t 0`, and removes the flag. In recovery mode, Stage B still performs cleanup but, if the flag exists, it only logs and deletes it without reboot; if the flag is absent, the system remains logged in without an automatic restart.
 
 ## 3. File layout and key paths
 
@@ -427,7 +427,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * **`/ResetBase`** permanently removes superseded component versions — rollback of previously installed updates becomes impossible; future updates install normally.
 
-* **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, set `NEEDS_REBOOT=1` and schedule a RunOnce `shutdown /r` to occur after the first interactive logon. Optional “always reboot after first logon” is off by default and can be enabled via `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
+* **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, set `NEEDS_REBOOT=1` and write the Panther flag so that Stage B of `CreatePrimaryAdmin.ps1` can consume it after the first interactive logon. The optional “always reboot after first logon” behavior is disabled by default and can be enabled via `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
 
 ## 7. What we explicitly do not do
 
@@ -475,7 +475,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Quick Assist, SNMP Client, and WMI SNMP Provider capabilities are removed or reported not applicable with correct DISM codes.
 
-* Component cleanup executed. Reboot happened only once via RunOnce.
+* Component cleanup executed. When required, the reboot was executed once by Stage B after consuming the Panther flag.
 
 ---
 
