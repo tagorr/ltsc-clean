@@ -25,8 +25,9 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 - `DECISIONS.md` - design decisions and rationale
 - `BACKGROUND.md` - archived notes and history
 - `SECURITY.md` - security trade-offs and risk model
-- `AGENTS.md` - interaction contracts and agent roles
-- `AUDIT_CHECKLIST.md` - baseline audit checklist
+- `AGENTS.md` - high-level interaction contracts and agent roles (ChatGPT, Codex CLI, Owner)
+- `docs/INTERACTION_CONTRACT.md` - Codex CLI interaction contract (shell choice, quoting rules, safety guardrails)
+- `docs/AUDIT_CHECKLIST.md` - end-to-end audit checklist for scripts and documentation
 - `CONTRIBUTING.md` - PR rules, PowerShell style, and EOL requirements
 - `LICENSE` - MIT
 
@@ -222,7 +223,7 @@ The file is sensitive. In the normal unattended flow Stage B deletes it on succe
 * DISM capability removals reported success or not applicable.
 * `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: Success` entry for the normal path, or a clearly marked `OUTCOME: Recovery` entry when diagnostics are required.
 
-For the full verification list, see `DECISIONS.md` §9 and `AUDIT_CHECKLIST.md`.
+For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST.md` (end-to-end audit checklist for scripts and documentation).
 
 ## Troubleshooting: Autologon, master, cleanup
 
@@ -372,7 +373,7 @@ See `CONTRIBUTING.md` for PR rules, PowerShell 5.1 style, and EOL requirements.
 
 ## Decisions (ADR)
 
-See `DECISIONS.md` for the rationale behind key choices.
+See `DECISIONS.md` for the rationale behind key choices. For a structured, end-to-end verification of this baseline, use `docs/AUDIT_CHECKLIST.md` as the canonical audit checklist (Codex CLI uses it as the minimum bar for a full audit).
 
 ## Project PowerShell and CLI rules
 
@@ -476,6 +477,8 @@ Alternative when quoting is painful: use `-EncodedCommand` with UTF-8 encoded Po
     Do not reboot inside `SetupComplete.cmd`; `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag`, and Stage B in `CreatePrimaryAdmin.ps1` performs a single controlled reboot after the first logon in the normal path.
 
 For `DISM` and `reg.exe`, log return codes; treat `3010` as a deferred reboot, not as an error.
+
+For detailed Codex CLI invocation and quoting rules, see `docs/INTERACTION_CONTRACT.md` together with `AGENTS.md`.
 
 ## Playbooks (insertable blocks)
 

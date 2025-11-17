@@ -1,0 +1,421 @@
+## LTSC-CQ audit checklist (scripts + documentation)
+
+### 1. Repository-wide invariants
+
+* [ ] All PowerShell scripts (`*.ps1`) use:
+
+  * [ ] UTF-8 encoding without BOM.
+  * [ ] CRLF line endings.
+* [ ] All CMD scripts (`*.cmd`, `*.bat`) use:
+
+  * [ ] ANSI or UTF-8 without BOM (within CI constraints).
+  * [ ] CRLF line endings.
+* [ ] All Markdown documentation (`*.md`) uses:
+
+  * [ ] UTF-8 encoding without BOM.
+  * [ ] LF line endings.
+* [ ] Each file satisfies:
+
+  * [ ] No strange control characters, null bytes, or non-standard spaces in critical places.
+  * [ ] No mixed EOLs inside a single file.
+* [ ] All scripts pass syntax validation:
+
+  * [ ] PowerShell: `Set-StrictMode -Version Latest`, no syntax errors.
+  * [ ] CMD: no unclosed quotes, correct structure of `(` `)` blocks.
+
+---
+
+### 2. `.bootstrap.pw` lifecycle (bootstrap secret)
+
+* [ ] Documentation (README, DECISIONS, AGENTS, SECURITY) describes:
+
+  * [ ] Where exactly `.bootstrap.pw` is created.
+  * [ ] Who reads it and when.
+  * [ ] At which point it must be deleted.
+* [ ] In `BootstrapLocalAdmin.ps1`:
+
+  * [ ] `.bootstrap.pw` is created at the expected path (`%WINDIR%\Setup\Scripts\.bootstrap.pw`).
+  * [ ] Content is not empty, there are no extra spaces or trailing newlines, or `.Trim()` is explicitly applied.
+  * [ ] File ACL is restricted (SYSTEM + Administrators) as described in SECURITY.md.
+* [ ] In `SetupComplete.cmd`:
+
+  * [ ] There is a check for the existence of `.bootstrap.pw`.
+  * [ ] There is a check that the file is not empty (at least one non-empty line).
+  * [ ] If it is missing or empty:
+
+    * [ ] An error is logged, not just a warning.
+    * [ ] A failure flag is set (for example `FAILED=1`).
+    * [ ] Stage B registration (CreatePrimaryAdmin task) is blocked.
+* [ ] In `CreatePrimaryAdmin.ps1`:
+
+  * [ ] The secret is read either from the `-PasswordPlain` parameter or from `.bootstrap.pw`.
+  * [ ] Behavior is defined for:
+
+    * [ ] Missing file.
+    * [ ] Empty file.
+    * [ ] Read errors (ACL, IO).
+  * [ ] In case of secret-related problems:
+
+    * [ ] A clear `StageAAbortReason` is set.
+    * [ ] Stage A does not attempt to create or modify the user with an invalid password.
+    * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
+
+---
+
+### 3. PreOOBE / BootstrapLocalAdmin (Stage 0)
+
+* [ ] `PreOOBE.cmd`:
+
+  * [ ] Launches `BootstrapLocalAdmin.ps1` in the expected way.
+  * [ ] Does not modify Winlogon, RunOnce, or logon policies if this is forbidden by design.
+* [ ] `BootstrapLocalAdmin.ps1`:
+
+  * [ ] Creates a temporary `bootstrap` account with minimal required rights where applicable.
+  * [ ] Sets or updates the password using only expected commands (PowerShell or `net.exe`).
+  * [ ] Marks `bootstrap` as active (`/active:yes`) if required by the scenario.
+  * [ ] Logs key steps to a clear log (Panther or a separate log, according to documentation).
+  * [ ] Does not leave extra handlers or resources (including RunOnce entries or tasks that are not described in the design).
+
+---
+
+### 4. SetupComplete.cmd (servicing + gateway stage)
+
+#### 4.1. General structure and flags
+
+* [ ] Flags and helper variables are initialized at the top:
+
+  * [ ] `ALWAYS_REBOOT_AFTER_FIRST_LOGON` (manual reboot after first logon).
+  * [ ] `NEEDS_REBOOT` (whether a post-install reboot is required).
+  * [ ] `FAILED` (SetupComplete failure).
+  * [ ] `HAS_BOOTSTRAP_PW` (valid `.bootstrap.pw`).
+  * [ ] `L2C_FIRST_BAD_RC` (first non-success servicing RC).
+  * [ ] `REBOOT_FLAG` (path to the Panther flag `%WINDIR%\Panther\_needs_reboot.flag`).
+* [ ] All servicing return code (RC) handling:
+
+  * [ ] Uses a single tracking path via `L2C_FIRST_BAD_RC`.
+  * [ ] Does not lose the first non-success RC.
+* [ ] Start and end logging:
+
+  * [ ] `----- SetupComplete started -----`.
+  * [ ] A clear final entry indicating success or failure.
+
+#### 4.2. `.bootstrap.pw` check and Stage B gate
+
+* [ ] File check:
+
+  * [ ] `if exist "%PWFILE%" (...)`.
+  * [ ] Inside the loop, non-empty lines are checked.
+* [ ] If a valid secret is present:
+
+  * [ ] `HAS_BOOTSTRAP_PW` is set to `"1"`.
+* [ ] If missing or empty:
+
+  * [ ] `HAS_BOOTSTRAP_PW` remains `"0"` or equivalent.
+  * [ ] `FAILED=1`.
+  * [ ] Log contains `[ERROR] .bootstrap.pw missing or empty; ...`.
+* [ ] Winlogon autologon to `bootstrap`:
+
+  * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"`.
+  * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
+  * [ ] If writing the password fails, autologon remains disabled, an `[ERROR]` is logged, `FAILED=1` is set, and Stage B is not registered.
+
+#### 4.3. CreatePrimaryAdmin task registration (Stage B)
+
+* [ ] Creation of the `\L2C\CreatePrimaryAdmin` task:
+
+  * [ ] Happens only when `FAILED==0` and `HAS_BOOTSTRAP_PW==1`.
+  * [ ] Task parameters: SYSTEM, Highest, OnLogon, path to `CreatePrimaryAdmin.ps1`.
+* [ ] On `schtasks /Create` error:
+
+  * [ ] RC is tracked via `track_rc`.
+  * [ ] `[ERROR] Failed to create scheduled task ...` is logged.
+  * [ ] `FAILED=1` is set.
+* [ ] In the blocked branch:
+
+  * [ ] The log records that Stage B registration was skipped, with explicit `FAILED` and `HAS_BOOTSTRAP_PW` values.
+
+#### 4.4. Reboot flow (Panther flag, no RunOnce)
+
+* [ ] All code that used to write `shutdown.exe` into RunOnce has been removed.
+* [ ] When `ALWAYS_REBOOT_AFTER_FIRST_LOGON==1`:
+
+  * [ ] `NEEDS_REBOOT=1` is set.
+  * [ ] Only `call :flag_reboot` is invoked.
+* [ ] In the central RC handling:
+
+  * [ ] When RC ∈ {3010, 1641}, `NEEDS_REBOOT=1` is set.
+* [ ] When `NEEDS_REBOOT==1`:
+
+  * [ ] `[INFO] Reboot required` is logged.
+  * [ ] `:flag_reboot` creates `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) with predictable content (for example `need-reboot`).
+* [ ] There are no `shutdown.exe` calls inside `SetupComplete.cmd`.
+
+---
+
+### 5. CreatePrimaryAdmin.ps1 (Stage A: primary admin creation)
+
+#### 5.1. Initialization and logging
+
+* [ ] At the top:
+
+  * [ ] `Set-StrictMode`, `$ErrorActionPreference = 'Stop'`.
+  * [ ] `$LogPath` and `$MasterLogPath` are defined.
+  * [ ] The directory for `$MasterLogPath` is created up front (Try/Catch, fails quietly on error).
+* [ ] Logical initialization:
+
+  * [ ] `$rc = 0`, `$StageA_Succeeded = $false`, `$StageA_RC = 0`, `$StageAAbortReason = $null`.
+  * [ ] Log entry `"Begin A: Primary admin creation/config"` is written.
+
+#### 5.2. Parameter handling and password source
+
+* [ ] If `-RollbackOnly` is specified:
+
+  * [ ] Stage A is skipped but considered successful.
+  * [ ] `$StageA_Succeeded = $true`, `$StageA_RC = 0`.
+* [ ] If `-PasswordPlain` is not specified:
+
+  * [ ] Attempts to read `.bootstrap.pw` (`Get-Content -Raw`, `.Trim()`).
+* [ ] If the secret is missing or empty:
+
+  * [ ] `$StageAAbortReason` is set to a clear description.
+  * [ ] A controlled exception is thrown (`throw`), not `exit`.
+* [ ] Any password generation paths (if still present) do not contradict the concept:
+
+  * [ ] Either generation is removed, or clearly documented.
+
+#### 5.3. User and group creation/update
+
+* [ ] User existence check:
+
+  * [ ] `Get-LocalUserExists` is logically correct and handles all errors.
+* [ ] If the user does not exist:
+
+  * [ ] `net user ... /add` and `/active:yes` run in sequence.
+  * [ ] `net.exe` errors are checked via `$LASTEXITCODE`.
+  * [ ] Logs record success or failure of creation and activation.
+* [ ] If the user exists:
+
+  * [ ] When `PasswordPlain` is present, the password is updated and errors are logged.
+  * [ ] When `PasswordPlain` is absent, the password is not touched and this is logged explicitly.
+  * [ ] Finally the user is activated (`/active:yes`) with RC checking.
+* [ ] Property updates via `Set-UserAdsi`:
+
+  * [ ] Correctly handle `FullName`, `Description`, `PasswordNeverExpires`.
+* [ ] Membership in `Administrators`:
+
+  * [ ] Checked by `Test-AdministratorsMembership`.
+  * [ ] Added via `Ensure-InAdministrators`, with meaningful RC handling (including "already a member").
+* [ ] Membership in `Remote Desktop Users`:
+
+  * [ ] Controlled by `-AddToRemoteDesktopUsers`.
+* [ ] On successful Stage A completion:
+
+  * [ ] `$StageA_Succeeded = $true`, `$StageA_RC = 0`.
+
+#### 5.4. Stage A error handling
+
+* [ ] In `catch`:
+
+  * [ ] If `$StageA_RC` is still 0, it is set to 1.
+  * [ ] If `$StageAAbortReason` is empty, it receives `$_ .Exception.Message`.
+  * [ ] Log entry `"Stage A failed: ..."` is written with `ERROR` level.
+  * [ ] `$StageA_Succeeded = $false`.
+  * [ ] `$rc = 1`.
+
+---
+
+### 6. CreatePrimaryAdmin.ps1 (Stage B: cleanup, reboot, master log)
+
+#### 6.1. Normal and recovery modes
+
+* [ ] `$isRecovery = -not $StageA_Succeeded`.
+* [ ] Logging:
+
+  * [ ] In recovery: `"Stage B running in recovery mode (StageA RC=...)"` with `WARN` level.
+  * [ ] In normal mode: `"Begin B: Autologon cleanup & policy restore"`.
+
+#### 6.2. Winlogon and logon policies
+
+* [ ] Always (in both normal and recovery):
+
+  * [ ] `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword` are cleared.
+  * [ ] `AutoAdminLogon=0`, `ForceAutoLogon=0`, `AutoLogonCount=0`.
+  * [ ] `IgnoreShiftOverride` is set to `REG_SZ=0`.
+  * [ ] `DisableCAD` is set to `0`.
+* [ ] Additionally:
+
+  * [ ] In the **normal** path, `DevicePasswordLessBuildVersion` is set back to `2`.
+  * [ ] In the **recovery** path, `DevicePasswordLessBuildVersion` is intentionally kept at `0`, and this is logged as a diagnostic (lab / recovery) state instead of a fully "production ready" one.
+
+#### 6.3. `bootstrap` account and CreatePrimaryAdmin task
+
+* [ ] In normal mode:
+
+  * [ ] `net user bootstrap /active:no` is called with RC checking.
+  * [ ] The result is logged (success or warning).
+  * [ ] The `\L2C\CreatePrimaryAdmin` task is deleted via `schtasks /Delete`, result logged.
+* [ ] In recovery mode:
+
+  * [ ] The `bootstrap` account remains active and the task is not deleted.
+  * [ ] The log contains a clear entry that `bootstrap` and the task are preserved for manual intervention, as described in SECURITY.md.
+
+#### 6.4. RunOnce cleanup (lab leftovers)
+
+* [ ] Always (in both modes):
+
+  * [ ] Enumerates `HKLM:\...\RunOnce` and removes values related to L2C / CreatePrimaryAdmin / diagnostic helpers (lab leftovers).
+  * [ ] Optionally calls `reg.exe DELETE ... /v <lab-helper> /f` as a defensive measure.
+  * [ ] All errors are logged as `WARN` but do not break Stage B.
+  * [ ] Logs contain a `"RunOnce cleaned"` entry or an explanation of the error.
+
+#### 6.5. `.bootstrap.pw` deletion (best effort)
+
+* [ ] The file is deleted in Stage B:
+
+  * [ ] When present, deletion is attempted and success or failure is logged.
+  * [ ] When absent, `missing` is logged.
+* [ ] `pwCleanupState` is recorded in the master log.
+
+#### 6.6. Master log (l2c_master_*.log) and OUTCOME
+
+* [ ] Master log:
+
+  * [ ] Created in `%ProgramData%` with a fixed name pattern and timestamp.
+  * [ ] Written using `UTF8Encoding($false)` (no BOM).
+* [ ] The master log contains:
+
+  * [ ] Stage B start with the mode label (normal or recovery).
+  * [ ] Key steps (Winlogon reset, RunOnce cleanup, `.bootstrap.pw` cleanup).
+  * [ ] Stage B completion (`finalize end`).
+* [ ] OUTCOME line:
+
+  * [ ] Formed in one of three formats: `SUCCESS`, `FAIL`, or `ABORTED` with a reason.
+  * [ ] Written to the same file in the same encoding.
+  * [ ] Logged via `Write-SetupLog` with `INFO` or `ERROR` level depending on the outcome.
+* [ ] If Stage B fails before finalization:
+
+  * [ ] The master log still receives at least one line indicating an early FAIL.
+  * [ ] OUTCOME: FAIL is recorded both in the master log and in SetupComplete.log.
+* [ ] For recovery cases:
+
+  * [ ] OUTCOME in the master log and SetupComplete.log clearly indicates that the system requires manual intervention and is not treated as a "successful installation".
+
+#### 6.7. Reboot via Panther flag and `-Reboot` parameter
+
+* [ ] Panther flag:
+
+  * [ ] `$flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'`.
+  * [ ] If the flag exists:
+
+    * [ ] In normal mode, a reboot is performed via `shutdown.exe /r /t 0`.
+    * [ ] In recovery mode, a warning is logged but no reboot is performed.
+    * [ ] After processing, the flag is deleted.
+* [ ] `-Reboot` parameter:
+
+  * [ ] When specified, a separate `shutdown.exe` is invoked after Panther flag processing.
+  * [ ] The fact of this manual reboot request is logged.
+  * [ ] The parameter is intended for manual Stage B runs by an operator (lab or break-glass) and is not used in the regular unattended flow.
+
+---
+
+### 7. Documentation vs actual code
+
+For each document:
+
+#### 7.1. README.md
+
+* [ ] Pipeline description:
+
+  * [ ] PreOOBE → BootstrapLocalAdmin → SetupComplete → CreatePrimaryAdmin (Stage A/B).
+* [ ] Reboot mechanism:
+
+  * [ ] Only the Panther flag and Stage B are mentioned, not RunOnce.
+* [ ] Behavior is described for:
+
+  * [ ] RC 0 (no reboot).
+  * [ ] RC 3010/1641 (reboot required).
+  * [ ] `ALWAYS_REBOOT_AFTER_FIRST_LOGON`.
+* [ ] Stage B description:
+
+  * [ ] Stage B is always run (normal or recovery), or any deviation is clearly described.
+  * [ ] Matches the actual code.
+
+#### 7.2. DECISIONS.md
+
+* [ ] All decisions regarding:
+
+  * [ ] Using the Panther flag instead of RunOnce.
+  * [ ] Calling Stage B when Stage A fails (recovery mode).
+  * [ ] Policy of "no reboots inside SetupComplete".
+* [ ] Tables and state diagrams match the real behavior of the scripts.
+
+#### 7.3. AGENTS.md
+
+* [ ] Roles are described:
+
+  * [ ] Owner, ChatGPT, Codex, CI.
+* [ ] Contracts are defined for:
+
+  * [ ] Codex CLI (minimal diffs, EOL, quoting rules, and so on).
+  * [ ] SetupComplete and CreatePrimaryAdmin behavior (in brief).
+* [ ] The description of how Stage B processes the Panther flag and performs cleanup matches the code.
+
+#### 7.4. SECURITY.md
+
+* [ ] Risks and mitigations are documented for:
+
+  * [ ] `.bootstrap.pw` (creation, storage, deletion).
+  * [ ] Winlogon autologon and the all-or-nothing model.
+  * [ ] Temporary `bootstrap` account and its role in normal and recovery modes.
+* [ ] The text explicitly reflects:
+
+  * [ ] What happens when Stage A fails (recovery mode).
+  * [ ] That Stage B in recovery mode does not perform automatic reboot, but only logs and deletes the Panther flag.
+  * [ ] Differences between normal and recovery regarding `DevicePasswordLessBuildVersion`, `bootstrap` status, and the `\L2C\CreatePrimaryAdmin` task.
+
+#### 7.5. CONTRIBUTING.md
+
+* [ ] Contains guidance on:
+
+  * [ ] EOL and encodings.
+  * [ ] How to run tests (VM, scripts).
+  * [ ] How to use Codex and CI for validation.
+* [ ] All links to files and sections are current and not broken.
+
+---
+
+### 8. Resilience and failure scenarios
+
+* [ ] When `.bootstrap.pw` is missing at the `SetupComplete` stage:
+
+  * [ ] Autologon is not configured.
+  * [ ] Stage B is not registered.
+  * [ ] Logs contain a clear ERROR so that the operator immediately sees what to investigate.
+* [ ] When `.bootstrap.pw` is valid, but Stage A fails (for example `net.exe` error, ACL issue, and so on):
+
+  * [ ] Stage B runs in recovery mode.
+  * [ ] Autologon and logon policies are reset.
+  * [ ] The Panther flag is processed correctly with recovery restrictions (logged and deleted, no reboot).
+  * [ ] The master log and SetupComplete.log contain enough information for diagnostics.
+* [ ] When Stage B fails:
+
+  * [ ] No uncontrolled reboot occurs.
+  * [ ] Logs clearly describe where and what failed.
+  * [ ] The master log records FAIL with a reason.
+
+---
+
+### 9. CI, git flow, and Codex interaction
+
+* [ ] Any script changes do not break:
+
+  * [ ] EOL guards in CI.
+  * [ ] Encoding checks (if present).
+* [ ] Commits related to bootstrap, Stage A/B, or reboot:
+
+  * [ ] Have meaningful messages (context, what and why changed).
+* [ ] All prompts for Codex CLI:
+
+  * [ ] Explicitly forbid changing EOL and BOM outside of targeted files or hunks.
+  * [ ] Require minimal diffs and clear change reports.
+  * [ ] Do not initiate actions outside the agreed file list.
