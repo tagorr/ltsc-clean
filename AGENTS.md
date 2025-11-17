@@ -90,6 +90,41 @@ Prefer one task per CLI session. If scope or shell rules change, start a fresh s
 * In normal mode Stage B logs the presence of the `Panther flag`, performs its cleanup, reboots, and ensures the flag is removed. In recovery mode Stage B only logs and deletes the flag without reboot, recording this in the master log.
 * When editing docs or code, keep the reboot model flag-based end to end and do not add new decision points in other scripts or tasks.
 
+### Audit sessions (Codex CLI)
+
+- `docs/AUDIT_CHECKLIST.md` is the canonical checklist for end-to-end audits of scripts and documentation. It defines the minimum bar for a “full audit”, not the maximum scope.
+- There are two explicit audit modes, controlled by the Owner’s prompt.
+
+#### 1. Strict checklist audit
+
+When the Owner explicitly requests a strict checklist audit (for example, “run a strict audit against docs/AUDIT_CHECKLIST.md”):
+
+- Codex must:
+  - read `docs/AUDIT_CHECKLIST.md` first;
+  - structure its checks and output according to the checklist sections;
+  - stay within the checklist scope and avoid introducing extra checks that contradict or extend it.
+- The goal of this mode is to verify that the current code and docs fully comply with the agreed checklist, without redefining it on the fly.
+
+#### 2. Full audit (checklist + exploratory)
+
+When the Owner requests a full audit (for example, “run a full audit of SetupComplete.cmd and CreatePrimaryAdmin.ps1”), Codex must:
+
+- treat `docs/AUDIT_CHECKLIST.md` as the baseline:
+  - read the checklist first;
+  - explicitly cover all relevant sections in its report;
+- then, in a separate section such as `Additional findings (outside the checklist)`:
+  - report any extra issues, smells, or improvement ideas that are not yet formalized in the checklist;
+  - clearly mark that these findings go beyond the current checklist and may later be promoted into new checklist items.
+
+In other words, for full audits the checklist defines the minimum guaranteed coverage, but Codex is encouraged to surface additional findings as long as they are clearly separated from the checklist-based assessment.
+
+#### 3. Narrow edits
+
+For narrow, file-scoped edits (small bugfixes, refactors, localized doc touch-ups), Codex:
+
+- does not have to load `docs/AUDIT_CHECKLIST.md` into context;
+- still must respect the general invariants from this document (EOL, encodings, minimal diffs, sandbox only, no surprise file scope expansion).
+
 ## PR rules
 
 * Minimal diffs grouped per file; no cosmetic changes outside hunks.
