@@ -87,7 +87,7 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
    * performs baseline servicing and hardening with DISM and registry policies;
    * interprets return codes from servicing: `0` is success; `3010` and `1641` are success with reboot required; anything else is failure (`FAILED=1`);
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
-   * if `.bootstrap.pw` exists and `FAILED=0`, primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=0`);
+   * if `.bootstrap.pw` exists and `FAILED=0`, primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
    * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in.
    * if `FAILED=1`, rolls back any temporary logon tweaks to safe values and does not configure autologon or the scheduled task.
 
@@ -96,7 +96,7 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 6. At the first interactive logon, the scheduled task `\L2C\CreatePrimaryAdmin` executes `CreatePrimaryAdmin.ps1` as SYSTEM. The script:
 
    * runs Stage A to create or update the primary local admin account and group memberships;
-   * runs Stage B to roll back temporary logon configuration, disable `bootstrap`, handle Panther `_needs_reboot.flag`, and perform a single controlled reboot in the normal path.
+   * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and `.bootstrap.pw`, and process the Panther `_needs_reboot.flag`; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path (recovery mode or Stage B failures do not reboot automatically).
 
 RunOnce is not used by this baseline to start `CreatePrimaryAdmin.ps1` or to drive reboots. Any RunOnce snippets in this repository are strictly for optional lab diagnostics.
 
@@ -136,7 +136,7 @@ All places that previously used hard coded English strings now use these resolve
 
 ### Stage B - cleanup, Panther flag, normal vs recovery
 
-Stage B executes only after Stage A reports success. It has two paths: normal and recovery.
+Stage B always runs once after Stage A. It chooses between a normal path and a recovery path based on Stage A’s outcome and internal validation.
 
 Common work:
 
@@ -144,7 +144,7 @@ Common work:
 
   * clear `DefaultPassword`, `AutoLogonCount`, and other AutoAdminLogon related values;
   * set `AutoAdminLogon=0` and `ForceAutoLogon=0` (REG_SZ);
-  * reset `DontDisplayLastUserName` and `IgnoreShiftOverride` to safe values;
+  * reset `IgnoreShiftOverride` to a safe value;
 * reconcile logon related policies:
 
   * in the normal path, enforce `DisableCAD=0` and `Ngc\DevicePasswordLessBuildVersion=2`;
@@ -156,7 +156,7 @@ Normal path:
 * deletes the scheduled task `\L2C\CreatePrimaryAdmin`;
 * deletes `%WINDIR%\Setup\Scripts\.bootstrap.pw`;
 * removes any leftover `RunOnce` entries added for diagnostics;
-* if `%WINDIR%\Panther\_needs_reboot.flag` exists:
+* if `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B completed successfully in normal mode:
 
   * logs that a reboot is required;
   * deletes the flag before reboot;
@@ -172,7 +172,8 @@ Recovery path:
 * if `_needs_reboot.flag` exists:
 
   * logs that a reboot had been requested;
-  * deletes the flag without rebooting;
+  * does not perform an automatic reboot;
+  * leaves the flag in place for operator diagnostics;
 * logs `OUTCOME: Recovery` with explicit warnings and guidance for manual intervention.
 
 Diagnostics checklist:
@@ -182,7 +183,7 @@ Diagnostics checklist:
 * `DisableCAD=0` and `DevicePasswordLessBuildVersion=2` in the normal path, `0` in recovery while diagnostics are ongoing;
 * `bootstrap` is disabled in the normal path and remains enabled in the recovery path;
 * `.bootstrap.pw` has been deleted in the normal path and preserved in recovery;
-* `_needs_reboot.flag` is not left behind in any path.
+* in the normal path `_needs_reboot.flag` is cleared after the controlled reboot; in recovery mode or when Stage B fails the flag may remain to signal manual follow-up.
 
 ### Bootstrap password source file
 
@@ -308,7 +309,7 @@ Post conditions on a successful normal run:
 * `RunOnce` does not contain bootstrap or master entries
 * `bootstrap` is disabled
 * `primaryadmin` is in `Administrators` (and optionally in `Remote Desktop Users`)
-* `_needs_reboot.flag` is not present
+* `_needs_reboot.flag` has been removed after a successful normal Stage B run; in recovery mode or after a Stage B failure it may remain to signal that a reboot is still pending
 
 ### Logging
 
@@ -474,7 +475,7 @@ Alternative when quoting is painful: use `-EncodedCommand` with UTF-8 encoded Po
 
   * `0` - success
   * `3010` and `1641` - success, reboot required
-    Do not reboot inside `SetupComplete.cmd`; `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag`, and Stage B in `CreatePrimaryAdmin.ps1` performs a single controlled reboot after the first logon in the normal path.
+    Do not reboot inside `SetupComplete.cmd`; `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag`, and Stage B in `CreatePrimaryAdmin.ps1` clears the flag and performs a single controlled reboot after the first logon only when Stage B succeeded in the normal path.
 
 For `DISM` and `reg.exe`, log return codes; treat `3010` as a deferred reboot, not as an error.
 
@@ -542,7 +543,7 @@ reg add $wl /v AutoAdminLogon /t REG_SZ /d 1 /f
 * WSIM validates `autounattend.xml` without errors.
 * Setup runs to OOBE with a local path, without Microsoft account screens.
 * `SetupComplete.cmd` runs once and writes `%WINDIR%\Panther\SetupComplete.log`.
-* If servicing returns `3010` or `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag`. At the first logon Stage B in `CreatePrimaryAdmin.ps1` clears this flag and performs a single reboot. If the flag is absent, no extra reboot is scheduled.
+* If servicing returns `3010` or `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag`. At the first logon Stage B in `CreatePrimaryAdmin.ps1` clears this flag and performs a single controlled reboot only when Stage B succeeded in normal mode and the flag exists; in recovery mode or when Stage B fails the script logs the pending reboot, skips the automatic restart, and leaves the flag for manual inspection.
 * After the reboot:
 
   * IE, WMP, XPS, Fax/Scan, WorkFolders, PSR are disabled as intended;
@@ -613,7 +614,7 @@ Short walkthrough of the intended behavior:
    * for `3010` and `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting;
    * if `.bootstrap.pw` exists and `FAILED=0`:
 
-     * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=0`);
+     * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`;
      * creates the task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Highest) to run `CreatePrimaryAdmin.ps1`;
    * if `FAILED=1`, rolls back temporary logon tweaks to safe values and does not configure autologon or scheduled tasks.
@@ -633,14 +634,14 @@ Short walkthrough of the intended behavior:
 
        * restores logon policies (`DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, clears `DefaultPassword` and related values);
        * disables `bootstrap`, deletes the scheduled task and `.bootstrap.pw`;
-       * if `_needs_reboot.flag` is present, clears it and performs one `shutdown.exe /r /t 0`;
+       * if `_needs_reboot.flag` exists and Stage B completed successfully in normal mode, logs the requirement, deletes the flag, and performs one `shutdown.exe /r /t 0`;
      * in the recovery path:
 
        * sets `DevicePasswordLessBuildVersion=0`, keeps `bootstrap`, the task, and `.bootstrap.pw` for another attempt;
-       * clears `_needs_reboot.flag` without reboot;
+       * logs any `_needs_reboot.flag`, skips the automatic reboot, and leaves the flag for manual follow up;
        * logs a WARN outcome for manual follow up.
 
-After a successful normal run the system has no AutoAdminLogon configured, `bootstrap` is disabled, `_needs_reboot.flag` is gone, and `primaryadmin` (or the chosen primary account) is the main administrative identity.
+After a successful normal run the system has no AutoAdminLogon configured, `bootstrap` is disabled, `_needs_reboot.flag` is cleared, and `primaryadmin` (or the chosen primary account) is the main administrative identity; in recovery mode or when Stage B fails the flag may remain as a marker for manual action.
 
 ## Hyper-V VMConnect: Basic vs Enhanced
 
