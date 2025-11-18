@@ -39,7 +39,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ## Operational notes
 
 * The baseline is designed to be idempotent. Re-running the post-install script should not introduce drift.
-* Stage B rollback (Winlogon cleanup, removal of any lab RunOnce helpers, bootstrap disable in normal mode) runs only after Stage A succeeds, reducing lockout risk if account provisioning fails.
+* Stage B rollback (Winlogon cleanup, removal of any lab RunOnce helpers, bootstrap disable in normal mode) always runs once after Stage A and chooses between normal and recovery paths based on Stage A’s outcome and internal validation, reducing lockout risk by attempting cleanup even when account provisioning fails.
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
 * **Temporary debug note:** если для диагностики временно заменяли `utilman.exe` на `cmd.exe`, восстановите оригинальный `utilman.exe` сразу после тестов, чтобы исключить эскалацию с экрана входа.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
@@ -57,7 +57,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ### Additional clarifications
 
 * UAC remains enabled (it is not lowered).
-* `SetupComplete.cmd` never calls `shutdown.exe` and never schedules a reboot via RunOnce. When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits. The actual reboot is performed only by Stage B `CreatePrimaryAdmin.ps1` after the first interactive logon in the **normal** path; in the **recovery** path Stage B merely logs and deletes the flag without rebooting.
+* `SetupComplete.cmd` never calls `shutdown.exe` and never schedules a reboot via RunOnce. When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits. Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads this flag after the first interactive logon: in the normal path, only when Stage B succeeded and the flag exists, it logs the requirement, deletes `_needs_reboot.flag`, and performs a single controlled reboot; in recovery mode or when Stage B fails it logs the pending reboot, skips the automatic restart, and leaves the flag as a marker for manual diagnostics.
 
 ## Compatibility controls & safety
 
@@ -72,8 +72,8 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 * `SetupComplete.cmd` never calls `shutdown.exe` and never plans a reboot via RunOnce.
 * When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits.
-* Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads the Panther flag after the first interactive logon, logs the reboot requirement, deletes the flag and, in the **normal** path, performs a single controlled `shutdown.exe /r /t 0`.
-* In the **recovery** path Stage B logs and deletes the Panther flag without rebooting.
+* Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads the Panther flag after the first interactive logon and, in the **normal** path, only when Stage B succeeded and the flag exists, logs the reboot requirement, deletes the flag and performs a single controlled `shutdown.exe /r /t 0`.
+* In the **recovery** path or when Stage B fails, Stage B logs the Panther flag, does not perform an automatic reboot, and leaves the flag in place for manual follow-up.
 * Any new `shutdown.exe` invocations or RunOnce-based reboot logic must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
 
 ## Logs
@@ -132,7 +132,7 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 ## Политики входа: временное ослабление и возврат
 
 На фазе взвода:
-- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `DontDisplayLastUserName=0`, `IgnoreShiftOverride=0 (REG_SZ, без промежуточного "1")`.
+- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `IgnoreShiftOverride=0 (REG_SZ, без промежуточного "1")`.
 
 На откате:
 - `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.
@@ -141,8 +141,8 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 
 In the normal Stage B path:
 
-* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` is deleted, and, if the Panther flag is present, it is logged, deleted and a single controlled reboot is issued via `shutdown.exe /r /t 0`.
+* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` is deleted, and, if the Panther flag is present and Stage B completed successfully in the normal path, it is logged, the flag is deleted, and a single controlled reboot is issued via `shutdown.exe /r /t 0`.
 
 In the recovery Stage B path:
 
-* `DevicePasswordLessBuildVersion` remains `0`, the `bootstrap` account and the `\L2C\CreatePrimaryAdmin` task stay enabled for diagnostics, and, if the Panther flag is present, it is only logged and deleted without rebooting.
+* `DevicePasswordLessBuildVersion` remains `0`, the `bootstrap` account and the `\L2C\CreatePrimaryAdmin` task stay enabled for diagnostics, and, if the Panther flag is present, it is logged, no automatic reboot is performed, and the flag is left in place for operator follow-up.
