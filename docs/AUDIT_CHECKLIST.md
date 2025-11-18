@@ -300,21 +300,26 @@
 
   * [ ] OUTCOME in the master log and SetupComplete.log clearly indicates that the system requires manual intervention and is not treated as a "successful installation".
 
-#### 6.7. Reboot via Panther flag and `-Reboot` parameter
+#### 6.7. Reboot via Panther flag
 
 * [ ] Panther flag:
 
   * [ ] `$flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'`.
-  * [ ] If the flag exists:
+  * [ ] If the flag exists and Stage B completed successfully in normal mode:
 
-    * [ ] In normal mode, a reboot is performed via `shutdown.exe /r /t 0`.
-    * [ ] In recovery mode, a warning is logged but no reboot is performed.
-    * [ ] After processing, the flag is deleted.
-* [ ] `-Reboot` parameter:
+    * [ ] A reboot is performed via `shutdown.exe /r /t 0`, the action is logged, and the flag is deleted.
 
-  * [ ] When specified, a separate `shutdown.exe` is invoked after Panther flag processing.
-  * [ ] The fact of this manual reboot request is logged.
-  * [ ] The parameter is intended for manual Stage B runs by an operator (lab or break-glass) and is not used in the regular unattended flow.
+  * [ ] If the flag exists but Stage B ran in recovery mode:
+
+    * [ ] No automatic reboot is performed; instead a warning is logged that a reboot may be required.
+    * [ ] The script does not delete the flag automatically in recovery mode.
+
+  * [ ] If Stage B fails (non-zero return code), regardless of mode:
+
+    * [ ] No automatic reboot is performed, even if the Panther flag exists.
+    * [ ] The log clearly records that the reboot was suppressed because Stage B failed.
+
+* [ ] Stage B never triggers an automatic reboot unless Stage B itself succeeded; reboot logic is explicitly gated on Stage B success.
 
 ---
 
