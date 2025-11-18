@@ -39,9 +39,9 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 **Decision.** All DISM operations and policies (IE/Edge, Delivery Optimization, telemetry, OneDrive, etc.) run in `SetupComplete.cmd`. The `autounattend.xml` stays minimal (`windowsPE`, `generalize`, `specialize`, `oobeSystem` only), with no `FirstLogonCommands`.
 
-**Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the “Panther flag”).
+**Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the “Panther flag”), leaving consumption of that flag to Stage B of `CreatePrimaryAdmin.ps1` after the first interactive logon.
 
-**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe` and must not create RunOnce entries for shutdown. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`.
+**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe` and must not create RunOnce entries for shutdown. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag, sets `NEEDS_REBOOT=1`, and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`, which only performs the controlled shutdown when Stage B succeeded in the normal path and the Panther flag exists; in recovery mode or when Stage B fails, no automatic reboot occurs and the flag can remain for manual diagnostics.
 
 ---
 
@@ -113,7 +113,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 * Deterministic and idempotent execution. Safe to re-run without harmful side effects.
 
-* No reboots occur inside SetupComplete. A single reboot only happens when the `Panther flag` is present (servicing RC `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`). Stage B of `CreatePrimaryAdmin.ps1` is the only unattended component that consumes the `Panther flag` and calls `shutdown.exe`, and it must respect recovery mode (no automatic reboot when running in recovery).
+* No reboots occur inside SetupComplete. Stage B of `CreatePrimaryAdmin.ps1` is the only unattended component that consumes the `Panther flag`, and a single controlled reboot only happens when Stage B succeeded in the normal path and the flag exists (servicing RC `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`). In recovery mode or when Stage B fails, no automatic reboot is triggered and the Panther flag may remain as a marker for manual follow-up.
 
 ---
 
@@ -127,7 +127,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 4. Post-install configuration completes. `SetupComplete.cmd` writes the `Panther flag` only when servicing returned `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; in all other cases the flag is not created and no reboot is requested.
 
-5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1` (Stage A and Stage B). In normal mode, Stage B performs its cleanup, checks for the `Panther flag`, logs the requirement, calls `shutdown.exe /r /t 0`, and removes the flag. In recovery mode, Stage B still performs cleanup but, if the flag exists, it only logs and deletes it without reboot; if the flag is absent, the system remains logged in without an automatic restart.
+5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A’s outcome and internal validation. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs the requirement, deletes the flag, and performs a single controlled `shutdown.exe /r /t 0`. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
 
 ## 3. File layout and key paths
 
@@ -149,7 +149,7 @@ This document records the decisions, rationale, scope boundaries, and verificati
 
 PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/RunOnce/Tasks.
 
-**SetupComplete.cmd:** servicing/logging only; schedules a single conditional reboot via RunOnce when RC ∈ {3010, 1641}. No immediate reboot inside `SetupComplete.cmd`.
+**SetupComplete.cmd:** servicing/logging only; never calls `shutdown.exe` or schedules reboots via RunOnce. When RC ∈ {3010, 1641} or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`, it sets `NEEDS_REBOOT=1`, writes the Panther flag, and leaves the reboot to Stage B of `CreatePrimaryAdmin.ps1` after the first interactive logon.
 
 * **EOL:** scripts (.cmd/.ps1) — CRLF; documentation (.md) — LF.
 
@@ -427,7 +427,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * **`/ResetBase`** permanently removes superseded component versions — rollback of previously installed updates becomes impossible; future updates install normally.
 
-* **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, set `NEEDS_REBOOT=1` and write the Panther flag so that Stage B of `CreatePrimaryAdmin.ps1` can consume it after the first interactive logon. The optional “always reboot after first logon” behavior is disabled by default and can be enabled via `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`.
+* **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` sets `NEEDS_REBOOT=1` and writes the Panther flag so that Stage B of `CreatePrimaryAdmin.ps1` can consume it after the first interactive logon. Stage B clears the flag and performs a single controlled reboot only when Stage B succeeded in the normal path and the flag exists; in recovery mode or when Stage B fails, Stage B logs the pending reboot, skips the automatic restart, and leaves the flag as a marker for manual follow-up.
 
 ## 7. What we explicitly do not do
 
@@ -575,15 +575,15 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - Stage A performs an ADSI membership pre-check and treats `net.exe localgroup` return codes `0` and `1378` as success, logging `A: SKIP (already member)` when no change is needed.
 
-- Stage B (Winlogon and RunOnce rollback, `bootstrap` deactivation) executes only after Stage A reports success.
+- Stage B (Winlogon and RunOnce rollback, `bootstrap` deactivation) always runs once after Stage A and selects a normal or recovery path based on Stage A’s outcome and internal validation, guarding any automatic reboot behind Stage B success in the normal path.
 
 - Ban `cmd /c` wrappers in Windows PowerShell 5.1; invoke `net.exe` directly to preserve `$LASTEXITCODE` and reduce noise.
 
 **Consequences:**
 
-- Re-running the script is safe: existing Administrators membership is detected and Stage B is skipped on Stage A failure.
+- Re-running the script is safe: existing Administrators membership is detected, and Stage B can enter a recovery mode after Stage A failures to clean up Winlogon/RunOnce/bootstrap state as far as possible before an operator intervenes.
 
-- Guarding Stage B prevents unwanted Winlogon resets if account provisioning fails, reducing lockout risk.
+- Guarding the Panther-flag-based reboot with Stage B success prevents unwanted reboots when account provisioning or cleanup fails, reducing lockout risk while still providing recovery behavior.
 
 ## ADR-006: EOL policy (CRLF for scripts, LF for Markdown)
 
