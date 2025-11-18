@@ -185,6 +185,7 @@ $rc = 0
 $StageA_Succeeded = $false
 $StageA_RC = 0
 $StageAAbortReason = $null
+$StageB_Succeeded = $false
 
 Write-SetupLog "Begin A: Primary admin creation/config"
 try {
@@ -396,9 +397,11 @@ try {
   } else {
     Write-SetupLog "End B (RECOVERY COMPLETE)" 'WARN'
   }
+  $StageB_Succeeded = $true
 }
 catch {
   Write-SetupLog ("End B (FAIL) - {0}" -f $_.Exception.Message) 'ERROR'
+  $StageB_Succeeded = $false
   try {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     if (-not (Test-Path -LiteralPath $MasterLogPath)) {
@@ -414,13 +417,11 @@ catch {
 
 $flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'
 if (Test-Path -LiteralPath $flag) {
-  # Reboot handling: (recovery path) clear flag, do NOT reboot
-  if ($isRecovery) {
-    Write-SetupLog 'Reboot flag present, recovery mode, not rebooting to allow operator fix' 'WARN'
-    Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
-    Write-SetupLog 'Recovery mode: cleared _needs_reboot.flag without reboot; manual intervention required' 'WARN'
+  if (-not $StageB_Succeeded) {
+    Write-SetupLog 'Reboot flag present but Stage B did not complete successfully; suppressing automatic reboot to allow operator inspection' 'WARN'
+  } elseif ($isRecovery) {
+    Write-SetupLog 'Reboot flag present in recovery mode; not rebooting to allow operator fix' 'WARN'
   } else {
-    # Reboot handling: (normal path) clear flag, then reboot
     Write-SetupLog 'Reboot flag detected, initiating restart'
     Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
     & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
