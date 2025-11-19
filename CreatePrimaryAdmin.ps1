@@ -195,14 +195,9 @@ try {
     $StageA_Succeeded = $true
     $StageA_RC = 0
   } else {
+    $PasswordPlain = $PasswordPlain.Trim()
     if (-not $PasswordPlain) {
-      $pwFile = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
-      if (Test-Path -LiteralPath $pwFile) {
-        $PasswordPlain = (Get-Content -LiteralPath $pwFile -Raw).Trim()
-      }
-    }
-    if (-not $PasswordPlain) {
-      $StageAAbortReason = 'primary admin secret missing (.bootstrap.pw not found or empty, and -PasswordPlain not provided)'
+      $StageAAbortReason = 'primary admin secret missing (-PasswordPlain is required)'
       throw [System.InvalidOperationException]::new($StageAAbortReason)
     }
     $pwd = $PasswordPlain
