@@ -23,7 +23,6 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
 - `BootstrapLocalAdmin.ps1` - temporary admin creation and bootstrap secret writer (`.bootstrap.pw`), no direct Winlogon or RunOnce manipulation
 - `CreatePrimaryAdmin.ps1` - first-login master that finalizes the baseline (Stage A/B, normal vs recovery, controlled reboot)
 - `DECISIONS.md` - design decisions and rationale
-- `BACKGROUND.md` - archived notes and history
 - `SECURITY.md` - security trade-offs and risk model
 - `AGENTS.md` - high-level interaction contracts and agent roles (ChatGPT, Codex CLI, Owner)
 - `docs/INTERACTION_CONTRACT.md` - Codex CLI interaction contract (shell choice, quoting rules, safety guardrails)
