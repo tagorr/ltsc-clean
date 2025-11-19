@@ -18,6 +18,9 @@ set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
 set "FAILED=0"
 set "HAS_BOOTSTRAP_PW=0"
+set "L2C_PRIMARYADMIN_SECRET=%WINDIR%\Setup\Scripts\.primaryadmin.pw"
+set "L2C_HAS_PRIMARYADMIN_SECRET=0"
+set "L2C_PW_ALLOWED=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-"
 set "L2C_FIRST_BAD_RC="
 call :log "----- SetupComplete started -----"
 
@@ -280,6 +283,60 @@ call :track_rc %RC%
 call :handle_rc "EXE" %RC%
 exit /b %RC%
 
+:trim_primaryadmin_password
+if not defined L2C_PRIMARYADMIN_PASSWORD goto :eof
+if "%L2C_PRIMARYADMIN_PASSWORD%"=="" goto :eof
+:_trim_primaryadmin_password_loop
+if not defined L2C_PRIMARYADMIN_PASSWORD goto :_trim_primaryadmin_password_done
+if "%L2C_PRIMARYADMIN_PASSWORD%"=="" goto :_trim_primaryadmin_password_done
+set "L2C_PW_LAST=%L2C_PRIMARYADMIN_PASSWORD:~-1%"
+if "%L2C_PW_LAST%"==" " (
+  set "L2C_PRIMARYADMIN_PASSWORD=%L2C_PRIMARYADMIN_PASSWORD:~0,-1%"
+  goto :_trim_primaryadmin_password_loop
+)
+:_trim_primaryadmin_password_done
+set "L2C_PW_LAST="
+goto :eof
+
+:validate_primaryadmin_password
+set "L2C_PW_CHECK=%L2C_PRIMARYADMIN_PASSWORD%"
+if not defined L2C_PW_CHECK (
+  set "L2C_PW_CHECK="
+  exit /b 1
+)
+:_validate_primaryadmin_password_loop
+if not defined L2C_PW_CHECK goto :_validate_primaryadmin_password_ok
+if "%L2C_PW_CHECK%"=="" goto :_validate_primaryadmin_password_ok
+set "L2C_PW_CHAR=%L2C_PW_CHECK:~0,1%"
+call :is_primaryadmin_char_allowed "%L2C_PW_CHAR%"
+if not "%ERRORLEVEL%"=="0" (
+  set "L2C_PW_CHAR="
+  set "L2C_PW_CHECK="
+  exit /b 1
+)
+set "L2C_PW_CHECK=%L2C_PW_CHECK:~1%"
+goto :_validate_primaryadmin_password_loop
+:_validate_primaryadmin_password_ok
+set "L2C_PW_CHAR="
+set "L2C_PW_CHECK="
+exit /b 0
+
+:is_primaryadmin_char_allowed
+set "L2C_PW_CHAR_TEST=%~1"
+if "%L2C_PW_CHAR_TEST%"=="" (
+  set "L2C_PW_CHAR_TEST="
+  exit /b 1
+)
+set "L2C_PW_SCAN=%L2C_PW_ALLOWED:%~1=%"
+if "%L2C_PW_SCAN%"=="%L2C_PW_ALLOWED%" (
+  set "L2C_PW_SCAN="
+  set "L2C_PW_CHAR_TEST="
+  exit /b 1
+)
+set "L2C_PW_SCAN="
+set "L2C_PW_CHAR_TEST="
+exit /b 0
+
 :main
 
 REM === [L2C] Winlogon bootstrap + CAD/NGC policies (idempotent) ===
@@ -300,18 +357,50 @@ if not "%HAS_BOOTSTRAP_PW%"=="1" (
   call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
 )
 
+if "%FAILED%"=="0" (
+  if exist "%L2C_PRIMARYADMIN_SECRET%" (
+    if not defined L2C_PRIMARYADMIN_PASSWORD (
+      for /f "usebackq delims=" %%P in ("%L2C_PRIMARYADMIN_SECRET%") do (
+        if not defined L2C_PRIMARYADMIN_PASSWORD (
+          set "L2C_PRIMARYADMIN_PASSWORD=%%P"
+        )
+      )
+    )
+    call :trim_primaryadmin_password
+    if not defined L2C_PRIMARYADMIN_PASSWORD (
+      call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" is empty after trimming; Stage B registration will be skipped."
+    ) else if "%L2C_PRIMARYADMIN_PASSWORD%"=="" (
+      call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" is empty after trimming; Stage B registration will be skipped."
+    ) else (
+      call :validate_primaryadmin_password
+      if not "%ERRORLEVEL%"=="0" (
+        call :log "[ERROR] primary admin password contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
+      ) else (
+        set "L2C_HAS_PRIMARYADMIN_SECRET=1"
+        call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
+      )
+    )
+  ) else (
+    call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" not found; Stage B registration will be skipped."
+  )
+)
+
+if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
+  set "FAILED=1"
+)
+
 REM Временные политики входа
-if "%HAS_BOOTSTRAP_PW%"=="1" (
+if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   rem Temp logon relax, only if secret present
   reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
 ) else (
-  call :log "[INFO] Skipping temp logon tweaks (no .bootstrap.pw)."
+  call :log "[INFO] Skipping temp logon tweaks (missing bootstrap or primary admin secret)."
 )
 reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
 
 REM Автологон только если известен пароль bootstrap
-if "%HAS_BOOTSTRAP_PW%"=="1" (
+if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
   reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
@@ -327,13 +416,13 @@ if "%HAS_BOOTSTRAP_PW%"=="1" (
     call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
   )
 ) else (
-  call :log "[WARN] Winlogon autologon not primed (no password source)"
+  call :log "[WARN] Winlogon autologon not primed (missing bootstrap or primary admin secret)"
 )
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" (
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
-    /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
+    /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\" -PasswordPlain \"%L2C_PRIMARYADMIN_PASSWORD%\"" ^
     /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
   set "RC=%ERRORLEVEL%"
   if not "%RC%"=="0" (
@@ -344,7 +433,7 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" (
     call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
   )
 ) else (
-  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%)."
+  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%)."
 )
 
 REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin (only if task created) ===
