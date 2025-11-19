@@ -343,10 +343,12 @@ try {
     Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
   }
 
-  # Stage B: remove transient password source file (best-effort)
+  # Stage B: remove transient password source files (best-effort)
   $pwCleanupState = 'skipped'
+  $primaryPwCleanupState = 'skipped'
   if (-not $isRecovery) {
     $pwCleanupState = 'unknown'
+    $primaryPwCleanupState = 'unknown'
     try {
       $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
       if (Test-Path -LiteralPath $pwPath) {
@@ -361,14 +363,33 @@ try {
       Write-SetupLog ("bootstrap.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
       $pwCleanupState = 'error'
     }
+
+    try {
+      $primaryPwPath = Join-Path $env:WINDIR 'Setup\Scripts\.primaryadmin.pw'
+      if (Test-Path -LiteralPath $primaryPwPath) {
+        Remove-Item -LiteralPath $primaryPwPath -Force -ErrorAction Stop
+        Write-SetupLog "primaryadmin.pw removed"
+        $primaryPwCleanupState = 'removed'
+      } else {
+        Write-SetupLog "primaryadmin.pw not found during Stage B cleanup" 'WARN'
+        $primaryPwCleanupState = 'missing'
+      }
+    } catch {
+      Write-SetupLog ("primaryadmin.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
+      $primaryPwCleanupState = 'error'
+    }
   } else {
-    Write-SetupLog 'Recovery mode: preserving bootstrap.pw for another Stage A attempt' 'WARN'
+    Write-SetupLog 'Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt' 'WARN'
     $pwCleanupState = 'preserved'
+    $primaryPwCleanupState = 'preserved'
   }
 
   $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
   if ($pwCleanupState -ne 'unknown') {
     $finalLogEntries += ("[{0}] bootstrap.pw cleanup state={1}" -f ([DateTime]::UtcNow.ToString('o')), $pwCleanupState)
+  }
+  if ($primaryPwCleanupState -ne 'unknown') {
+    $finalLogEntries += ("[{0}] primaryadmin.pw cleanup state={1}" -f ([DateTime]::UtcNow.ToString('o')), $primaryPwCleanupState)
   }
   $finalLogEntries += ("[{0}] Stage B finalize end" -f ([DateTime]::UtcNow.ToString('o')))
 
