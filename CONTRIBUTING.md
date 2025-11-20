@@ -28,7 +28,7 @@ Thanks for your interest in contributing!
 - .cmd guidelines: no Delayed Expansion; test RC via %ERRORLEVEL%; branch via `goto`/`call :sub`.
 - PowerShell target: Windows PowerShell 5.1; avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets; prefer plain args or files.
 - Minimal-diff principle: change only the lines required by the PR’s scope.
-- Docs convention: в Markdown-документации для команд используй **одна команда = один fenced-блок** с тегом языка (`cmd` или `powershell`) для копирования одной кнопкой; без многострочных блоков с несколькими командами.
+- Docs convention: in Markdown, use **one command per fenced code block** with an explicit language tag (`cmd` or `powershell`), so each block can be copied and executed in one go; avoid multi-line blocks that mix multiple commands.
 
 **Local quick check (optional)**
 ```bash
@@ -50,7 +50,7 @@ git ls-files -- '*.ps1' '*.cmd' '*.bat' \
 
 * ✅ EOL checked; no LF-only lines in scripts.
 * ✅ PowerShell 5.1 style rules respected.
-* ✅ Docs updated if behavior/policies changed (README/DECISIONS).
+* ✅ Docs updated if behavior/policies changed (README/DECISIONS/SECURITY/docs/AUDIT_CHECKLIST.md).
 * ✅ PR title and commits use conventional prefixes.
 
 ## CI and checks
