@@ -25,13 +25,12 @@
 
 ---
 
-### 2. `.bootstrap.pw` lifecycle (bootstrap secret)
+### 2. Password source files lifecycle (`.bootstrap.pw` and `.primaryadmin.pw`)
 
 * [ ] Documentation (README, DECISIONS, AGENTS, SECURITY) describes:
 
-  * [ ] Where exactly `.bootstrap.pw` is created.
-  * [ ] Who reads it and when.
-  * [ ] At which point it must be deleted.
+  * [ ] Where exactly `.bootstrap.pw` is created, who reads it, and when it must be deleted or preserved (normal vs recovery).
+  * [ ] Where `.primaryadmin.pw` is expected to exist, that it is operator-supplied, who reads it (`SetupComplete.cmd`), and when it is deleted or preserved (normal vs recovery).
 * [ ] In `BootstrapLocalAdmin.ps1`:
 
   * [ ] `.bootstrap.pw` is created at the expected path (`%WINDIR%\Setup\Scripts\.bootstrap.pw`).
@@ -41,23 +40,31 @@
 
   * [ ] There is a check for the existence of `.bootstrap.pw`.
   * [ ] There is a check that the file is not empty (at least one non-empty line).
+  * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists.
+  * [ ] There is a check that `.primaryadmin.pw` is non-empty after trimming and respects allowed characters/format.
   * [ ] If it is missing or empty:
 
     * [ ] An error is logged, not just a warning.
     * [ ] A failure flag is set (for example `FAILED=1`).
     * [ ] Stage B registration (CreatePrimaryAdmin task) is blocked.
+  * [ ] If `.primaryadmin.pw` is missing or invalid:
+
+    * [ ] An `[ERROR]` is logged.
+    * [ ] `FAILED=1` is set.
+    * [ ] Stage B registration and autologon priming are blocked.
+  * [ ] Stage B registration is gated on both secrets being valid (`.bootstrap.pw` and `.primaryadmin.pw`) and `FAILED==0`.
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
-  * [ ] The secret is read either from the `-PasswordPlain` parameter or from `.bootstrap.pw`.
+  * [ ] Stage A always uses the `-PasswordPlain` parameter as its password source and never reads `.bootstrap.pw` directly.
+  * [ ] In this baseline `-PasswordPlain` is supplied by `SetupComplete.cmd` from `.primaryadmin.pw`.
   * [ ] Behavior is defined for:
 
-    * [ ] Missing file.
-    * [ ] Empty file.
-    * [ ] Read errors (ACL, IO).
+    * [ ] Missing or empty `-PasswordPlain` (after trimming).
+    * [ ] Read/validation errors surfaced from `.primaryadmin.pw` (ACL, IO, invalid characters) before Stage A is invoked.
   * [ ] In case of secret-related problems:
 
     * [ ] A clear `StageAAbortReason` is set.
-    * [ ] Stage A does not attempt to create or modify the user with an invalid password.
+    * [ ] Stage A does not attempt to create or modify the user with an invalid or missing password.
     * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
 
 ---
@@ -105,7 +112,7 @@
 
   * [ ] `if exist "%PWFILE%" (...)`.
   * [ ] Inside the loop, non-empty lines are checked.
-* [ ] If a valid secret is present:
+* [ ] If a valid secret is present (`.bootstrap.pw` exists and has content):
 
   * [ ] `HAS_BOOTSTRAP_PW` is set to `"1"`.
 * [ ] If missing or empty:
@@ -113,9 +120,14 @@
   * [ ] `HAS_BOOTSTRAP_PW` remains `"0"` or equivalent.
   * [ ] `FAILED=1`.
   * [ ] Log contains `[ERROR] .bootstrap.pw missing or empty; ...`.
+* [ ] `.primaryadmin.pw` validation:
+
+  * [ ] Presence and non-empty content after trimming at `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is validated.
+  * [ ] Invalid or missing `.primaryadmin.pw` logs an `[ERROR]`, sets `FAILED=1`, and blocks Stage B registration and autologon priming.
+  * [ ] Stage B/autologon priming proceed only when both `.bootstrap.pw` and `.primaryadmin.pw` are valid and `FAILED==0`.
 * [ ] Winlogon autologon to `bootstrap`:
 
-  * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"`.
+  * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"` and a valid primary admin secret is present and `FAILED==0`.
   * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
   * [ ] If writing the password fails, autologon remains disabled, an `[ERROR]` is logged, `FAILED=1` is set, and Stage B is not registered.
 
@@ -123,7 +135,7 @@
 
 * [ ] Creation of the `\L2C\CreatePrimaryAdmin` task:
 
-  * [ ] Happens only when `FAILED==0` and `HAS_BOOTSTRAP_PW==1`.
+  * [ ] Happens only when `FAILED==0`, `HAS_BOOTSTRAP_PW==1`, and a validated primary admin secret is present.
   * [ ] Task parameters: SYSTEM, Highest, OnLogon, path to `CreatePrimaryAdmin.ps1`.
 * [ ] On `schtasks /Create` error:
 
@@ -172,10 +184,8 @@
 
   * [ ] Stage A is skipped but considered successful.
   * [ ] `$StageA_Succeeded = $true`, `$StageA_RC = 0`.
-* [ ] If `-PasswordPlain` is not specified:
-
-  * [ ] Attempts to read `.bootstrap.pw` (`Get-Content -Raw`, `.Trim()`).
-* [ ] If the secret is missing or empty:
+* [ ] `-PasswordPlain` is treated as mandatory for unattended provisioning; in this baseline it is provided by `SetupComplete.cmd` from `.primaryadmin.pw`, not from `.bootstrap.pw`.
+* [ ] If the secret is missing or empty (after trimming):
 
   * [ ] `$StageAAbortReason` is set to a clear description.
   * [ ] A controlled exception is thrown (`throw`), not `exit`.
@@ -268,13 +278,16 @@
   * [ ] All errors are logged as `WARN` but do not break Stage B.
   * [ ] Logs contain a `"RunOnce cleaned"` entry or an explanation of the error.
 
-#### 6.5. `.bootstrap.pw` deletion (best effort)
+#### 6.5. Password source files cleanup (best effort)
 
-* [ ] The file is deleted in Stage B:
+* [ ] In normal Stage B mode:
 
-  * [ ] When present, deletion is attempted and success or failure is logged.
-  * [ ] When absent, `missing` is logged.
-* [ ] `pwCleanupState` is recorded in the master log.
+  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are deleted when present; success or failure is logged for each.
+  * [ ] Cleanup states (`removed`, `missing`, `error`) for each file are recorded in the master log.
+* [ ] In recovery mode:
+
+  * [ ] Both secrets are intentionally preserved for another Stage A attempt.
+  * [ ] Logs clearly mark that secrets were preserved and that manual cleanup is required after recovery.
 
 #### 6.6. Master log (l2c_master_*.log) and OUTCOME
 
@@ -375,7 +388,7 @@ For each document:
 * [ ] The text explicitly reflects:
 
   * [ ] What happens when Stage A fails (recovery mode).
-  * [ ] That Stage B in recovery mode does not perform automatic reboot, but only logs and deletes the Panther flag.
+  * [ ] That Stage B in recovery mode does not perform automatic reboot and does not delete the Panther flag; it logs the flag and leaves it in place for operator follow-up.
   * [ ] Differences between normal and recovery regarding `DevicePasswordLessBuildVersion`, `bootstrap` status, and the `\L2C\CreatePrimaryAdmin` task.
 
 #### 7.5. CONTRIBUTING.md
@@ -396,11 +409,17 @@ For each document:
   * [ ] Autologon is not configured.
   * [ ] Stage B is not registered.
   * [ ] Logs contain a clear ERROR so that the operator immediately sees what to investigate.
+* [ ] When `.primaryadmin.pw` is missing or invalid at the `SetupComplete` stage:
+
+  * [ ] A clear ERROR is logged.
+  * [ ] Autologon priming is not configured.
+  * [ ] Stage B is not registered.
+  * [ ] The state clearly indicates that manual intervention is required.
 * [ ] When `.bootstrap.pw` is valid, but Stage A fails (for example `net.exe` error, ACL issue, and so on):
 
   * [ ] Stage B runs in recovery mode.
   * [ ] Autologon and logon policies are reset.
-  * [ ] The Panther flag is processed correctly with recovery restrictions (logged and deleted, no reboot).
+  * [ ] The Panther flag is processed correctly with recovery restrictions (logged, not deleted, no reboot).
   * [ ] The master log and SetupComplete.log contain enough information for diagnostics.
 * [ ] When Stage B fails:
 

@@ -2,6 +2,11 @@
 
 A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks). Conservative, no hacks; deterministic and idempotent. Includes `PreOOBE.cmd`, `SetupComplete.cmd`, `BootstrapLocalAdmin.ps1` and `CreatePrimaryAdmin.ps1`.
 
+This baseline expects the primary local admin password to be supplied explicitly by the operator:
+* Before deployment, the operator creates `%WINDIR%\Setup\Scripts\.primaryadmin.pw` inside the image.
+* `SetupComplete.cmd` reads and validates this secret and passes it to `CreatePrimaryAdmin.ps1` via `-PasswordPlain`.
+* `CreatePrimaryAdmin.ps1` never invents or derives a password for the primary admin on its own.
+
 ## Scope
 
 - Harden Windows 10 LTSC 2021 using supported policies and servicing only, no unofficial binaries or hacks.
@@ -86,16 +91,17 @@ A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activi
    * performs baseline servicing and hardening with DISM and registry policies;
    * interprets return codes from servicing: `0` is success; `3010` and `1641` are success with reboot required; anything else is failure (`FAILED=1`);
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
-   * if `.bootstrap.pw` exists and `FAILED=0`, primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
-   * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in.
-   * if `FAILED=1`, rolls back any temporary logon tweaks to safe values and does not configure autologon or the scheduled task.
+   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates the secret (non-empty after trimming, allowed characters only), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
+     * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
+     * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in, passing `-PasswordPlain` with the validated secret.
+   * if the primary admin secret is missing or invalid, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
 
 5. The system reboots as part of normal Setup. At the first console logon (Hyper-V Basic console), Winlogon performs AutoAdminLogon with `bootstrap`. This is visible only on the console session, not on Hyper-V Enhanced (RDP) sessions.
 
 6. At the first interactive logon, the scheduled task `\L2C\CreatePrimaryAdmin` executes `CreatePrimaryAdmin.ps1` as SYSTEM. The script:
 
-   * runs Stage A to create or update the primary local admin account and group memberships;
-   * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and `.bootstrap.pw`, and process the Panther `_needs_reboot.flag`; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path (recovery mode or Stage B failures do not reboot automatically).
+   * runs Stage A to create or update the primary local admin account and group memberships using the password supplied via `-PasswordPlain` from `SetupComplete.cmd`;
+   * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`, and process the Panther `_needs_reboot.flag`; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path (recovery mode or Stage B failures do not reboot automatically).
 
 RunOnce is not used by this baseline to start `CreatePrimaryAdmin.ps1` or to drive reboots. Any RunOnce snippets in this repository are strictly for optional lab diagnostics.
 
@@ -122,8 +128,8 @@ All places that previously used hard coded English strings now use these resolve
 
 * Stage A no longer generates passwords on its own. It uses only explicit secrets:
 
-  * from a parameter like `-PasswordPlain`, or
-  * from `%WINDIR%\Setup\Scripts\.bootstrap.pw` in the unattended flow.
+  * from the `-PasswordPlain` parameter.
+  In this baseline `SetupComplete.cmd` is the only component that supplies this parameter: it reads the primary admin password from `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates it, and passes it to `CreatePrimaryAdmin.ps1`. Stage A never reads `.bootstrap.pw` and never derives the primary admin password from other sources.
 * If no valid password is available, Stage A fails fast, logs a clear error, and does not attempt to invent a password.
 * Stage A:
 
@@ -153,7 +159,7 @@ Normal path:
 
 * disables the `bootstrap` account;
 * deletes the scheduled task `\L2C\CreatePrimaryAdmin`;
-* deletes `%WINDIR%\Setup\Scripts\.bootstrap.pw`;
+* deletes `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`;
 * removes any leftover `RunOnce` entries added for diagnostics;
 * if `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B completed successfully in normal mode:
 
@@ -166,7 +172,7 @@ Recovery path:
 
 * keeps `bootstrap` enabled;
 * keeps the `\L2C\CreatePrimaryAdmin` scheduled task;
-* keeps `.bootstrap.pw` so Stage A can be retried later with the same secret;
+* keeps `.bootstrap.pw` and `.primaryadmin.pw` so Stage A can be retried later with the same secrets;
 * sets `Ngc\DevicePasswordLessBuildVersion=0` and other interactive logon policies so diagnostics can be performed more easily;
 * if `_needs_reboot.flag` exists:
 
@@ -175,13 +181,15 @@ Recovery path:
   * leaves the flag in place for operator diagnostics;
 * logs `OUTCOME: Recovery` with explicit warnings and guidance for manual intervention.
 
+Stage B logs the cleanup state for both secret files in the master log.
+
 Diagnostics checklist:
 
 * primary admin is present and in Administrators (and Remote Desktop Users if desired);
 * `DefaultPassword` and `AutoLogonCount` are absent; `AutoAdminLogon=0` and `ForceAutoLogon=0`;
 * `DisableCAD=0` and `DevicePasswordLessBuildVersion=2` in the normal path, `0` in recovery while diagnostics are ongoing;
 * `bootstrap` is disabled in the normal path and remains enabled in the recovery path;
-* `.bootstrap.pw` has been deleted in the normal path and preserved in recovery;
+* `.bootstrap.pw` and `.primaryadmin.pw` have been deleted in the normal path and preserved in recovery;
 * in the normal path `_needs_reboot.flag` is cleared after the controlled reboot; in recovery mode or when Stage B fails the flag may remain to signal manual follow-up.
 
 ### Bootstrap password source file
@@ -192,6 +200,16 @@ Diagnostics checklist:
 * Attributes: Hidden and System
 
 The file is sensitive. In the normal unattended flow Stage B deletes it on success; if you run the master manually or end up in the recovery path and the file is still present, remove it once you no longer need the bootstrap secret.
+
+### Primary admin password source file
+
+* Path: `%WINDIR%\Setup\Scripts\.primaryadmin.pw`
+* Encoding: UTF-8 without BOM, single line
+* Content: one non-empty line with the primary admin password, no trailing whitespace
+* Allowed characters: `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`
+* ACL suggestion: `SYSTEM:(F)`, `Administrators:(F)`
+
+This file is not part of the repository and must be created by the operator before deployment. The password is never logged or echoed. If the file is missing or contains invalid characters, `SetupComplete.cmd` logs the error, skips autologon priming, and does not register the `\L2C\CreatePrimaryAdmin` task.
 
 ### Password generator
 
@@ -222,6 +240,7 @@ The file is sensitive. In the normal unattended flow Stage B deletes it on succe
 * Disabled services remain disabled after reboot.
 * DISM capability removals reported success or not applicable.
 * `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: Success` entry for the normal path, or a clearly marked `OUTCOME: Recovery` entry when diagnostics are required.
+* `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` are absent in the normal path; if they are present you are either in recovery or running the master manually.
 
 For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST.md` (end-to-end audit checklist for scripts and documentation).
 
@@ -283,7 +302,7 @@ For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST
 
 ### Autologon priming (SetupComplete)
 
-`SetupComplete.cmd` primes Winlogon autologon only when `%WINDIR%\Setup\Scripts\.bootstrap.pw` exists and the script did not fail.
+`SetupComplete.cmd` primes Winlogon autologon only when `%WINDIR%\Setup\Scripts\.bootstrap.pw` exists, a valid primary admin secret is loaded from `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, and the script did not fail.
 
 Keys:
 
@@ -309,6 +328,8 @@ Post conditions on a successful normal run:
 * `bootstrap` is disabled
 * `primaryadmin` is in `Administrators` (and optionally in `Remote Desktop Users`)
 * `_needs_reboot.flag` has been removed after a successful normal Stage B run; in recovery mode or after a Stage B failure it may remain to signal that a reboot is still pending
+
+If the primary admin secret is missing or invalid, `SetupComplete.cmd` logs the condition and skips both autologon priming and `\L2C\CreatePrimaryAdmin` registration.
 
 ### Logging
 
@@ -611,12 +632,12 @@ Short walkthrough of the intended behavior:
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
    * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, anything else is failure;
    * for `3010` and `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting;
-   * if `.bootstrap.pw` exists and `FAILED=0`:
+   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates it (non-empty after trimming, allowed characters only), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
 
      * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`;
-     * creates the task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Highest) to run `CreatePrimaryAdmin.ps1`;
-   * if `FAILED=1`, rolls back temporary logon tweaks to safe values and does not configure autologon or scheduled tasks.
+     * creates the task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Highest) to run `CreatePrimaryAdmin.ps1` with `-PasswordPlain` set to the validated primary admin secret;
+   * if the primary admin secret is missing or invalid, or if `FAILED=1`, rolls back temporary logon tweaks to safe values and does not configure autologon or scheduled tasks.
 
 4. Reboot and first console logon:
 
@@ -626,17 +647,17 @@ Short walkthrough of the intended behavior:
 
 5. At the first interactive logon, the task `\L2C\CreatePrimaryAdmin` runs the master script as SYSTEM:
 
-   * Stage A creates or updates the primary local admin (`primaryadmin` by default) and adds it to required groups;
+   * Stage A creates or updates the primary local admin (`primaryadmin` by default) and adds it to required groups; it always requires `-PasswordPlain` and never reads `.bootstrap.pw`;
    * Stage B:
 
      * in the normal path:
 
        * restores logon policies (`DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, clears `DefaultPassword` and related values);
-       * disables `bootstrap`, deletes the scheduled task and `.bootstrap.pw`;
+       * disables `bootstrap`, deletes the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`;
        * if `_needs_reboot.flag` exists and Stage B completed successfully in normal mode, logs the requirement, deletes the flag, and performs one `shutdown.exe /r /t 0`;
      * in the recovery path:
 
-       * sets `DevicePasswordLessBuildVersion=0`, keeps `bootstrap`, the task, and `.bootstrap.pw` for another attempt;
+       * sets `DevicePasswordLessBuildVersion=0`, keeps `bootstrap`, the task, and both password source files for another attempt;
        * logs any `_needs_reboot.flag`, skips the automatic reboot, and leaves the flag for manual follow up;
        * logs a WARN outcome for manual follow up.
 
@@ -674,7 +695,9 @@ Practical testing:
    * `CreatePrimaryAdmin.ps1`
    * `SetupComplete.cmd` (and `PreOOBE.cmd` if you want to emulate the full chain)
 
-2. Run `BootstrapLocalAdmin.ps1` as SYSTEM (emulating PreOOBE), for example via Task Scheduler:
+2. Create `%WINDIR%\Setup\Scripts\.primaryadmin.pw` on the VM with the desired primary admin password: one non-empty line, UTF-8 without BOM, allowed characters `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`, and no trailing spaces.
+
+3. Run `BootstrapLocalAdmin.ps1` as SYSTEM (emulating PreOOBE), for example via Task Scheduler:
 
    ```powershell
    $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Windows\Setup\Scripts\BootstrapLocalAdmin.ps1"'
@@ -683,9 +706,9 @@ Practical testing:
    Start-ScheduledTask -TaskName 'BootstrapLocalAdmin-Once'
    ```
 
-3. After the task completes, run `SetupComplete.cmd` under SYSTEM to emulate post-setup behavior and configure autologon and the `\L2C\CreatePrimaryAdmin` task.
+4. After the task completes, run `SetupComplete.cmd` under SYSTEM to emulate post-setup behavior and configure autologon and the `\L2C\CreatePrimaryAdmin` task.
 
-4. Verify configuration:
+5. Verify configuration:
 
    ```powershell
    $wl='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
@@ -697,20 +720,22 @@ Practical testing:
    schtasks /Query /TN "\L2C\CreatePrimaryAdmin"
    ```
 
-5. Reboot from inside the guest (Start menu -> Restart).
+6. Reboot from inside the guest (Start menu -> Restart).
 
    * In Basic mode you should land directly on the `bootstrap` desktop.
    * In Enhanced mode you will see the logon screen even if the console already auto logged in.
 
-6. Wait for `CreatePrimaryAdmin.ps1` to run via the `\L2C\CreatePrimaryAdmin` task. After it completes, verify:
+7. Wait for `CreatePrimaryAdmin.ps1` to run via the `\L2C\CreatePrimaryAdmin` task. After it completes, verify:
 
    * no `DefaultPassword` value under Winlogon;
    * `AutoAdminLogon=0` and `ForceAutoLogon=0` (REG_SZ);
    * `DisableCAD=0`;
    * `DevicePasswordLessBuildVersion=2` in the normal path;
    * `bootstrap` is disabled;
-   * `.bootstrap.pw` is deleted in the normal path;
+   * `.bootstrap.pw` and `.primaryadmin.pw` are deleted in the normal path;
    * `_needs_reboot.flag` is absent after any final reboot in the normal path.
+
+If `.primaryadmin.pw` is missing or invalid, `SetupComplete.cmd` logs the condition and skips autologon priming and `\L2C\CreatePrimaryAdmin` registration, so `CreatePrimaryAdmin.ps1` will not run automatically on first logon.
 
 ## Acceptance checklist after first logon
 
@@ -721,6 +746,7 @@ Practical testing:
 * `RunOnce` does not contain references to `CreatePrimaryAdmin.ps1`.
 * `%WINDIR%\Panther\SetupComplete.log` contains clean end markers for SetupComplete.
 * `C:\ProgramData\l2c_master_<timestamp>.log` contains `OUTCOME: Success` for the normal path or a clearly marked recovery outcome when applicable.
+* `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist in the normal path.
 
 ## Diagnostics (short)
 
