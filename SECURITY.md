@@ -41,7 +41,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 * The baseline is designed to be idempotent. Re-running the post-install script should not introduce drift.
 * Stage B rollback (Winlogon cleanup, removal of any lab RunOnce helpers, bootstrap disable in normal mode) always runs once after Stage A and chooses between normal and recovery paths based on Stage A’s outcome and internal validation, reducing lockout risk by attempting cleanup even when account provisioning fails.
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
-* **Temporary debug note:** если для диагностики временно заменяли `utilman.exe` на `cmd.exe`, восстановите оригинальный `utilman.exe` сразу после тестов, чтобы исключить эскалацию с экрана входа.
+* **Temporary debug note:** if you temporarily replaced `utilman.exe` with `cmd.exe` for diagnostics, restore the original `utilman.exe` immediately after testing to prevent escalation from the logon screen.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
 
 ## Reporting and contributions
@@ -61,12 +61,9 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 ## Compatibility controls & safety
 
-**По умолчанию:** используется `STRICT_DISPLAYVERSION=0` (best‑effort). Для продакшн‑окружений рекомендуем `STRICT_DISPLAYVERSION=1`.
+**Default:** `STRICT_DISPLAYVERSION=0` (best‑effort). For production environments use `STRICT_DISPLAYVERSION=1`.
 
-`STRICT_DISPLAYVERSION=0` позволяет продолжить выполнение на близких версиях Windows.
-Это сознательный компромисс переносимости. Риски: часть шагов может не примениться или примениться иначе
-из-за изменений в компонентной базе. Для продакшн-сценариев в неконтролируемых окружениях рекомендуем
-включать `STRICT_DISPLAYVERSION=1` и фиксировать `REQUIRED_*` под целевой выпуск.
+`STRICT_DISPLAYVERSION=0` allows execution to continue on nearby Windows versions. This is a deliberate portability trade-off with the risk that some steps may not apply or may behave differently due to component changes. For production in uncontrolled environments, enable `STRICT_DISPLAYVERSION=1` and pin `REQUIRED_*` to the target release.
 
 ### Controlled reboot (Panther flag)
 
@@ -78,9 +75,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 ## Logs
 
-Скрипт пишет техжурнал в `%WINDIR%\Panther\SetupComplete.log`. Записи содержат только технические сообщения
-и метки времени. Персональные данные не логируются умышленно. Срок хранения определяйте политикой окружения;
-при необходимости удаляйте журнал после успешной валидации установки.
+The script writes a technical log to `%WINDIR%\Panther\SetupComplete.log`. Entries contain technical messages and timestamps only; personal data is not intentionally logged. Set retention according to your environment’s policy and delete the log after successful validation if required.
 
 **Timestamping & DISM logs.** Timestamps are **ISO-8601**, generated via **PowerShell** (`Get-Date -Format o`). All DISM calls write to a centralized log: `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`. Return codes are handled uniformly: `0` = success; `3010/1641` = success, reboot required.
 
@@ -108,41 +103,50 @@ Effect: Privacy wizard suppressed; six corresponding toggles enforced to OFF; lo
 
 - Applied at specialize via external `PreOOBE.cmd` (invoked from unattend).
 
-## Временное хранение пароля в Winlogon при автологоне
+## Temporary storage of the password in Winlogon during autologon
 
-Для `AutoAdminLogon` требуется `HKLM\...\Winlogon\DefaultPassword (REG_SZ)`.
-Это пароль в открытом виде и он хранится **временно** — ровно на фазу «взвод → первый вход под bootstrap».
+`AutoAdminLogon` requires `HKLM\...\Winlogon\DefaultPassword (REG_SZ)`. This is the password in clear text and it is stored **temporarily**—only for the “priming → first bootstrap logon” phase.
 
-Меры снижения риска:
-- Пароль `bootstrap` — временный; после первого входа `CreatePrimaryAdmin.ps1` удаляет `DefaultPassword` и отключает автологон (`AutoAdminLogon=0`, `ForceAutoLogon=0`).
-- Логи не содержат паролей (логируются только факты и длина/классы при генерации).
-- Длительность хранения — только до первого входа `bootstrap`.
+Risk mitigations:
+- The `bootstrap` password is temporary; after the first logon `CreatePrimaryAdmin.ps1` deletes `DefaultPassword` and disables autologon (`AutoAdminLogon=0`, `ForceAutoLogon=0`).
+- Logs do not contain passwords (only facts and length/classes during generation).
+- Storage duration is only until the first `bootstrap` logon.
+
+The primary admin account password is **never** stored in `DefaultPassword`. It comes from a separate file secret `.primaryadmin.pw`, which `SetupComplete.cmd` reads and passes forward only as the `-PasswordPlain` parameter to `CreatePrimaryAdmin.ps1`. Winlogon via `DefaultPassword` therefore sees only the temporary `bootstrap` password, not the primary admin password.
 
 ## Temporary autologon & secret handling
 
 * While primed, Winlogon holds `DefaultPassword`; Stage B removes it and restores `DisableCAD=0` and `Ngc...=2`.
 * Winlogon autologon follows an all-or-nothing model: `SetupComplete.cmd` first writes `DefaultPassword` via PowerShell / `reg.exe`, checks the return code, and only if it is `0` enables `AutoAdminLogon` and `ForceAutoLogon`. On any error, autologon remains disabled, an `[ERROR]` entry is written to the log, and the pipeline falls back to the recovery path instead of leaving a half-primed autologon.
-* `.bootstrap.pw` is created by `BootstrapLocalAdmin.ps1` and is **not** logged or echoed.
-* ACL is enforced at creation: inheritance is disabled and the ACL is replaced with explicit FullControl for `NT AUTHORITY\SYSTEM` and the local Administrators group (resolved via SID `S-1-5-32-544`), plus Hidden+System attributes and UTF-8 (no BOM).
+* Password source files under `%WINDIR%\Setup\Scripts`: `.bootstrap.pw` (transient secret generated by `BootstrapLocalAdmin.ps1` for the `bootstrap` account) and `.primaryadmin.pw` (operator-supplied primary admin password created inside the image before deployment). Both are UTF-8 without BOM, exactly one non-empty line, not logged or echoed except for presence/length/validation status.
+* ACL is enforced at creation: inheritance is disabled and the ACL is replaced with explicit FullControl for `NT AUTHORITY\SYSTEM` and the local Administrators group (resolved via SID `S-1-5-32-544`), plus Hidden+System attributes. `.primaryadmin.pw` must follow the same ACL/attribute discipline even though the operator creates it manually.
 * If ACL application fails, bootstrap aborts (Stage A fails closed) rather than proceeding with a weakened or inherited ACL.
-* Risk window exists until Stage B completes. Stage B always attempts to delete `.bootstrap.pw` and records the cleanup state (`removed`, `missing`, or `error`) in its master log summary. Retaining `.bootstrap.pw` beyond Stage B should be exceptional and done only with equivalent ACLs and an explicit operational procedure.
-* WARN/ERROR entries about `.bootstrap.pw` in Stage B logs are intentional signals; operators should treat them as triggers for manual review rather than noise.
-* Any relaxation of these `.bootstrap.pw` requirements (ACL shape, retention beyond Stage B, logging guarantees) must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
+* Risk window exists until Stage B completes. In the normal Stage B path, Stage B attempts to delete **both** `.bootstrap.pw` and `.primaryadmin.pw` and records cleanup states (`removed`, `missing`, or `error`) in its master log summary. In the recovery path, both files are intentionally preserved for another Stage A attempt, and that state is logged as a prompt for manual review.
+* WARN/ERROR entries about `.bootstrap.pw` or `.primaryadmin.pw` in Stage B logs (ACL, read/validation, delete failures) are intentional signals; operators should treat them as triggers for manual review rather than noise.
+* Any relaxation of these `.bootstrap.pw` / `.primaryadmin.pw` requirements (ACL shape, retention beyond Stage B, validation constraints, logging guarantees) must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
 
-## Политики входа: временное ослабление и возврат
+## Primary admin password source file (.primaryadmin.pw)
 
-На фазе взвода:
-- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, очистка `LegalNotice*`, `IgnoreShiftOverride=0 (REG_SZ, без промежуточного "1")`.
+* Path and ownership: `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, created and maintained by the operator (not generated by the scripts). The baseline scripts only read and later delete it.
+* Format and encoding: UTF-8 without BOM; exactly one non-empty line after trimming; allowed characters: `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`. Any other characters or empty/whitespace-only content are invalid.
+* ACLs and attributes: inheritance disabled; explicit FullControl for `NT AUTHORITY\SYSTEM` and local Administrators only; Hidden+System attributes. If ACL or attribute application fails, the pipeline must fail closed (no autologon, no unattended primary admin creation).
+* Consumption and lifecycle: only `SetupComplete.cmd` reads `.primaryadmin.pw`; it validates the secret and, only if `.bootstrap.pw` also exists and servicing succeeded, primes Winlogon and registers `\L2C\CreatePrimaryAdmin` with `-PasswordPlain` set to the validated secret. Stage A requires a non-empty `-PasswordPlain` and never reads `.bootstrap.pw`; there is no fallback if the password is invalid or missing. In the normal Stage B path, both `.bootstrap.pw` and `.primaryadmin.pw` are deleted and the result is logged; in the recovery path, both are preserved, `_needs_reboot.flag` remains, and logs must clearly indicate that secrets were retained for manual investigation and possible retry.
+* Consequences: the primary admin password is never generated or guessed by the baseline; logs never contain the password itself, only validation outcomes; failure to read or validate `.primaryadmin.pw` must stop unattended primary admin provisioning instead of silently weakening security.
 
-На откате:
+## Logon policies: temporary relaxation and restore
+
+During priming:
+- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, clear `LegalNotice*`, `IgnoreShiftOverride=0 (REG_SZ, with no intermediate "1")`.
+
+On rollback:
 - `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.
 
-Гарантия возврата обеспечивается идемпотентной логикой `CreatePrimaryAdmin.ps1`.
+The restore guarantee is provided by the idempotent logic in `CreatePrimaryAdmin.ps1`.
 
 In the normal Stage B path:
 
-* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` is deleted, and, if the Panther flag is present and Stage B completed successfully in the normal path, it is logged, the flag is deleted, and a single controlled reboot is issued via `shutdown.exe /r /t 0`.
+* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` and `.primaryadmin.pw` are deleted, and, if the Panther flag is present and Stage B completed successfully in the normal path, it is logged, the flag is deleted, and a single controlled reboot is issued via `shutdown.exe /r /t 0`.
 
 In the recovery Stage B path:
 
-* `DevicePasswordLessBuildVersion` remains `0`, the `bootstrap` account and the `\L2C\CreatePrimaryAdmin` task stay enabled for diagnostics, and, if the Panther flag is present, it is logged, no automatic reboot is performed, and the flag is left in place for operator follow-up.
+* `DevicePasswordLessBuildVersion` remains `0`, the `bootstrap` account and the `\L2C\CreatePrimaryAdmin` task stay enabled for diagnostics, the password source files are preserved, and, if the Panther flag is present, it is logged, no automatic reboot is performed, and the flag is left in place for operator follow-up.
