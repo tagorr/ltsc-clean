@@ -32,8 +32,7 @@ goto :eof
   exit /b 0
 
 :regadd
-  REM Usage: call :regadd "HKLM\path" "ValueName" ^
-        REG_DWORD "0"
+  REM Usage: call :regadd "HKLM\path" "ValueName" REG_DWORD "0"
   set "_rk=%~1"
   set "_rv=%~2"
   set "_rt=%~3"

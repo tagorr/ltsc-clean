@@ -4,11 +4,12 @@ param(
   [string]$FullName = '',
   [string]$Description = '',
   [string]$PasswordPlain = '',
-  [switch]$PasswordNeverExpires,
+  [bool]$PasswordNeverExpires = $true,
   [switch]$AddToRemoteDesktopUsers,
   [switch]$RollbackOnly,
   [switch]$VerboseLog
 )
+
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
