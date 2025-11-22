@@ -84,14 +84,14 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, RunOnce, or Task Scheduler.
 
-3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). It does not configure autologon and does not schedule the master.
+3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). Passwords are 24 characters from `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` generated via `RNGCryptoServiceProvider`; `net localgroup` return codes `0` and `2` (`already a member`) are treated as success when adding to Administrators. It does not configure autologon and does not schedule the master.
 
 4. After OOBE completes, Windows runs `SetupComplete.cmd` as SYSTEM exactly once. The script:
 
    * performs baseline servicing and hardening with DISM and registry policies;
    * interprets return codes from servicing: `0` is success; `3010` and `1641` are success with reboot required; anything else is failure (`FAILED=1`);
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
-   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates the secret (non-empty after trimming, allowed characters only), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
+   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only), validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
      * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in, passing `-PasswordPlain` with the validated secret.
    * if the primary admin secret is missing or invalid, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
@@ -205,7 +205,7 @@ The file is sensitive. In the normal unattended flow Stage B deletes it on succe
 
 * Path: `%WINDIR%\Setup\Scripts\.primaryadmin.pw`
 * Encoding: UTF-8 without BOM, single line
-* Content: one non-empty line with the primary admin password, no trailing whitespace
+* Content: first line only; must be non-empty as read and contain only the allowed characters (whitespace is invalid, no trimming)
 * Allowed characters: `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`
 * ACL suggestion: `SYSTEM:(F)`, `Administrators:(F)`
 
@@ -632,7 +632,7 @@ Short walkthrough of the intended behavior:
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
    * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, anything else is failure;
    * for `3010` and `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting;
-   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates it (non-empty after trimming, allowed characters only), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
+   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only), validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
 
      * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`;
