@@ -41,7 +41,7 @@
   * [ ] There is a check for the existence of `.bootstrap.pw`.
   * [ ] There is a check that the file is not empty (at least one non-empty line).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists.
-  * [ ] There is a check that `.primaryadmin.pw` is non-empty after trimming and respects allowed characters/format.
+  * [ ] There is a check that `.primaryadmin.pw` is read via `set /p` (first line only), is non-empty as read, and respects the allowed character set/format.
   * [ ] If it is missing or empty:
 
     * [ ] An error is logged, not just a warning.
@@ -122,7 +122,7 @@
   * [ ] Log contains `[ERROR] .bootstrap.pw missing or empty; ...`.
 * [ ] `.primaryadmin.pw` validation:
 
-  * [ ] Presence and non-empty content after trimming at `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is validated.
+  * [ ] Presence and non-empty first-line content at `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is validated using the allowed character set (no trimming).
   * [ ] Invalid or missing `.primaryadmin.pw` logs an `[ERROR]`, sets `FAILED=1`, and blocks Stage B registration and autologon priming.
   * [ ] Stage B/autologon priming proceed only when both `.bootstrap.pw` and `.primaryadmin.pw` are valid and `FAILED==0`.
 * [ ] Winlogon autologon to `bootstrap`:
@@ -185,7 +185,7 @@
   * [ ] Stage A is skipped but considered successful.
   * [ ] `$StageA_Succeeded = $true`, `$StageA_RC = 0`.
 * [ ] `-PasswordPlain` is treated as mandatory for unattended provisioning; in this baseline it is provided by `SetupComplete.cmd` from `.primaryadmin.pw`, not from `.bootstrap.pw`.
-* [ ] If the secret is missing or empty (after trimming):
+* [ ] If the secret is missing or empty as read (first line via `set /p`):
 
   * [ ] `$StageAAbortReason` is set to a clear description.
   * [ ] A controlled exception is thrown (`throw`), not `exit`.
