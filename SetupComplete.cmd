@@ -347,10 +347,13 @@ set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\N
 REM Источник пароля (создастся BootstrapLocalAdmin.ps1):
 set "PWFILE=%WINDIR%\Setup\Scripts\.bootstrap.pw"
 if exist "%PWFILE%" (
-  for /f "usebackq delims=" %%P in ("%PWFILE%") do (
-    if not "%%~P"=="" set "HAS_BOOTSTRAP_PW=1" & goto :after_pw_check
-  )
+  set "BOOTSTRAP_CHECK="
+  REM Читаем первую строку файла, стандартный синтаксис set /p VAR=<FILE
+  set /p BOOTSTRAP_CHECK=<"%PWFILE%"
 )
+if defined BOOTSTRAP_CHECK set "HAS_BOOTSTRAP_PW=1"
+set "BOOTSTRAP_CHECK="
+
 :after_pw_check
 if not "%HAS_BOOTSTRAP_PW%"=="1" (
   set "FAILED=1"
@@ -360,30 +363,22 @@ if not "%HAS_BOOTSTRAP_PW%"=="1" (
 if "%FAILED%"=="0" (
   if exist "%L2C_PRIMARYADMIN_SECRET%" (
     if not defined L2C_PRIMARYADMIN_PASSWORD (
-      for /f "usebackq delims=" %%P in ("%L2C_PRIMARYADMIN_SECRET%") do (
-        if not defined L2C_PRIMARYADMIN_PASSWORD (
-          set "L2C_PRIMARYADMIN_PASSWORD=%%P"
-        )
-      )
+      REM Читаем пароль, игнорируя атрибуты Hidden/System
+      set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
     )
-    call :trim_primaryadmin_password
-    if not defined L2C_PRIMARYADMIN_PASSWORD (
-      call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" is empty after trimming; Stage B registration will be skipped."
-    ) else if "%L2C_PRIMARYADMIN_PASSWORD%"=="" (
-      call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" is empty after trimming; Stage B registration will be skipped."
+    REM ВРЕМЕННО: пропускаем trim и проверку на "пусто"
+    call :validate_primaryadmin_password
+    if not "%ERRORLEVEL%"=="0" (
+      call :log "[ERROR] primary admin password contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
     ) else (
-      call :validate_primaryadmin_password
-      if not "%ERRORLEVEL%"=="0" (
-        call :log "[ERROR] primary admin password contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
-      ) else (
-        set "L2C_HAS_PRIMARYADMIN_SECRET=1"
-        call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
-      )
+      set "L2C_HAS_PRIMARYADMIN_SECRET=1"
+      call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
     )
   ) else (
     call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" not found; Stage B registration will be skipped."
   )
 )
+
 
 if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   set "FAILED=1"
@@ -404,17 +399,7 @@ if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
   reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  call :track_rc %RC%
-  if "%RC%"=="0" (
-    reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
-    reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
-    reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
-    call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
-  ) else (
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
-  )
+  call :winlogon_handle_default_password
 ) else (
   call :log "[WARN] Winlogon autologon not primed (missing bootstrap or primary admin secret)"
 )
@@ -668,6 +653,26 @@ if "%FAILED%"=="1" (
   exit /b 1
 )
 echo [RC] returning 0>>"%LOG%"
+exit /b 0
+
+:winlogon_handle_default_password
+REM Обрабатываем результат установки Winlogon DefaultPassword.
+REM На входе: ERRORLEVEL из PowerShell-команды.
+REM Используем глобальные WL и FAILED.
+
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+
+if "%RC%"=="0" (
+  reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+  reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+  reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
+  call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
+) else (
+  set "FAILED=1"
+  call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
+)
+
 exit /b 0
 
 REM ===== Helpers (Telemetry hardening) =====

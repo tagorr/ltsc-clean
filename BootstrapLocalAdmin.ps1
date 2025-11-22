@@ -1,12 +1,19 @@
-# Generate bootstrap password (A-Za-z2-9 and safe symbols)
-$chars = ('A'..'Z') + ('a'..'z') + ('2'..'9') + @('#','@','_','-')
-$rnd = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
+# Generate bootstrap password (A-Za-z0-9 and safe symbols)
+$chars = [char[]]'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-'
+
+if (-not $chars -or $chars.Count -eq 0) {
+    throw 'Internal error: empty password charset'
+}
+
+$rnd   = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
 $bytes = New-Object byte[] (24)
 try {
     $rnd.GetBytes($bytes)
-} finally {
+}
+finally {
     $rnd.Dispose()
 }
+
 $PasswordPlain = -join ($bytes | ForEach-Object { $chars[ $_ % $chars.Count ] })
 
 $ErrorActionPreference = 'Stop'
@@ -34,10 +41,10 @@ try {
     $adminsAccount = $adminsSid.Translate([System.Security.Principal.NTAccount])
     $adminGroup = $adminsAccount.Value.Split('\')[-1]
 
-    # Add to Administrators (1378 = already a member)
+    # Add to Administrators (2 = already a member)
     & net.exe localgroup $adminGroup $u /add | Out-Null 2>$null
     $rc = $LASTEXITCODE
-    if ($rc -ne 0 -and $rc -ne 1378) {
+    if ($rc -ne 0 -and $rc -ne 2) {
         throw [System.Exception]::new("Failed to add '$u' to Administrators (rc=$rc).")
     }
 
