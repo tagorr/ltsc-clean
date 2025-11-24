@@ -17,6 +17,8 @@ set "REBOOT_ON_RC=1"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
 set "FAILED=0"
+set "DISM_HARD_FAIL="
+set "HAS_DISM_WARN="
 set "HAS_BOOTSTRAP_PW=0"
 set "L2C_PRIMARYADMIN_SECRET=%WINDIR%\Setup\Scripts\.primaryadmin.pw"
 set "L2C_HAS_PRIMARYADMIN_SECRET=0"
@@ -107,6 +109,10 @@ goto :eof
 REM usage: call :disable_feature_if_enabled FeatureName LogName
 set "FN=%~1"
 set "LG=%~2"
+if defined DISM_HARD_FAIL (
+  call :log "[WARN] Skipping %LG% disable (previous DISM fatal RC)"
+  goto :eof
+)
 if not defined FN goto :eof
 call :log "[INFO] %LG% - attempting disable"
 call :run_dism /Disable-Feature /FeatureName:%FN%
@@ -122,6 +128,10 @@ goto :eof
 REM usage: call :remove_capability CapabilityName Friendly
 set "CAP=%~1"
 set "FR=%~2"
+if defined DISM_HARD_FAIL (
+  call :log "[WARN] Skipping capability %FR% removal (previous DISM fatal RC)"
+  goto :_cap_cleanup
+)
 if not defined CAP goto :_cap_cleanup
 set "_cap_state="
 for /f "tokens=2 delims=:" %%S in ('dism /Online /Get-CapabilityInfo /CapabilityName:%CAP% /English ^| findstr /C:"State :"') do (
@@ -240,25 +250,54 @@ set "CMD=dism /Online %* /Quiet /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComp
 call :log "[DISM] %CMD%"
 %CMD%
 set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" goto :dism_ok
+if "%RC%"=="3010" goto :dism_rc3010
+if "%RC%"=="1641" goto :dism_rc1641
+if "%RC%"=="-2146498548" goto :dism_warn_unknown_feature
+if "%RC%"=="2148468748" goto :dism_warn_unknown_feature
+if "%RC%"=="-2146498541" goto :dism_warn_invalid_state
+if "%RC%"=="2148468755" goto :dism_warn_invalid_state
+if "%RC%"=="-2146498529" goto :dism_fatal
+if "%RC%"=="2148468767" goto :dism_fatal
+if "%RC%"=="-2146498283" goto :dism_fatal
+if "%RC%"=="2148469013" goto :dism_fatal
+if "%RC%"=="-2147024891" goto :dism_fatal
+if "%RC%"=="2147942405" goto :dism_fatal
+if "%RC%"=="87" goto :dism_fatal
+if "%RC%"=="998" goto :dism_fatal
+goto :dism_fatal
+
+:dism_rc3010
+call :log "[DISM] RC=3010 (success, reboot required)"
+set "NEEDS_REBOOT=1"
+call :flag_reboot
+exit /b 0
+
+:dism_rc1641
+call :log "[DISM] RC=1641 (success, reboot initiated by installer)"
+set "NEEDS_REBOOT=1"
+call :flag_reboot
+exit /b 0
+
+:dism_ok
+call :log "[DISM] RC=0 (success)"
+exit /b 0
+
+:dism_warn_unknown_feature
+set "HAS_DISM_WARN=1"
+call :log "[DISM] RC=%RC% (warning, feature not recognized in this image)"
+exit /b 0
+
+:dism_warn_invalid_state
+set "HAS_DISM_WARN=1"
+call :log "[DISM] RC=%RC% (warning, invalid install state for this feature)"
+exit /b 0
+
+:dism_fatal
 call :track_rc %RC%
-if "%RC%"=="3010" (
-  call :log "[DISM] RC=3010 (success, reboot required)"
-  set "NEEDS_REBOOT=1"
-  call :flag_reboot
-  exit /b 0
-)
-if "%RC%"=="1641" (
-  call :log "[DISM] RC=1641 (success, reboot initiated by installer)"
-  set "NEEDS_REBOOT=1"
-  call :flag_reboot
-  exit /b 0
-)
-if "%RC%"=="0" (
-  call :log "[DISM] RC=0 (success)"
-  exit /b 0
-)
-call :log "[DISM] RC=%RC% (error)"
 set "FAILED=1"
+set "DISM_HARD_FAIL=1"
+call :log "[DISM] RC=%RC% (error)"
 exit /b %RC%
 
 :run_msi
@@ -610,12 +649,14 @@ powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 
 :: ------------ Component cleanup ------------
 call :log "[SECTION] Component cleanup"
-call :run_dism /Cleanup-Image /StartComponentCleanup /ResetBase
-set "RC=%ERRORLEVEL%"
-call :track_rc %RC%
-if not "%RC%"=="0" (
-  set "FAILED=1"
-  call :log "[ERROR] Component cleanup failed (RC=%RC%)"
+if defined DISM_HARD_FAIL (
+  call :log "[WARN] Skipping component cleanup due to previous DISM fatal RC"
+) else (
+  call :run_dism /Cleanup-Image /StartComponentCleanup /ResetBase
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :log "[ERROR] Component cleanup failed (RC=%RC%)"
+  )
 )
 
 :: ------------ mark reboot requirement via panther flag ------------
@@ -641,19 +682,20 @@ if "%NEEDS_REBOOT%"=="1" (
 call :log "[INFO] No reboot required"
 )
 call :log "----- SetupComplete finished -----"
-if defined L2C_FIRST_BAD_RC (
-  echo [RC] returning %L2C_FIRST_BAD_RC%>>"%LOG%"
-  exit /b %L2C_FIRST_BAD_RC%
-)
-if "%FAILED%"=="1" (
-  rem Revert temp logon tweaks on abort
+
+rem --- final RC calculation ---
+set "FINAL_RC=0"
+if defined L2C_FIRST_BAD_RC set "FINAL_RC=%L2C_FIRST_BAD_RC%"
+if "%FINAL_RC%"=="0" if "%FAILED%"=="1" set "FINAL_RC=1"
+
+rem if the final RC is not 0, roll back temporary logon policies
+if not "%FINAL_RC%"=="0" (
   reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
-  echo [RC] returning 1 (FAILED fallback)>>"%LOG%"
-  exit /b 1
 )
-echo [RC] returning 0>>"%LOG%"
-exit /b 0
+
+call :log "[RC] returning %FINAL_RC%"
+exit /b %FINAL_RC%
 
 :winlogon_handle_default_password
 REM Обрабатываем результат установки Winlogon DefaultPassword.
