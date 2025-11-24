@@ -89,7 +89,13 @@ This baseline expects the primary local admin password to be supplied explicitly
 4. After OOBE completes, Windows runs `SetupComplete.cmd` as SYSTEM exactly once. The script:
 
    * performs baseline servicing and hardening with DISM and registry policies;
-   * interprets return codes from servicing: `0` is success; `3010` and `1641` are success with reboot required; anything else is failure (`FAILED=1`);
+   * interprets DISM return codes with a small warning whitelist for LTSC-missing features:
+     * `0` – success;
+     * `3010` / `1641` – success, reboot required (set `NEEDS_REBOOT=1` and write the Panther reboot flag);
+     * `-2146498548` / `2148468748` – warning, feature not recognized in this image; logged and treated as success;
+     * `-2146498541` / `2148468755` – warning, invalid install state for this feature; logged and treated as success;
+     * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
+   * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only), validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, and `FAILED=0`:
      * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
@@ -335,10 +341,15 @@ If the primary admin secret is missing or invalid, `SetupComplete.cmd` logs the 
 
 * Timestamps are ISO-8601. PowerShell logging uses `Get-Date -Format o`.
 * DISM logging is centralized to `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`.
-* Return codes are interpreted as:
+* DISM return codes are interpreted as:
 
-  * `0` - success
-  * `3010` / `1641` - success, reboot required (flagged via `_needs_reboot.flag`)
+  * `0` – success;
+  * `3010` / `1641` – success, reboot required (flagged via `_needs_reboot.flag`);
+  * `-2146498548` / `2148468748` – warning (feature not present/not recognized on this SKU); logged and do not fail the run;
+  * `-2146498541` / `2148468755` – warning (invalid install state for this feature on this SKU); logged and do not fail the run;
+  * any other code – fatal servicing error (see FINAL_RC aggregation below).
+
+Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_BAD_RC`, and set `DISM_HARD_FAIL=1`. After a fatal RC, feature/capability/cleanup DISM calls are skipped. At the end of `SetupComplete.cmd`, `FINAL_RC` is computed as `L2C_FIRST_BAD_RC` when set, otherwise `1` when `FAILED==1`, otherwise `0`, and is logged as “[RC] returning %FINAL_RC%” before the script exits with that code.
 * Installers are invoked with:
 
   * MSI: `REBOOT=ReallySuppress /norestart`
