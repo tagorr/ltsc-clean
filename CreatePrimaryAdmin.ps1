@@ -385,6 +385,36 @@ try {
     $primaryPwCleanupState = 'preserved'
   }
 
+  $cleanupLogPath = Join-Path $env:WINDIR 'Logs\DISM\StartComponentCleanup-StageB.log'
+  $cleanupNote = $null
+  if (-not $isRecovery) {
+    $cleanupArgs = @(
+      '/Online'
+      '/Cleanup-Image'
+      '/StartComponentCleanup'
+      '/ResetBase'
+      "/LogPath:$cleanupLogPath"
+      '/LogLevel:4'
+    )
+    Write-SetupLog ("Stage B: starting component cleanup: dism.exe {0}" -f ($cleanupArgs -join ' '))
+    & dism.exe @cleanupArgs | Out-Null 2>$null
+    $cleanupRc = $LASTEXITCODE
+    if ($cleanupRc -eq 0) {
+      $cleanupNote = 'Component cleanup completed successfully (RC=0)'
+      Write-SetupLog ("Stage B: {0}" -f $cleanupNote)
+    } else {
+      $cleanupNote = "Component cleanup failed (RC=$cleanupRc), see $cleanupLogPath"
+      Write-SetupLog ("Stage B: {0}" -f $cleanupNote) 'WARN'
+    }
+  } else {
+    $cleanupNote = 'Component cleanup skipped (recovery mode)'
+    Write-SetupLog ("Stage B: {0}" -f $cleanupNote) 'WARN'
+  }
+
+  if ($cleanupNote) {
+    $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $cleanupNote)
+  }
+
   $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
   if ($pwCleanupState -ne 'unknown') {
     $finalLogEntries += ("[{0}] bootstrap.pw cleanup state={1}" -f ([DateTime]::UtcNow.ToString('o')), $pwCleanupState)

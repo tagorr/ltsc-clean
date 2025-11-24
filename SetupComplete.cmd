@@ -649,15 +649,7 @@ powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 
 :: ------------ Component cleanup ------------
 call :log "[SECTION] Component cleanup"
-if defined DISM_HARD_FAIL (
-  call :log "[WARN] Skipping component cleanup due to previous DISM fatal RC"
-) else (
-  call :run_dism /Cleanup-Image /StartComponentCleanup /ResetBase
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[ERROR] Component cleanup failed (RC=%RC%)"
-  )
-)
+call :log "[INFO] Component cleanup will be performed during Stage B (CreatePrimaryAdmin)"
 
 :: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
