@@ -698,3 +698,25 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - `SECURITY.md` documents `.bootstrap.pw` and `.primaryadmin.pw` handling requirements and must be updated first if future changes relax ACL expectations.
 - `AGENTS.md` continues to enforce locale-agnostic DISM usage, RC policy, SID-based admin resolution, and strict password source file cleanup/logging for any future edits to these scripts.
+- `AGENTS.md` also documents the DISM return-code classification (success, reboot, LTSC warning whitelist, fatal) and the FINAL_RC aggregation model for SetupComplete.cmd.
+
+## ADR-007: DISM RC classification and FINAL_RC aggregation
+
+**Date:** 2025-11-23
+
+**Context:** Treating every non-0/3010/1641 DISM return code as fatal caused false failures on LTSC images where optional features (for example Fax/Scan/PSR/Remote Assistance) are missing or non-selectable. SetupComplete.cmd aborted even though the component store was healthy and the hardening intent was satisfied.
+
+**Decision:**
+
+- Whitelist two DISM warning codes and treat them as non-fatal:
+  - -2146498548 / 2148468748 (“feature not recognized in this image”).
+  - -2146498541 / 2148468755 (“invalid install state for this feature”).
+  For these codes, `:run_dism` logs a warning, sets `HAS_DISM_WARN=1`, and returns success.
+- All other non-success DISM return codes remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
+- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, `FINAL_RC=0`. The script logs “[RC] returning %FINAL_RC%” and exits with that code.
+
+**Consequences:**
+
+- Clean LTSC images where certain optional features are not present or not selectable no longer fail `SetupComplete.cmd` purely because of benign DISM warnings; these conditions remain visible in the log via explicit warning entries and `HAS_DISM_WARN=1`.
+- Truly fatal servicing problems still produce a non-zero `FINAL_RC`, trip `DISM_HARD_FAIL`, and stop further feature/capability/cleanup calls, which makes the first failing DISM call and its RC easy to identify in the logs.
+- CI pipelines and operators can rely on `FINAL_RC` together with the DISM log classification (success, whitelisted warning, fatal) as the primary signal for pass/fail, instead of guessing from raw DISM return codes alone.
