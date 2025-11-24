@@ -72,7 +72,11 @@ Prefer one task per CLI session. If scope or shell rules change, start a fresh s
 ## Policies
 
 * **Edition gate:** `EditionID == REQUIRED_EDITION` → otherwise **FAIL**.
-* **DISM RC policy:** `0` → OK. `3010/1641` → OK **and** write the `Panther flag`. Any other RC → **FAIL** (`FAILED=1`, `exit /b <RC>`).
+* **DISM RC policy (SetupComplete.cmd):**
+  * `0` → success.
+  * `3010/1641` → success, reboot required; set `NEEDS_REBOOT=1` and write the Panther reboot flag.
+  * `-2146498548/2148468748` (“feature not recognized in this image”) and `-2146498541/2148468755` (“invalid install state for this feature”) → warning; log as such, set `HAS_DISM_WARN=1`, and treat as success.
+  * Any other RC → fatal servicing error; log it, set `FAILED=1` and `DISM_HARD_FAIL=1`, and capture the first fatal return code in `L2C_FIRST_BAD_RC` via `:track_rc`. Once `DISM_HARD_FAIL` is set, further DISM feature/capability/cleanup calls must be skipped for the rest of the run.
 * **DISM log:** single path for all calls — `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (use `/LogPath` + `/LogLevel:4`).
 * **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (ISO-8601), and the DISM log above.
 * **Winlogon:** `HKLM\...\Winlogon\IgnoreShiftOverride` = **REG_SZ "0"** (not `REG_DWORD`), with no intermediate `"1"`.
@@ -143,7 +147,7 @@ Disclaimer: this is a manual engineering test. Inside `SetupComplete.cmd` no reb
 
 *After the task fires, verify (see README for details): `AutoAdminLogon=0`, `ForceAutoLogon=0`, `DefaultPassword` and `AutoLogonCount` removed, `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=0`, `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, `bootstrap` disabled, `primaryadmin` is a member of Administrators, task `\L2C\CreatePrimaryAdmin` deleted, and `C:\ProgramData\l2c_master_<timestamp>.log` present.*
 
-*`SetupComplete.cmd` exits with the first failing RC (anything other than `0/3010/1641`) to surface servicing errors.*
+*`SetupComplete.cmd` aggregates a final exit code instead of exiting immediately on the first failure: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise `FINAL_RC=0`. Warnings (`HAS_DISM_WARN=1`) do not force a failure. The script logs “[RC] returning %FINAL_RC%” via `:log` and exits with that code.*
 
 **Validation on a fresh VM:**
 

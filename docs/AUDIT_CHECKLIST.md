@@ -105,6 +105,10 @@
 
   * [ ] `----- SetupComplete started -----`.
   * [ ] A clear final entry indicating success or failure.
+  * [ ] Final entry of the form `[RC] returning <code>` written via `:log`, where `<code>` equals:
+        - `0` on success;
+        - the first fatal DISM RC when present (`L2C_FIRST_BAD_RC`);
+        - or `1` when `FAILED==1` without a captured fatal RC.
 
 #### 4.2. `.bootstrap.pw` check and Stage B gate
 
@@ -161,6 +165,11 @@
   * [ ] `[INFO] Reboot required` is logged.
   * [ ] `:flag_reboot` creates `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) with predictable content (for example `need-reboot`).
 * [ ] There are no `shutdown.exe` calls inside `SetupComplete.cmd`.
+* [ ] Component cleanup and reboot
+* [ ] Component cleanup executed. When required, the reboot was executed once by Stage B after consuming the Panther flag.
+    * [ ] If a fatal DISM RC occurred earlier (check for `DISM_HARD_FAIL` or `[DISM] RC=... (error)`), component cleanup may be skipped with a `[WARN] Skipping component cleanup due to previous DISM fatal RC` entry; this is acceptable.
+    * [ ] DISM warning RCs `-2146498548/2148468748` and `-2146498541/2148468755` are allowed; they must appear as `[DISM] RC=... (warning, ...)` and must not set `FAILED` or `DISM_HARD_FAIL`.
+    * [ ] No `[DISM] RC=... (error)` entries should appear in a passing run; if present, they must align with a non-zero final RC.
 
 ---
 
@@ -426,6 +435,8 @@ For each document:
   * [ ] No uncontrolled reboot occurs.
   * [ ] Logs clearly describe where and what failed.
   * [ ] The master log records FAIL with a reason.
+* [ ] `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal path; if they are present, you are either in a recovery scenario or running the master manually (see README for expected behavior).
+* [ ] FINAL_RC aggregation matches behavior: `L2C_FIRST_BAD_RC` wins if present; otherwise `FINAL_RC=1` when `FAILED==1`, else `0`.
 
 ---
 
@@ -443,3 +454,8 @@ For each document:
   * [ ] Explicitly forbid changing EOL and BOM outside of targeted files or hunks.
   * [ ] Require minimal diffs and clear change reports.
   * [ ] Do not initiate actions outside the agreed file list.
+
+### Additional DISM/RC validation
+
+* [ ] `SetupComplete.log` shows `[RC] returning 0` for a passing run. For failing runs, non-zero values must match the `FINAL_RC` rules and the first fatal RC captured in `L2C_FIRST_BAD_RC`.
+* [ ] DISM warnings related to missing/not-applicable components on LTSC (whitelisted RCs such as `-2146498548/2148468748` and `-2146498541/2148468755`) are documented as acceptable; any DISM return codes outside `{0, 3010, 1641}` and this warning whitelist must be treated as audit failures and must correspond to a non-zero `FINAL_RC`.

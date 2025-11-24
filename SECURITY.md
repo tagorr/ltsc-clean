@@ -18,6 +18,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 * Windows Update runs in notify-only mode. No drivers, no preview builds, no other Microsoft products, no OS upgrade offers.
 * WPAD is disabled via policies on WinINET and WinHTTP. The WinHTTP Auto-Proxy service is not forcibly disabled.
 * Component cleanup uses `/ResetBase` to seal the image, which removes rollback for the currently installed updates.
+* Several hardening steps rely on disabling optional Windows features and capabilities via DISM (for example SMB1, Telnet, Remote Assistance, Fax/Scan, PSR, Quick Assist, SNMP). On LTSC images some of these components may be absent or non-selectable; in these cases `SetupComplete.cmd` logs known benign DISM return codes (`-2146498548/2148468748`, `-2146498541/2148468755`) as warnings, sets `HAS_DISM_WARN=1`, and continues. Operators should review `SetupComplete.log` to confirm that any missing components are acceptable for their environment. Unexpected DISM errors remain fatal, set `FAILED=1/DISM_HARD_FAIL=1`, and surface in the final exit code.
 
 ## Not a fit if you require
 
