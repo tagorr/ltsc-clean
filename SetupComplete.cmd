@@ -488,6 +488,10 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "UpdateDefault" "REG_
 REM Optional: block installs too (uncomment if needed):
 REM call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "InstallDefault" "REG_DWORD" "0"
 
+:: ------------ Edge first run experience ------------
+call :log "[SECTION] Edge first run experience"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "HideFirstRunExperience" "REG_DWORD" "1"
+
 :: ------------ Internet Explorer First Run policy ------------
 call :log "[SECTION] IE First Run policy"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableFirstRunCustomize" "REG_DWORD" "1"
