@@ -32,8 +32,8 @@
         <OSImage>
           <InstallFrom>
             <MetaData wcm:action="add"
-                      Key="/IMAGE/NAME"
-                      Value="Windows 10 Enterprise LTSC" />
+                      Key="/IMAGE/INDEX"
+                      Value="1" />
           </InstallFrom>
         </OSImage>
       </ImageInstall>
