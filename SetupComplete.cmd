@@ -651,10 +651,6 @@ powercfg -h off >nul 2>&1
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul 2>&1
 powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 
-:: ------------ Component cleanup ------------
-call :log "[SECTION] Component cleanup"
-call :log "[INFO] Component cleanup will be performed during Stage B (CreatePrimaryAdmin)"
-
 :: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
   call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
