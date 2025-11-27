@@ -76,7 +76,8 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 * The answer file targets Index 1 and sets `<cpi:offlineImage name="Windows 10 Enterprise LTSC">`.
 * At runtime, Windows Setup selects the image by Index; the `<cpi:offlineImage>` entry is for WSIM validation and self documentation only and does not affect drive letters or media paths.
-* If you use another WIM/ESD, update the `name` to exactly match `Get-WindowsImage ... | Select ImageName` output, or remove the `name` attribute and keep `Index=...`.
+* The `windowsPE` pass selects the OS via `/IMAGE/INDEX=1` and sets `<UserData><AcceptEula>true</AcceptEula>`, so the installer never shows the “Windows 10 Enterprise LTSC vs Windows 10 Enterprise N LTSC” edition picker and skips the interactive EULA screen.
+* If you use another WIM/ESD, adjust the `Index` to match your media layout; do not rely on the image name alone. Update the `name` accordingly or remove it and keep `Index=...`.
 
 ## Install flow
 
@@ -226,7 +227,7 @@ This file is not part of the repository and must be created by the operator befo
 
 > The baseline does not disable `WinHttpAutoProxySvc`. WPAD is controlled via supported WinINET and WinHTTP keys.
 
-* Microsoft Edge controlled via policy (`EdgeUpdate\UpdateDefault=0`, optional `InstallDefault=0`). No uninstall and no scheduler tampering by default.
+* Microsoft Edge controlled via policy (`EdgeUpdate\UpdateDefault=0`, optional `InstallDefault=0`). First-run wizard suppressed via `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1`. No uninstall and no scheduler tampering by default.
 * SmartScreen off for Explorer and Edge. Windows Defender minimized via supported preferences.
 * Diagnostics data level 0; CEIP and WER disabled.
 * Delivery Optimization set to mode 0 (HTTP only, no peer to peer).
@@ -235,8 +236,6 @@ This file is not part of the repository and must be created by the operator befo
 * Services disabled with guards: SysMain, WSearch, Spooler, DiagTrack, dmwappushsvc, WerSvc, WebClient.
 * Features and Capabilities: SMBv1 and PowerShell 2.0 disabled if present; remove Quick Assist, SNMP Client, and WMI SNMP Provider with correct DISM return code handling.
 * Windows Update in notify only mode, no drivers, no preview builds, no other Microsoft products, OS upgrade offers blocked.
-* Component cleanup with `/ResetBase` to seal the image.
-
 ## Post-install quick check
 
 * `%WINDIR%\Panther\SetupComplete.log` exists with no `[ERROR]` entries.
@@ -360,7 +359,7 @@ Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_B
 See `SECURITY.md` for details. Highlights:
 
 * SmartScreen is disabled and Defender is minimized by design.
-* `/ResetBase` removes rollback for currently installed updates.
+* The baseline does not run `DISM /Online /Cleanup-Image /StartComponentCleanup` or `/ResetBase` automatically. Operators may choose to run WinSxS cleanup (with or without `/ResetBase`) as a separate maintenance step on long-lived machines if they understand the trade-offs.
 * With WPAD disabled, proxies must be configured explicitly later.
 
 ## License

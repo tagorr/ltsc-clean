@@ -121,7 +121,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## 2. Installation flow
 
-1. Install from media with `autounattend.xml` (en-US defaults, accept EULA, correct image index, OOBE flows toward local account creation).
+1. Install from media with `Autounattend.xml` (en-US defaults, accept EULA, correct image index, OOBE flows toward local account creation). The `windowsPE` pass selects the OS by `/IMAGE/INDEX=1` and sets `<UserData><AcceptEula>true</AcceptEula>` so the LTSC vs LTSC N picker and the license terms screen never appear; if you use media with a different WIM layout, adjust the index explicitly instead of relying on the image name.
 
 2. After OOBE completes, Windows executes `SetupComplete.cmd` as SYSTEM. In addition to servicing and hardening, `SetupComplete.cmd`:
    * reads `%WINDIR%\Setup\Scripts\.bootstrap.pw` (generated earlier by `BootstrapLocalAdmin.ps1`) and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` (operator-supplied secret for the primary admin);
@@ -281,6 +281,8 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
   - (optional) `InstallDefault=0` to block new channel installs.
 
+* Suppress the Edge first run experience via policy: `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1` so that launching Edge on the initial login does not show the interactive wizard.
+
 * Do **not** remove Edge binaries and do **not** disable scheduled tasks by default. Those tactics are brittle across updates and are unnecessary when policies control updates/installs.
 
 * Rationale: supported, predictable, and update-resilient behavior.
@@ -437,9 +439,9 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 ### 6.11 Component cleanup and reboot
 
-* **Component Store:** `Dism /Online /Cleanup-Image /StartComponentCleanup [/ResetBase]` is executed via the DISM runner (central log + RC handling).
+* **Component Store:** the baseline pipeline does **not** run `DISM /Online /Cleanup-Image /StartComponentCleanup` or `/ResetBase` during PreOOBE → SetupComplete → CreatePrimaryAdmin.
 
-* **`/ResetBase`** permanently removes superseded component versions — rollback of previously installed updates becomes impossible; future updates install normally.
+* **Rationale:** on a fresh LTSC image without cumulative updates, and with multiple DISM servicing operations on the first boot, online component cleanup tends to hit CBS pending operations (for example `0x800F0806`) and does not provide meaningful benefit. WinSxS cleanup (including any use of `/ResetBase`) is considered a separate, post-install or operator-driven maintenance task outside the scope of this project.
 
 * **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` sets `NEEDS_REBOOT=1` and writes the Panther flag so that Stage B of `CreatePrimaryAdmin.ps1` can consume it after the first interactive logon. Stage B clears the flag and performs a single controlled reboot only when Stage B succeeded in the normal path and the flag exists; in recovery mode or when Stage B fails, Stage B logs the pending reboot, skips the automatic restart, and leaves the flag as a marker for manual follow-up.
 
@@ -461,7 +463,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * SmartScreen disabled and Defender minimized by design. This reduces protection surface and is a conscious trade-off for a silent profile. Consumers of the baseline must understand and accept the risk.
 
-* `DISM /ResetBase` removes rollback for the currently installed updates. This is intended for a clean, sealed base image.
+* Operators who choose to run `DISM /ResetBase` post-install should understand it removes rollback for the currently installed updates.
 
 * With WPAD disabled, environments that later introduce a proxy will require explicit WinHTTP proxy configuration.
 
@@ -489,7 +491,7 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
 
 * Quick Assist, SNMP Client, and WMI SNMP Provider capabilities are removed or reported not applicable with correct DISM codes.
 
-* Component cleanup executed. When required, the reboot was executed once by Stage B after consuming the Panther flag.
+* Reboot path verified. When required, the reboot was executed once by Stage B after consuming the Panther flag; no additional automatic reboots are triggered by SetupComplete.
 
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal path; if they are present, you are either in a recovery scenario or running the master manually (see README for expected behavior).
 
