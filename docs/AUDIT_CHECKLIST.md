@@ -22,6 +22,11 @@
 
   * [ ] PowerShell: `Set-StrictMode -Version Latest`, no syntax errors.
   * [ ] CMD: no unclosed quotes, correct structure of `(` `)` blocks.
+S
+### 1.1. Unattended setup UX (image selection & EULA)
+
+* [ ] Installer skips the edition picker (LTSC vs LTSC N) because the answer file selects the OS by `/IMAGE/INDEX=1` in `windowsPE`.
+* [ ] License terms / EULA screen does not appear during unattended install because `<UserData><AcceptEula>true</AcceptEula>` is set in `Autounattend.xml`.
 
 ---
 
@@ -169,6 +174,11 @@
   * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is created with predictable content.
   * [ ] Stage B of `CreatePrimaryAdmin.ps1` consumes the Panther flag on the normal path and performs at most one controlled reboot when the flag exists.
   * [ ] In recovery mode or when Stage B fails, the flag is left in place as a marker for manual follow-up and no automatic reboot is triggered by Stage B.
+
+#### 4.5. Edge first run experience
+
+* [ ] `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience` exists and equals `1`.
+* [ ] On the first login as the primary admin, launching Edge does not display the interactive first-run wizard.
 
 ---
 

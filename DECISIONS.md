@@ -121,7 +121,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## 2. Installation flow
 
-1. Install from media with `autounattend.xml` (en-US defaults, accept EULA, correct image index, OOBE flows toward local account creation).
+1. Install from media with `Autounattend.xml` (en-US defaults, accept EULA, correct image index, OOBE flows toward local account creation). The `windowsPE` pass selects the OS by `/IMAGE/INDEX=1` and sets `<UserData><AcceptEula>true</AcceptEula>` so the LTSC vs LTSC N picker and the license terms screen never appear; if you use media with a different WIM layout, adjust the index explicitly instead of relying on the image name.
 
 2. After OOBE completes, Windows executes `SetupComplete.cmd` as SYSTEM. In addition to servicing and hardening, `SetupComplete.cmd`:
    * reads `%WINDIR%\Setup\Scripts\.bootstrap.pw` (generated earlier by `BootstrapLocalAdmin.ps1`) and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` (operator-supplied secret for the primary admin);
@@ -280,6 +280,8 @@ if /i not "%DV%"=="%REQUIRED_DV%" (
   - `HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate\UpdateDefault=0`
 
   - (optional) `InstallDefault=0` to block new channel installs.
+
+* Suppress the Edge first run experience via policy: `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1` so that launching Edge on the initial login does not show the interactive wizard.
 
 * Do **not** remove Edge binaries and do **not** disable scheduled tasks by default. Those tactics are brittle across updates and are unnecessary when policies control updates/installs.
 

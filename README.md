@@ -76,7 +76,8 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 * The answer file targets Index 1 and sets `<cpi:offlineImage name="Windows 10 Enterprise LTSC">`.
 * At runtime, Windows Setup selects the image by Index; the `<cpi:offlineImage>` entry is for WSIM validation and self documentation only and does not affect drive letters or media paths.
-* If you use another WIM/ESD, update the `name` to exactly match `Get-WindowsImage ... | Select ImageName` output, or remove the `name` attribute and keep `Index=...`.
+* The `windowsPE` pass selects the OS via `/IMAGE/INDEX=1` and sets `<UserData><AcceptEula>true</AcceptEula>`, so the installer never shows the “Windows 10 Enterprise LTSC vs Windows 10 Enterprise N LTSC” edition picker and skips the interactive EULA screen.
+* If you use another WIM/ESD, adjust the `Index` to match your media layout; do not rely on the image name alone. Update the `name` accordingly or remove it and keep `Index=...`.
 
 ## Install flow
 
@@ -226,7 +227,7 @@ This file is not part of the repository and must be created by the operator befo
 
 > The baseline does not disable `WinHttpAutoProxySvc`. WPAD is controlled via supported WinINET and WinHTTP keys.
 
-* Microsoft Edge controlled via policy (`EdgeUpdate\UpdateDefault=0`, optional `InstallDefault=0`). No uninstall and no scheduler tampering by default.
+* Microsoft Edge controlled via policy (`EdgeUpdate\UpdateDefault=0`, optional `InstallDefault=0`). First-run wizard suppressed via `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1`. No uninstall and no scheduler tampering by default.
 * SmartScreen off for Explorer and Edge. Windows Defender minimized via supported preferences.
 * Diagnostics data level 0; CEIP and WER disabled.
 * Delivery Optimization set to mode 0 (HTTP only, no peer to peer).
