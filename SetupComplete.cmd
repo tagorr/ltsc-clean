@@ -488,6 +488,10 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "UpdateDefault" "REG_
 REM Optional: block installs too (uncomment if needed):
 REM call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "InstallDefault" "REG_DWORD" "0"
 
+:: ------------ Edge first run experience ------------
+call :log "[SECTION] Edge first run experience"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "HideFirstRunExperience" "REG_DWORD" "1"
+
 :: ------------ Internet Explorer First Run policy ------------
 call :log "[SECTION] IE First Run policy"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableFirstRunCustomize" "REG_DWORD" "1"
@@ -646,18 +650,6 @@ if exist "%DEFNTUSER%" (
 powercfg -h off >nul 2>&1
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul 2>&1
 powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
-
-:: ------------ Component cleanup ------------
-call :log "[SECTION] Component cleanup"
-if defined DISM_HARD_FAIL (
-  call :log "[WARN] Skipping component cleanup due to previous DISM fatal RC"
-) else (
-  call :run_dism /Cleanup-Image /StartComponentCleanup /ResetBase
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[ERROR] Component cleanup failed (RC=%RC%)"
-  )
-)
 
 :: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
