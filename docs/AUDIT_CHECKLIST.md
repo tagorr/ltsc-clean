@@ -164,12 +164,11 @@
 
   * [ ] `[INFO] Reboot required` is logged.
   * [ ] `:flag_reboot` creates `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) with predictable content (for example `need-reboot`).
-* [ ] There are no `shutdown.exe` calls inside `SetupComplete.cmd`.
 * [ ] Component cleanup and reboot
-* [ ] Component cleanup executed. When required, the reboot was executed once by Stage B after consuming the Panther flag.
-    * [ ] If a fatal DISM RC occurred earlier (check for `DISM_HARD_FAIL` or `[DISM] RC=... (error)`), component cleanup may be skipped with a `[WARN] Skipping component cleanup due to previous DISM fatal RC` entry; this is acceptable.
-    * [ ] DISM warning RCs `-2146498548/2148468748` and `-2146498541/2148468755` are allowed; they must appear as `[DISM] RC=... (warning, ...)` and must not set `FAILED` or `DISM_HARD_FAIL`.
-    * [ ] No `[DISM] RC=... (error)` entries should appear in a passing run; if present, they must align with a non-zero final RC.
+  * [ ] No `shutdown.exe` calls are present inside `SetupComplete.cmd`.
+  * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is created with predictable content.
+  * [ ] Stage B of `CreatePrimaryAdmin.ps1` consumes the Panther flag on the normal path and performs at most one controlled reboot when the flag exists.
+  * [ ] In recovery mode or when Stage B fails, the flag is left in place as a marker for manual follow-up and no automatic reboot is triggered by Stage B.
 
 ---
 

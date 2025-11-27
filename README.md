@@ -235,8 +235,6 @@ This file is not part of the repository and must be created by the operator befo
 * Services disabled with guards: SysMain, WSearch, Spooler, DiagTrack, dmwappushsvc, WerSvc, WebClient.
 * Features and Capabilities: SMBv1 and PowerShell 2.0 disabled if present; remove Quick Assist, SNMP Client, and WMI SNMP Provider with correct DISM return code handling.
 * Windows Update in notify only mode, no drivers, no preview builds, no other Microsoft products, OS upgrade offers blocked.
-* Component cleanup with `/ResetBase` to seal the image.
-
 ## Post-install quick check
 
 * `%WINDIR%\Panther\SetupComplete.log` exists with no `[ERROR]` entries.
@@ -360,7 +358,7 @@ Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_B
 See `SECURITY.md` for details. Highlights:
 
 * SmartScreen is disabled and Defender is minimized by design.
-* `/ResetBase` removes rollback for currently installed updates.
+* The baseline does not run `DISM /Online /Cleanup-Image /StartComponentCleanup` or `/ResetBase` automatically. Operators may choose to run WinSxS cleanup (with or without `/ResetBase`) as a separate maintenance step on long-lived machines if they understand the trade-offs.
 * With WPAD disabled, proxies must be configured explicitly later.
 
 ## License
