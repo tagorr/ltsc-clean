@@ -25,13 +25,13 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
 
-- **Context:** Stage A мог падать на сообщении `ADSI update failed for $User:` — PowerShell 5.1 некорректно парсил `$User:` и прерывал выполнение во время ADSI-обновления.
+- **Context:** Stage A could fail on the message `ADSI update failed for $User:` — PowerShell 5.1 parsed `$User:` incorrectly and aborted during the ADSI update.
 
-- **Decision:** точечно заменить текст на `ADSI update failed for ${User}:` без иных правок скрипта.
+- **Decision:** narrowly replace the text with `ADSI update failed for ${User}:` with no other script changes.
 
-- **Consequences:** устранён фатальный стопор Stage A; прогнозируемость прогона повысилась.
+- **Consequences:** fatal Stage A stopper removed; run predictability improved.
 
-- **Related:** см. “Idempotent Stage A; guard Stage B” про идемпотентность Stage A и защиту Stage B.
+- **Related:** see “Idempotent Stage A; guard Stage B” about Stage A idempotence and the Stage B guard.
 
 ## 2A. Move servicing from XML into SetupComplete
 
@@ -45,25 +45,25 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ---
 
-## 3A. Контракт между файлами
+## 3A. Contract between files
 
-* `autounattend.xml`: без `FirstLogonCommands`, без `RunSynchronous`, без `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`. Локали en-US на WinPE и oobeSystem.
+* `autounattend.xml`: without `FirstLogonCommands`, without `RunSynchronous`, without `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`. en-US locales in WinPE and oobeSystem.
 
 * `SetupComplete.cmd`: all post install work (DISM, policies, services, tasks), detailed logging, a platform gate for LTSC 2021, idempotent behavior, and, when required, computation of `NEEDS_REBOOT` and writing the Panther flag.
 
 ---
 
-## 6A. Таблица переноса настроек из XML
+## 6A. Table for migrating settings out of XML
 
 - **Pre-OOBE delivery:** `PreOOBE.cmd` is **embedded** into `install.wim` at `Windows\Setup\Scripts\`, and is invoked from unattend (`specialize`/`RunSynchronous`).
 
-| Функция               | Раньше (XML) | Теперь (SetupComplete) | Как выполняется |
+| Function               | Before (XML) | Now (SetupComplete) | How it is performed |
 
 |-----------------------|--------------|-------------------------|-----------------|
 
 | IE First Run policy   | FirstLogon   | SetupComplete           | `reg add ... DisableFirstRunCustomize=1` |
 
-| Отключение IE feature | FirstLogon   | SetupComplete           | `DISM /Disable-Feature` с предчеком |
+| Disable IE feature | FirstLogon   | SetupComplete           | `DISM /Disable-Feature` with a pre-check |
 
 | WMP/XPS/Fax/Scan/PSR  | FirstLogon   | SetupComplete           | `DISM /Disable-Feature` |
 
@@ -71,35 +71,35 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 | RDC Infrastructure    | FirstLogon   | SetupComplete           | `DISM /Disable-Feature` |
 
-| Анти-Edge                    | Разные места | SetupComplete           | Политики EdgeUpdate (UpdateDefault=0, опц. InstallDefault=0); без деинсталляции |
+| Edge hardening | Various places | SetupComplete           | EdgeUpdate policies (UpdateDefault=0, optional InstallDefault=0); no uninstall |
 
-| Телеметрия/WER        | Разные места | SetupComplete           | Политики, службы, задачи |
+| Telemetry/WER        | Various places | SetupComplete           | Policies, services, tasks |
 
-| Delivery Optimization | Разные места | SetupComplete           | Политики DO (Mode 0) |
+| Delivery Optimization | Various places | SetupComplete           | DO policies (Mode 0) |
 
 | `Panther flag` reboot signal | —            | SetupComplete           |`%REBOOT_FLAG%` → `Panther flag` (conditionally when servicing RC is `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; Stage B of `CreatePrimaryAdmin.ps1` consumes the flag)|
 
 ---
 
-## 6B. Профиль OOBE и инварианты XML
+## 6B. OOBE profile and XML invariants
 
-* Нет авто-создания пользователя и автологина.
+* No auto-created user and no autologon.
 
-* Онлайн-экраны MSA скрыты, локальный путь доступен.
+* MSA online screens are hidden; the local path is available.
 
 * `ComputerName=*`, `TimeZone=Romance Standard Time`.
 
-* `InstallToAvailablePartition=false`, ручная разметка.
+* `InstallToAvailablePartition=false`, manual partitioning.
 
-* en-US локали в WinPE и oobeSystem.
+* en-US locales in WinPE and oobeSystem.
 
 ---
 
-## 6C. Правила качества
+## 6C. Quality rules
 
-* Все операции DISM сопровождаются предчеком и логированием.
+* All DISM operations include a pre-check and logging.
 
-* Скрипты идемпотентны, повторный запуск безопасен.
+* Scripts are idempotent; rerunning them is safe.
 
 * `SetupComplete.cmd` never performs a direct reboot and never calls `shutdown.exe`; it only decides whether a reboot is required and signals that via the Panther flag.
 
@@ -239,21 +239,21 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   * `CurrentBuild >= 19044`
 
-См. раздел **뿯½5.1** ниже для подробностей и примера кода проверки.
+See section **5.1** below for details and a sample verification snippet.
 
 ---
 
 **Mismatch policy (clarified):**
 
-- **Edition** or **Build** mismatch 뿯↽ log **ERROR** and **exit** without changes.
+- **Edition** or **Build** mismatch → log **ERROR** and **exit** without changes.
 
-- **DisplayVersion** mismatch 뿯↽ behavior is controlled by `STRICT_DISPLAYVERSION`:
+- **DisplayVersion** mismatch → behavior is controlled by `STRICT_DISPLAYVERSION`:
 
-  - `1` 뿯↽ log **ERROR** and **exit**;
+  - `1` → log **ERROR** and **exit**;
 
-  - `0` 뿯↽ log **WARN** and **continue** (best‑effort).
+  - `0` → log **WARN** and **continue** (best‑effort).
 
-### 5.1 Platform gate — подробности и код
+### 5.1 Platform gate - details and code
 
 ```bat
 
@@ -541,47 +541,47 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 - **Decision:** Critical HKLM policies for OOBE are moved from inline `RunSynchronousCommand` to external `PreOOBE.cmd` (pass `specialize`), invoked by a **single** command. Motivation: XML validity, readability, escaping limits, centralized logging and RC.
 
-## ADR-001: AutoAdminLogon только для консоли (Console)
+## ADR-001: AutoAdminLogon only for the console (Console)
 
-**Дата:** 2025-10-02
+**Date:** 2025-10-02
 
-**Контекст:** Нужно гарантированно войти локально после PreOOBE без сети/служб.
+**Context:** Need a guaranteed local logon after PreOOBE without network/services.
 
-**Решение:** Используем стандартный `AutoAdminLogon` Winlogon, который работает **только** для консольной сессии.
+**Decision:** Use the standard `AutoAdminLogon` Winlogon, which works only for a console session.
 
-**Последствия:** В VMConnect **Enhanced** (RDP) всегда будет экран входа — это ожидаемо и не является ошибкой автолога.
+**Consequences:** In VMConnect **Enhanced** (RDP) there will always be a logon screen — this is expected and not an autologon bug.
 
-## ADR-002: Запись реестра через `reg.exe` с явными типами
+## ADR-002: Registry writes via `reg.exe` with explicit types
 
-**Дата:** 2025-10-02
+**Date:** 2025-10-02
 
-**Контекст:** Провайдер реестра PowerShell в ранних тестах писал типы 뿯½не так뿯½/не успевал 뿯½флашиться뿯½ до ребута.
+**Context:** The PowerShell registry provider in early tests wrote types incorrectly or did not flush before reboot.
 
-**Решение:** Все ключи Winlogon/политик пишем через `reg.exe` с явным `REG_SZ`/`REG_DWORD`.
+**Decision:** Write all Winlogon/policy keys via `reg.exe` with explicit `REG_SZ`/`REG_DWORD`.
 
-**Последствия:** Больше 뿯½шумного뿯½ кода, но предсказуемые типы и надёжность.
+**Consequences:** More verbose code, but predictable types and reliability.
 
-Дополнение: Прямой вызов `reg.exe` в PS 5.1: `& reg.exe … | Out-Null 2>$null`; читаем `$LASTEXITCODE`. Для `DELETE` допустимые RC: `{0,2}` (идемпотентность).
+Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; read `$LASTEXITCODE`. For `DELETE` acceptable RCs: `{0,2}` (idempotence).
 
-## ADR-003: RNG-шим для WinPS 5.1
+## ADR-003: RNG shim for WinPS 5.1
 
-**Дата:** 2025-10-02
+**Date:** 2025-10-02
 
-**Контекст:** В Windows PowerShell 5.1 нет `RandomNumberGenerator.Fill`, нужен стойкий пароль без внешних модулей.
+**Context:** Windows PowerShell 5.1 lacks `RandomNumberGenerator.Fill`; a strong password is needed without external modules.
 
-**Решение:** Добавлен `Invoke-RngFill` на `RandomNumberGenerator.Create()` и `New-StrongPassword` (≥20 символов, все классы).
+**Decision:** Added `Invoke-RngFill` on `RandomNumberGenerator.Create()` and `New-StrongPassword` (≥20 characters, all classes).
 
-**Последствия:** Нет внешних зависимостей; одинаковая криптография на всех хостах.
+**Consequences:** No external dependencies; consistent cryptography on all hosts.
 
-## ADR-004: Идемпотентность 뿯½взвод/откат뿯½
+## ADR-004: Idempotence (arm/rollback)
 
-**Дата:** 2025-10-02
+**Date:** 2025-10-02
 
-**Контекст:** Скрипты могут запускаться повторно (ручные прогоны, кастомные сборки).
+**Context:** Scripts may be run repeatedly (manual runs, custom builds).
 
-**Решение:** Операции безопасны при повторе: допуск кода 1378 для `Administrators`, удаления значений — 뿯½молча뿯½ при отсутствии, выход только при целевом состоянии.
+**Decision:** Operations are safe on repeat: allow code 1378 for `Administrators`; delete values silently if absent; exit only when the target state is reached.
 
-**Последствия:** Стабильное поведение при регрессе/переустановках.
+**Consequences:** Stable behavior during regressions/reinstalls.
 
 ## ADR-005: Idempotent Stage A; guard Stage B
 
