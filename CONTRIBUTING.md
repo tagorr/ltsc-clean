@@ -3,58 +3,70 @@
 Thanks for your interest in contributing!
 
 ## PR flow (quick)
+
 - Create a feature branch (e.g. `feat/...`, `fix/...`, `docs/...`, `chore/...`).
 - Keep commits clean; merges are **squash**.
 - Commit prefixes: `feat|fix|docs|chore|ci|refactor|test`.
 - Make sure **CI is green** before requesting review.
 
 ## PowerShell 5.1 CLI rules (project-specific)
-- Use **PowerShell 5.1**. Do **not** use PowerShell 7 syntax/features.
-- External tools (`reg.exe`, `schtasks.exe`, `shutdown.exe`) are allowed, but suppression **only** in PS style: `| Out-Null 2>$null`.
+
+- Use **Windows PowerShell 5.1**. Do **not** use PowerShell 7 syntax or features.
+- External tools (`reg.exe`, `schtasks.exe`, `shutdown.exe`) are allowed, but suppression is **only** in PowerShell style: `| Out-Null 2>$null`.
 - Registry paths:
-  - `reg.exe` → classic paths, e.g. `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
-  - PS cmdlets (`New/Set/Remove-ItemProperty`) → provider paths, e.g. `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
-- Do not mix `reg.exe` and PS cmdlets in one block **without a clear reason**.
-- Reboot via `shutdown.exe /r /t 0` (use `/f` if needed).
-- ASCII quotes only: `' " - /`. No smart quotes.
-- Examples/snippets must be PS 5.1 compatible.
+  - `reg.exe` uses classic paths, for example `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
+  - PowerShell cmdlets (`New/Set/Remove-ItemProperty`) use provider paths, for example `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
+- Do not mix `reg.exe` and PowerShell cmdlets in one logical block **without a clear reason**.
+- Reboot via `shutdown.exe /r /t 0` (add `/f` only if needed).
+- ASCII quotes only in code examples: `' " - /`. No smart quotes.
+- All examples and snippets must be compatible with Windows PowerShell 5.1.
 
 ## Line endings (EOL)
+
 - Scripts `*.ps1`, `*.cmd`, `*.bat` **must use CRLF**.
 - Markdown `*.md` **should use LF**.
-- Enforced by `.gitattributes` + CI guard (`.github/workflows/eol-guard.yml`).
+- This is enforced by `.gitattributes` and an EOL CI guard (`.github/workflows/eol-guard.yml`).
 
-## Shell rules (.cmd/.ps1) & minimal-diff
-- .cmd guidelines: no Delayed Expansion; test RC via %ERRORLEVEL%; branch via `goto`/`call :sub`.
-- PowerShell target: Windows PowerShell 5.1; avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets; prefer plain args or files.
-- Minimal-diff principle: change only the lines required by the PR’s scope.
-- Docs convention: in Markdown, use **one command per fenced code block** with an explicit language tag (`cmd` or `powershell`), so each block can be copied and executed in one go; avoid multi-line blocks that mix multiple commands.
+## Shell rules (.cmd/.ps1) and minimal-diff
 
-**Local quick check (optional)**
-```bash
-git ls-files -- '*.ps1' '*.cmd' '*.bat' \
-| xargs -I{} sh -c "awk '(/\r$/){next} {exit 1} END{exit 0}' '{}' || echo 'LF-only: {}'"
+- `.cmd` guidelines:
+  - No Delayed Expansion.
+  - Test return codes via `%ERRORLEVEL%`.
+  - Use `goto` and `call :sub` for control flow.
+- PowerShell target:
+  - Windows PowerShell 5.1.
+  - Avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets.
+  - Prefer plain arguments or files for passing secrets.
+- Minimal-diff principle:
+  - Change only the lines required by the PR scope.
+  - Avoid cosmetic edits outside the relevant hunks.
+
+- Docs convention:
+  - In Markdown, use **one command per fenced code block**.
+  - Use an explicit language tag: `powershell` or `cmd`.
+  - Each block should be copy-pastable and executable in one go.
+  - Avoid multi-command blocks and mixed shells inside a single fenced block.
+
+## VS Code tips
+
+- Set `CRLF` for scripts and `LF` for Markdown in the status bar.
+- If your global Git EOL settings conflict with the repo defaults, align them before contributing:
+
+```powershell
+git config core.autocrlf false
 ```
-
-**VS Code tips**
-
-* Set `CRLF` for scripts, `LF` for Markdown (status bar).
-* If your global Git EOL is overridden, align with repo defaults:
-
-  ```bash
-  git config core.autocrlf false
-  git add --renormalize .
-  ```
+```powershell
+git add --renormalize
+```
 
 ## Before opening a PR
 
 * ✅ EOL checked; no LF-only lines in scripts.
 * ✅ PowerShell 5.1 style rules respected.
-* ✅ Docs updated if behavior/policies changed (README/DECISIONS/SECURITY/docs/AUDIT_CHECKLIST.md).
+* ✅ Docs updated if behavior or policies changed (`README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`).
 * ✅ PR title and commits use conventional prefixes.
 
 ## CI and checks
 
-* The **EOL guard** runs on every PR. See the **Checks** tab for logs.
+* The EOL guard runs on every PR. See the Checks tab for logs.
 * If it fails, fix line endings and push to the same branch; the check will re-run automatically.
-
