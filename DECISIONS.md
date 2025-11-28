@@ -611,11 +611,11 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 **Decision.**
 
-- `.ps1/.cmd/.bat` 뿯↽ CRLF via `.gitattributes` and a CI guard (`.github/workflows/eol-guard.yml`).
+- `.ps1/.cmd/.bat` → CRLF via `.gitattributes` and a CI guard (`.github/workflows/eol-guard.yml`).
 
-- `.md` 뿯↽ LF.
+- `.md` → LF.
 
-- Other text 뿯↽ `* text=auto` (Git attributes).
+- Other text → `* text=auto` (Git attributes).
 
 **Consequences.**
 
