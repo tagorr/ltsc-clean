@@ -235,7 +235,7 @@ set "FAILED=1"
 exit /b %RC%
 
 :track_rc
-rem %1 = RC
+REM %1 = RC
 set "RC=%~1"
 if "%RC%"=="0" exit /b 0
 if "%RC%"=="3010" exit /b 0
@@ -301,7 +301,7 @@ call :log "[DISM] RC=%RC% (error)"
 exit /b %RC%
 
 :run_msi
-rem usage: call :run_msi "<msi path>" [more MSI properties]
+REM usage: call :run_msi "<msi path>" [more MSI properties]
 set "MSI=%~1"
 shift
 call :log "[MSI] msiexec /i \"%MSI%\" /qn REBOOT=ReallySuppress /norestart %*"
@@ -312,7 +312,7 @@ call :handle_rc "MSI" %RC%
 exit /b %RC%
 
 :run_exe
-rem usage: call :run_exe "<exe path>" [vendor-specific args]; default /quiet /norestart
+REM usage: call :run_exe "<exe path>" [vendor-specific args]; default /quiet /norestart
 set "EXE=%~1"
 shift
 call :log "[EXE] \"%EXE%\" /quiet /norestart %*"
@@ -425,7 +425,7 @@ if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
 
 REM Temporary logon policies
 if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
-  rem Temp logon relax, only if secret present
+  REM Temp logon relax, only if secret present
   reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
 ) else (
@@ -675,12 +675,12 @@ call :log "[INFO] No reboot required"
 )
 call :log "----- SetupComplete finished -----"
 
-rem --- final RC calculation ---
+REM --- final RC calculation ---
 set "FINAL_RC=0"
 if defined L2C_FIRST_BAD_RC set "FINAL_RC=%L2C_FIRST_BAD_RC%"
 if "%FINAL_RC%"=="0" if "%FAILED%"=="1" set "FINAL_RC=1"
 
-rem if the final RC is not 0, roll back temporary logon policies
+REM if the final RC is not 0, roll back temporary logon policies
 if not "%FINAL_RC%"=="0" (
   reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
@@ -744,7 +744,7 @@ goto :eof
 setlocal EnableExtensions
 set "RULE=Block Telemetry Service (DiagTrack)"
 call :log "[STEP] Ensure firewall rule: %RULE%"
-rem check if rule exists
+REM check if rule exists
 netsh advfirewall firewall show rule name="%RULE%" >nul 2>&1
 if errorlevel 1 (
   netsh advfirewall firewall add rule name="%RULE%" dir=out action=block program="%SystemRoot%\System32\svchost.exe" service=diagtrack enable=yes profile=any >nul 2>&1

@@ -107,7 +107,7 @@ if "%FAILED%"=="0" (
   call :log [WARN] PreOOBE completed with FAILED=%FAILED%
 )
 
-rem Bootstrap: one-time local admin + autologon
+REM Bootstrap: one-time local admin + autologon
 call :log [STEP] Launch BootstrapLocalAdmin.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\BootstrapLocalAdmin.ps1"
 set "PSRC=%ERRORLEVEL%"
