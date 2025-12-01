@@ -3,7 +3,6 @@ param(
   [string]$PrimaryUser = 'primaryadmin',
   [string]$FullName = '',
   [string]$Description = '',
-  [string]$PasswordPlain = '',
   [bool]$PasswordNeverExpires = $true,
   [switch]$AddToRemoteDesktopUsers,
   [switch]$RollbackOnly,
@@ -196,13 +195,25 @@ try {
     $StageA_Succeeded = $true
     $StageA_RC = 0
   } else {
-    $PasswordPlain = $PasswordPlain.Trim()
-    if (-not $PasswordPlain) {
-      $StageAAbortReason = 'primary admin secret missing (-PasswordPlain is required)'
+    $primaryAdminSecretPath = Join-Path $env:WINDIR 'Setup\Scripts\.primaryadmin.pw'
+    try {
+      $passwordText = Get-Content -LiteralPath $primaryAdminSecretPath -Encoding utf8 -TotalCount 1 -ErrorAction Stop
+      if ($null -eq $passwordText) { $passwordText = '' }
+      $passwordText = $passwordText -replace '[\r\n]+$',''
+    } catch {
+      $StageAAbortReason = "primary admin secret missing or unreadable at $primaryAdminSecretPath"
       throw [System.InvalidOperationException]::new($StageAAbortReason)
     }
-    $pwd = $PasswordPlain
-    if ($VerboseLog) { Write-SetupLog "Using explicit password via -PasswordPlain" 'DEBUG' }
+    if (-not $passwordText) {
+      $StageAAbortReason = "primary admin secret missing or invalid at $primaryAdminSecretPath"
+      throw [System.InvalidOperationException]::new($StageAAbortReason)
+    }
+    if ($passwordText -notmatch '^[A-Za-z0-9#@_-]+$') {
+      $StageAAbortReason = "primary admin secret contains unsupported characters at $primaryAdminSecretPath"
+      throw [System.InvalidOperationException]::new($StageAAbortReason)
+    }
+    $pwd = $passwordText
+    Write-SetupLog "Primary admin secret loaded from .primaryadmin.pw" 'DEBUG' 
 
     Write-Verbose "Stage A: checking if $PrimaryUser exists"
     $exists = Get-LocalUserExists $PrimaryUser
@@ -214,14 +225,10 @@ try {
       if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
       Write-SetupLog "User $PrimaryUser created and activated"
     } else {
-      if ($PasswordPlain) {
-        Write-Verbose "Stage A: updating password for $PrimaryUser"
-        & net.exe user "$PrimaryUser" "$pwd" | Out-Null 2>$null
-        if ($LASTEXITCODE -ne 0) { throw "Failed to set password for $PrimaryUser (exitcode $LASTEXITCODE)" }
-        Write-SetupLog "Password updated for $PrimaryUser"
-      } else {
-        Write-SetupLog "User $PrimaryUser exists; password unchanged"
-      }
+      Write-Verbose "Stage A: updating password for $PrimaryUser"
+      & net.exe user "$PrimaryUser" "$pwd" | Out-Null 2>$null
+      if ($LASTEXITCODE -ne 0) { throw "Failed to set password for $PrimaryUser (exitcode $LASTEXITCODE)" }
+      Write-SetupLog "Password updated for $PrimaryUser"
       & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
     }

@@ -422,6 +422,7 @@ if "%FAILED%"=="0" (
 if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   set "FAILED=1"
 )
+set "L2C_PRIMARYADMIN_PASSWORD="
 
 REM Temporary logon policies
 if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
@@ -446,7 +447,7 @@ if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
 if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
-    /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\" -PasswordPlain \"%L2C_PRIMARYADMIN_PASSWORD%\"" ^
+    /TR "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
     /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
   set "RC=%ERRORLEVEL%"
   if not "%RC%"=="0" (

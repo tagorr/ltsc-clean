@@ -60,12 +60,11 @@ S
   * [ ] Stage B registration is gated on both secrets being valid (`.bootstrap.pw` and `.primaryadmin.pw`) and `FAILED==0`.
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
-  * [ ] Stage A always uses the `-PasswordPlain` parameter as its password source and never reads `.bootstrap.pw` directly.
-  * [ ] In this baseline `-PasswordPlain` is supplied by `SetupComplete.cmd` from `.primaryadmin.pw`.
+  * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).
   * [ ] Behavior is defined for:
 
-    * [ ] Missing or empty `-PasswordPlain` (after trimming).
-    * [ ] Read/validation errors surfaced from `.primaryadmin.pw` (ACL, IO, invalid characters) before Stage A is invoked.
+    * [ ] Missing, unreadable, or empty `.primaryadmin.pw`.
+    * [ ] Read/validation errors surfaced from `.primaryadmin.pw` (ACL, IO, invalid characters).
   * [ ] In case of secret-related problems:
 
     * [ ] A clear `StageAAbortReason` is set.
@@ -145,7 +144,7 @@ S
 * [ ] Creation of the `\L2C\CreatePrimaryAdmin` task:
 
   * [ ] Happens only when `FAILED==0`, `HAS_BOOTSTRAP_PW==1`, and a validated primary admin secret is present.
-  * [ ] Task parameters: SYSTEM, Highest, OnLogon, path to `CreatePrimaryAdmin.ps1`.
+  * [ ] Task parameters: SYSTEM, Highest, OnLogon, path to `CreatePrimaryAdmin.ps1`; `/TR` contains no password or other secret arguments.
 * [ ] On `schtasks /Create` error:
 
   * [ ] RC is tracked via `track_rc`.
@@ -202,14 +201,14 @@ S
 
   * [ ] Stage A is skipped but considered successful.
   * [ ] `$StageA_Succeeded = $true`, `$StageA_RC = 0`.
-* [ ] `-PasswordPlain` is treated as mandatory for unattended provisioning; in this baseline it is provided by `SetupComplete.cmd` from `.primaryadmin.pw`, not from `.bootstrap.pw`.
-* [ ] If the secret is missing or empty as read (first line via `set /p`):
+* [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM (UTF-8, first line only) as the required password source; no password is accepted via parameters or alternate files.
+* [ ] If the secret is missing, unreadable, empty, or fails validation:
 
   * [ ] `$StageAAbortReason` is set to a clear description.
   * [ ] A controlled exception is thrown (`throw`), not `exit`.
 * [ ] Any password generation paths (if still present) do not contradict the concept:
 
-  * [ ] Either generation is removed, or clearly documented.
+  * [ ] Either generation is removed, or clearly documented without bypassing the `.primaryadmin.pw` requirement.
 
 #### 5.3. User and group creation/update
 
@@ -223,8 +222,7 @@ S
   * [ ] Logs record success or failure of creation and activation.
 * [ ] If the user exists:
 
-  * [ ] When `PasswordPlain` is present, the password is updated and errors are logged.
-  * [ ] When `PasswordPlain` is absent, the password is not touched and this is logged explicitly.
+  * [ ] The password is updated using the secret from `.primaryadmin.pw`, errors are logged, and RCs are checked.
   * [ ] Finally the user is activated (`/active:yes`) with RC checking.
 * [ ] Property updates via `Set-UserAdsi`:
 

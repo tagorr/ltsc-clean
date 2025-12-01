@@ -12,7 +12,7 @@
 
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
-The baseline never auto-generates the primary local admin password. Instead it expects the operator to provide a strong password via `%WINDIR%\Setup\Scripts\.primaryadmin.pw`. `SetupComplete.cmd` reads and validates this secret and passes it into `CreatePrimaryAdmin.ps1` as `-PasswordPlain`. Both password source files (`.bootstrap.pw` and `.primaryadmin.pw`) are removed by Stage B on the normal path and preserved only when Stage B enters the recovery path.
+The baseline never auto-generates the primary local admin password. Instead it expects the operator to provide a strong password via `%WINDIR%\Setup\Scripts\.primaryadmin.pw`. `SetupComplete.cmd` reads and validates this secret to gate Stage B while keeping the `\L2C\CreatePrimaryAdmin` task command line free of secrets; Stage A of `CreatePrimaryAdmin.ps1` reads `.primaryadmin.pw` directly under SYSTEM. Both password source files (`.bootstrap.pw` and `.primaryadmin.pw`) are removed by Stage B on the normal path and preserved only when Stage B enters the recovery path.
 
 ---
 
@@ -115,7 +115,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 * No reboots occur inside SetupComplete. Stage B of `CreatePrimaryAdmin.ps1` is the only unattended component that consumes the `Panther flag`, and a single controlled reboot only happens when Stage B succeeded in the normal path and the flag exists (servicing RC `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`). In recovery mode or when Stage B fails, no automatic reboot is triggered and the Panther flag may remain as a marker for manual follow-up.
 
-* Primary admin password is an external secret: Stage A of `CreatePrimaryAdmin.ps1` never invents or derives it. `SetupComplete.cmd` reads the password from `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates it, and passes it via `-PasswordPlain`. On the normal path Stage B deletes both `.bootstrap.pw` and `.primaryadmin.pw`; in recovery they are preserved for another Stage A attempt.
+* Primary admin password is an external secret: Stage A of `CreatePrimaryAdmin.ps1` never invents or derives it. `SetupComplete.cmd` validates the password from `%WINDIR%\Setup\Scripts\.primaryadmin.pw` and registers Stage B without embedding secrets; Stage A reads the same file directly under SYSTEM. On the normal path Stage B deletes both `.bootstrap.pw` and `.primaryadmin.pw`; in recovery they are preserved for another Stage A attempt.
 
 ---
 
@@ -126,14 +126,14 @@ The baseline never auto-generates the primary local admin password. Instead it e
 2. After OOBE completes, Windows executes `SetupComplete.cmd` as SYSTEM. In addition to servicing and hardening, `SetupComplete.cmd`:
    * reads `%WINDIR%\Setup\Scripts\.bootstrap.pw` (generated earlier by `BootstrapLocalAdmin.ps1`) and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` (operator-supplied secret for the primary admin);
    * validates the primary admin password read via `set /p` (first line only, must be non-empty as read, allowed character set only);
-   * only when both secrets are present and valid and the script has not failed, configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task with `-PasswordPlain` set to the validated primary admin password;
+   * only when both secrets are present and valid and the script has not failed, configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task with a PowerShell call that carries no password arguments; Stage A reads `.primaryadmin.pw` directly under SYSTEM;
    * if the primary admin secret is missing or invalid, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
 
 3. All post-install configuration runs once, with detailed logging and guarded checks.
 
 4. Post-install configuration completes. `SetupComplete.cmd` writes the `Panther flag` only when servicing returned `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; in all other cases the flag is not created and no reboot is requested.
 
-5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A’s outcome and internal validation. Stage A of `CreatePrimaryAdmin.ps1` always requires a non-empty `-PasswordPlain` and never reads `.bootstrap.pw` or any other password file; in this baseline the parameter is supplied exclusively by `SetupComplete.cmd` from `.primaryadmin.pw`. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs the requirement, deletes the flag, and performs a single controlled `shutdown.exe /r /t 0`. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
+5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A’s outcome and internal validation. Stage A of `CreatePrimaryAdmin.ps1` always reads the secret from `.primaryadmin.pw` under SYSTEM and never falls back to other sources; if the secret is missing or invalid, Stage A fails closed and Stage B runs in recovery. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs the requirement, deletes the flag, and performs a single controlled `shutdown.exe /r /t 0`. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
 
 ## 3. File layout and key paths
 
@@ -163,7 +163,7 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   Both files are deleted by Stage B on the normal path and preserved only when Stage B enters the recovery path.
 
-**SetupComplete.cmd:** servicing/logging and bootstrap/admin pipeline priming; never calls `shutdown.exe` or schedules reboots via RunOnce. It computes whether a reboot is required and writes the Panther `_needs_reboot.flag` when needed. When `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` are present and valid and the script has not failed, it configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task with `-PasswordPlain` set to the validated primary admin password. Stage B of `CreatePrimaryAdmin.ps1` is responsible for consuming the flag and performing the single controlled reboot on the normal path after the first interactive logon.
+**SetupComplete.cmd:** servicing/logging and bootstrap/admin pipeline priming; never calls `shutdown.exe` or schedules reboots via RunOnce. It computes whether a reboot is required and writes the Panther `_needs_reboot.flag` when needed. When `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` are present and valid and the script has not failed, it configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding passwords, relying on Stage A to read `.primaryadmin.pw` under SYSTEM. Stage B of `CreatePrimaryAdmin.ps1` is responsible for consuming the flag and performing the single controlled reboot on the normal path after the first interactive logon.
 
 * **EOL:** scripts (.cmd/.ps1) — CRLF; documentation (.md) — LF.
 
@@ -653,9 +653,9 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 ### ADR: `.primaryadmin.pw` as operator-supplied primary admin secret
 
-**Context:** External audit highlighted a critical lock where the primary admin could be created with a randomly generated password that was never exposed to the operator. The previous flow allowed Stage A to fall back to secrets derived from `.bootstrap.pw`.
+**Context:** External audits flagged the leak surface from passing the primary admin password through Task Scheduler and PowerShell command lines and warned against any fallback to derived secrets (for example from `.bootstrap.pw`).
 
-**Decision:** Require an explicit `-PasswordPlain` for Stage A of `CreatePrimaryAdmin.ps1`, supplied exclusively by `SetupComplete.cmd` from an operator-managed file `%WINDIR%\Setup\Scripts\.primaryadmin.pw` (UTF-8, one non-empty line, restricted character set). `SetupComplete.cmd` reads and validates this file and only configures AutoAdminLogon and registers the `\L2C\CreatePrimaryAdmin` task when both `.bootstrap.pw` and `.primaryadmin.pw` are present and valid and the script has not failed. Neither script generates or persists the primary admin password beyond Stage B; both password files are deleted on the normal path and preserved only in recovery.
+**Decision:** Stage A of `CreatePrimaryAdmin.ps1` now reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` directly under SYSTEM and aborts if the secret is missing or invalid. `SetupComplete.cmd` still validates the operator-managed file (UTF-8, one non-empty line, restricted character set) but registers `\L2C\CreatePrimaryAdmin` without password arguments so the task XML and process command line contain no secrets. Neither script generates or persists the primary admin password beyond Stage B; both password files are deleted on the normal path and preserved only in recovery. This shrinks the leak surface and aligns with audit expectations.
 
 **Status:** adopted in `SetupComplete.cmd` and `CreatePrimaryAdmin.ps1`; documented in `README.md` and `SECURITY.md`.
 
@@ -677,8 +677,8 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - `schtasks /Create \L2C\CreatePrimaryAdmin` always captures `%ERRORLEVEL%`, logs failures with `[ERROR]`, calls `:track_rc`, and sets `FAILED=1`.
 - Final RC policy: `SetupComplete.cmd` returns `L2C_FIRST_BAD_RC` if set; otherwise it returns `1` when `FAILED==1`, else `0`. Each path logs the specific `[RC] returning ...` line.
 - `BootstrapLocalAdmin.ps1` resolves the Administrators group via SID `S-1-5-32-544`, reuses the translated `NTAccount` for both `net localgroup` and ACLs, and replaces inherited ACLs on `.bootstrap.pw` with only SYSTEM + Administrators FullControl inside a guarded `try` block.
-- `SetupComplete.cmd` reads `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates the primary admin password read via `set /p` (first line only, must be non-empty as read, allowed character set only), and only when both secrets are present and valid and the script has not failed, it applies temporary Winlogon policies for AutoAdminLogon, configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`, and registers the `\L2C\CreatePrimaryAdmin` task with `-PasswordPlain` set to the validated primary admin password. If the primary admin secret is missing or invalid, or if `FAILED=1`, it logs the condition, rolls back temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
-- Stage A of `CreatePrimaryAdmin.ps1` always requires an explicit `-PasswordPlain` parameter and never reads `.bootstrap.pw` or any other password file. In this baseline the parameter is supplied exclusively by `SetupComplete.cmd` from `.primaryadmin.pw`.
+- `SetupComplete.cmd` reads `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates the primary admin password read via `set /p` (first line only, must be non-empty as read, allowed character set only), and only when both secrets are present and valid and the script has not failed, it applies temporary Winlogon policies for AutoAdminLogon, configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding any password arguments so that secrets do not appear in Task Scheduler or process command lines. If the primary admin secret is missing or invalid, or if `FAILED=1`, it logs the condition, rolls back temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
+- Stage A of `CreatePrimaryAdmin.ps1` reads `.primaryadmin.pw` directly under SYSTEM and never uses `.bootstrap.pw` or command-line parameters for the password. In this baseline the operator-supplied file is the sole source; missing or invalid secrets abort Stage A and force Stage B into recovery.
 - Stage B of `CreatePrimaryAdmin.ps1` now:
   - Deletes `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword`, and resets `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount`.
   - Logs `net user bootstrap /active:no` success or WARN with the exact RC.
