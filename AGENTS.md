@@ -4,8 +4,14 @@
 
 ## Allowed to edit
 
-`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`.
-**Forbidden:** new files/folders and edits outside these files.
+`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`.
+
+**Forbidden:**
+
+- Any edits by agents to files that are not listed in the “Allowed to edit” section above.
+- Introducing new files for agents to touch without, in the same PR:
+  - adding them to the “Allowed to edit” list in `AGENTS.md`, and
+  - (recommended) backing the change with an ADR that explains why the new file exists.
 
 ## Invariants
 
