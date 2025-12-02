@@ -213,7 +213,7 @@ try {
       throw [System.InvalidOperationException]::new($StageAAbortReason)
     }
     $pwd = $passwordText
-    Write-SetupLog "Primary admin secret loaded from .primaryadmin.pw" 'DEBUG' 
+    Write-SetupLog "Primary admin secret loaded from .primaryadmin.pw" 'INFO' 
 
     Write-Verbose "Stage A: checking if $PrimaryUser exists"
     $exists = Get-LocalUserExists $PrimaryUser

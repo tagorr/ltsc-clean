@@ -34,19 +34,19 @@ S
 
 * [ ] Documentation (README, DECISIONS, AGENTS, SECURITY) describes:
 
-  * [ ] Where exactly `.bootstrap.pw` is created, who reads it, and when it must be deleted or preserved (normal vs recovery).
-  * [ ] Where `.primaryadmin.pw` is expected to exist, that it is operator-supplied, who reads it (`SetupComplete.cmd`), and when it is deleted or preserved (normal vs recovery).
+  * [ ] Where exactly `.bootstrap.pw` is created (`%WINDIR%\Setup\Scripts`), who reads it, and when it must be deleted or preserved (normal vs recovery).
+  * [ ] Where `.primaryadmin.pw` is expected to exist (`%WINDIR%\Setup\Scripts`), that it is operator-supplied, who reads it (`SetupComplete.cmd` and Stage A), and when it is deleted or preserved (normal vs recovery).
 * [ ] In `BootstrapLocalAdmin.ps1`:
 
   * [ ] `.bootstrap.pw` is created at the expected path (`%WINDIR%\Setup\Scripts\.bootstrap.pw`).
-  * [ ] Content is not empty, there are no extra spaces or trailing newlines, or `.Trim()` is explicitly applied.
-  * [ ] File ACL is restricted (SYSTEM + Administrators) as described in SECURITY.md.
+  * [ ] Content is a single non-empty line (UTF-8 without BOM).
+  * [ ] File ACL is restricted (SYSTEM + Administrators only), inheritance disabled, Hidden + System attributes set.
 * [ ] In `SetupComplete.cmd`:
 
-  * [ ] There is a check for the existence of `.bootstrap.pw`.
-  * [ ] There is a check that the file is not empty (at least one non-empty line).
-  * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists.
-  * [ ] There is a check that `.primaryadmin.pw` is read via `set /p` (first line only), is non-empty as read, and respects the allowed character set/format.
+  * [ ] `ValidateSecrets.ps1` is invoked near the start, does not read passwords, and logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`.
+  * [ ] There is a check for the existence of `.bootstrap.pw` and that the file is not empty (at least one non-empty line).
+  * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
+  * [ ] `.primaryadmin.pw` is read via `set /p` (first line only) only when the ACL/attribute check succeeded, is non-empty as read, and respects the allowed character set/format (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`).
   * [ ] If it is missing or empty:
 
     * [ ] An error is logged, not just a warning.
@@ -57,7 +57,7 @@ S
     * [ ] An `[ERROR]` is logged.
     * [ ] `FAILED=1` is set.
     * [ ] Stage B registration and autologon priming are blocked.
-  * [ ] Stage B registration is gated on both secrets being valid (`.bootstrap.pw` and `.primaryadmin.pw`) and `FAILED==0`.
+  * [ ] A single combined gate (FAILED==0, `.bootstrap.pw` present/non-empty, `.primaryadmin.pw` present and ACL/attribute OK, allowed characters) controls temporary logon tweaks, autologon priming, and Stage B registration.
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
   * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).
@@ -70,6 +70,7 @@ S
     * [ ] A clear `StageAAbortReason` is set.
     * [ ] Stage A does not attempt to create or modify the user with an invalid or missing password.
     * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
+  * [ ] Password value never appears in task XML, command lines, or logs.
 
 ---
 
@@ -133,11 +134,13 @@ S
   * [ ] Presence and non-empty first-line content at `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is validated using the allowed character set (no trimming).
   * [ ] Invalid or missing `.primaryadmin.pw` logs an `[ERROR]`, sets `FAILED=1`, and blocks Stage B registration and autologon priming.
   * [ ] Stage B/autologon priming proceed only when both `.bootstrap.pw` and `.primaryadmin.pw` are valid and `FAILED==0`.
+  * [ ] ACL/attribute flags from `ValidateSecrets.ps1` (`L2C_BOOTSTRAP_PW_ACL_OK`, `L2C_PRIMARYADMIN_PW_ACL_OK`) must be `1`; failures are logged and force `FAILED=1` before the primary admin password is read.
 * [ ] Winlogon autologon to `bootstrap`:
 
   * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"` and a valid primary admin secret is present and `FAILED==0`.
   * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
   * [ ] If writing the password fails, autologon remains disabled, an `[ERROR]` is logged, `FAILED=1` is set, and Stage B is not registered.
+  * [ ] Temporary logon policy relaxations (`DisableCAD`, `DevicePasswordLessBuildVersion`) occur only when the combined gate passes; skip path logs the gate state.
 
 #### 4.3. CreatePrimaryAdmin task registration (Stage B)
 
