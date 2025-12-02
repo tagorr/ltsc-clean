@@ -20,7 +20,10 @@ set "FAILED=0"
 set "DISM_HARD_FAIL="
 set "HAS_DISM_WARN="
 set "HAS_BOOTSTRAP_PW=0"
+set "L2C_BOOTSTRAP_SECRET=%WINDIR%\Setup\Scripts\.bootstrap.pw"
 set "L2C_PRIMARYADMIN_SECRET=%WINDIR%\Setup\Scripts\.primaryadmin.pw"
+set "L2C_BOOTSTRAP_PW_ACL_OK=0"
+set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
 set "L2C_HAS_PRIMARYADMIN_SECRET=0"
 set "L2C_PW_ALLOWED=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-"
 set "L2C_FIRST_BAD_RC="
@@ -384,7 +387,18 @@ set "SYS=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
 set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc"
 
 REM Password source (created by BootstrapLocalAdmin.ps1):
-set "PWFILE=%WINDIR%\Setup\Scripts\.bootstrap.pw"
+set "PWFILE=%L2C_BOOTSTRAP_SECRET%"
+
+REM Secret ACL/attribute validation (SEC-2)
+for /f "usebackq delims=" %%# in (`
+  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
+    -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
+    -BootstrapPath "%L2C_BOOTSTRAP_SECRET%" ^
+    -PrimaryAdminPath "%L2C_PRIMARYADMIN_SECRET%" 2^>nul
+`) do %%#
+call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%, primaryadmin=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
+
+REM Bootstrap secret presence check
 if exist "%PWFILE%" (
   set "BOOTSTRAP_CHECK="
   REM Read the first line of the file, standard set /p VAR=<FILE syntax
@@ -394,59 +408,80 @@ if defined BOOTSTRAP_CHECK set "HAS_BOOTSTRAP_PW=1"
 set "BOOTSTRAP_CHECK="
 
 :after_pw_check
+REM Bootstrap secret gate
 if not "%HAS_BOOTSTRAP_PW%"=="1" (
   set "FAILED=1"
   call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
 )
+if "%HAS_BOOTSTRAP_PW%"=="1" if not "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
+  set "FAILED=1"
+  call :log "[ERROR] .bootstrap.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
+)
 
+REM Primary admin secret SEC-2 gate: ACL/attributes must be valid before reading
 if "%FAILED%"=="0" (
   if exist "%L2C_PRIMARYADMIN_SECRET%" (
-    if not defined L2C_PRIMARYADMIN_PASSWORD (
-      REM Read the password, ignoring Hidden/System attributes
-      set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
+    if not "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+      set "FAILED=1"
+      call :log "[ERROR] .primaryadmin.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
     )
-    REM TEMP: skip trimming and the "empty" check
-    call :validate_primaryadmin_password
-    if not "%ERRORLEVEL%"=="0" (
-      call :log "[ERROR] primary admin password contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
-    ) else (
-      set "L2C_HAS_PRIMARYADMIN_SECRET=1"
-      call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
-    )
-  ) else (
-    call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" not found; Stage B registration will be skipped."
   )
 )
 
+REM Primary admin secret presence and load gate
+if "%FAILED%"=="0" (
+  if not exist "%L2C_PRIMARYADMIN_SECRET%" (
+    call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" not found; Stage B registration will be skipped."
+  ) else (
+    REM Read and validate primary admin password only if SEC-2 passed for .primaryadmin.pw
+    if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+      if not defined L2C_PRIMARYADMIN_PASSWORD (
+        REM Read the password, ignoring Hidden/System attributes
+        set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
+      )
+      REM TEMP: skip trimming and the "empty" check
+      call :validate_primaryadmin_password
+      if not "%ERRORLEVEL%"=="0" (
+        call :log "[ERROR] primary admin password contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
+      ) else (
+        set "L2C_HAS_PRIMARYADMIN_SECRET=1"
+        call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
+      )
+    )
+  )
+)
 
-if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
+REM If we are still not in FAILED, require that primary admin secret has been successfully loaded
+if "%FAILED%"=="0" if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   set "FAILED=1"
 )
 
+set "L2C_PRIMARYADMIN_PASSWORD="
+
 REM Temporary logon policies
-if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   REM Temp logon relax, only if secret present
   reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
 ) else (
-  call :log "[INFO] Skipping temp logon tweaks (missing bootstrap or primary admin secret)."
+  call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
 )
 reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
 
-REM Autologon only if the bootstrap password is known
-if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
+REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
   reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
   call :winlogon_handle_default_password
 ) else (
-  call :log "[WARN] Winlogon autologon not primed (missing bootstrap or primary admin secret)"
+  call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
 )
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
-    /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\" -PasswordPlain \"%L2C_PRIMARYADMIN_PASSWORD%\"" ^
+    /TR "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
     /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
   set "RC=%ERRORLEVEL%"
   if not "%RC%"=="0" (
@@ -457,7 +492,7 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET
     call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
   )
 ) else (
-  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%)."
+  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
 )
 
 REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin (only if task created) ===
