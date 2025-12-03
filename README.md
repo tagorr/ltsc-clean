@@ -54,7 +54,7 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 * Runtime logs:
 
-  1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status
+  1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status; captures stdout/stderr from `BootstrapLocalAdmin.ps1` as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines
   2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (ISO-8601 timestamps)
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
 
@@ -84,9 +84,9 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 1. Boot from media with `autounattend.xml`.
 
-2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, RunOnce, or Task Scheduler.
+2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, RunOnce, or Task Scheduler, and logs to `%WINDIR%\Panther\PreOOBE.log` (including stdout/stderr from `BootstrapLocalAdmin.ps1`).
 
-3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). Passwords are 24 characters from `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` generated via `RNGCryptoServiceProvider`; `net localgroup` return codes `0` and `2` (`already a member`) are treated as success when adding to Administrators. It does not configure autologon and does not schedule the master.
+3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). Passwords are 24 characters from `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` generated via `RNGCryptoServiceProvider`; `net localgroup` return codes `0` and `2` (`already a member`) are treated as success when adding to Administrators. It does not configure autologon and does not schedule the master. Progress and errors are logged as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries in `PreOOBE.log` without printing the password; on failure the log shows the non-zero RC alongside the preceding bootstrap error lines.
 
 4. After OOBE completes, Windows runs `SetupComplete.cmd` as SYSTEM exactly once. The script:
 

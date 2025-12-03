@@ -80,6 +80,8 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 The script writes a technical log to `%WINDIR%\Panther\SetupComplete.log`. Entries contain technical messages and timestamps only; personal data is not intentionally logged. Set retention according to your environment’s policy and delete the log after successful validation if required.
 
+`PreOOBE.cmd` writes `%WINDIR%\Panther\PreOOBE.log` and redirects stdout/stderr from `BootstrapLocalAdmin.ps1` into the same file; `BootstrapLocalAdmin.ps1` emits structured `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines for bootstrap lifecycle steps without logging the password or derived secrets, so the log is safe to review for bootstrap failures.
+
 **Timestamping & DISM logs.** Timestamps are **ISO-8601**, generated via **PowerShell** (`Get-Date -Format o`). All DISM calls write to a centralized log: `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`. Return codes are handled uniformly: `0` = success; `3010/1641` = success, reboot required.
 
 Installer reboot suppression is enforced: **MSI** use `REBOOT=ReallySuppress /norestart`, **EXE** are invoked with `/norestart` to avoid any reboot inside SetupComplete.
