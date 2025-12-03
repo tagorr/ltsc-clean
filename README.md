@@ -597,12 +597,14 @@ set "STRICT_DISPLAYVERSION=0"  :: 1 = hard fail when DV differs, 0 = warning and
 
 Behavior:
 
-* If `EditionID` is not `EnterpriseS` the script logs an error and exits.
-* If `CurrentBuild` is less than `19044` the script logs an error and exits.
+* If `EditionID` is not `EnterpriseS` the script logs an error, sets `FAILED=1`, and routes to the shared final RC block.
+* If `CurrentBuild` is less than `19044` the script logs an error, sets `FAILED=1`, and routes to the shared final RC block.
 * If `DisplayVersion` does not equal `21H2`:
 
-  * with `STRICT_DISPLAYVERSION=1` the script logs an error and exits;
+  * with `STRICT_DISPLAYVERSION=1` the script logs an error, sets `FAILED=1`, and routes to the shared final RC block;
   * with `STRICT_DISPLAYVERSION=0` the script logs a warning and continues in best effort mode.
+
+Regardless of failure source (platform gate, DISM, or other checks), `SetupComplete.cmd` aggregates a final RC (`L2C_FIRST_BAD_RC` if present, else `1` when `FAILED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code so operators always see a single tail marker in the log.
 
 For controlled production environments set `STRICT_DISPLAYVERSION=1`. For forks and experiments keep `0` and adjust `REQUIRED_*` to your target.
 

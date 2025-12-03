@@ -46,7 +46,7 @@ set "ED=%ED:"=%"
 if /I not "%ED%"=="%REQUIRED_EDITION%" (
   call :log "[ERROR] EditionID=%ED% (expected %REQUIRED_EDITION%). Aborting."
   set "FAILED=1"
-  exit /b 1
+  goto :l2c_final_rc
 )
 REM --- DisplayVersion (robust, locale-safe) ---
 set "DV="
@@ -65,9 +65,15 @@ if not defined CB (
 for /f "tokens=1 delims= " %%# in ("%CB%") do set "CBN=%%#"
 set /a CBN+=0 >nul 2>&1
 call :gate_build
-if errorlevel 1 exit /b 1
+if errorlevel 1 (
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 call :gate_dv
-if errorlevel 1 exit /b 1
+if errorlevel 1 (
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 goto :main
 
 :: ------------ functions ------------
@@ -708,6 +714,8 @@ if "%NEEDS_REBOOT%"=="1" (
 ) else (
 call :log "[INFO] No reboot required"
 )
+
+:l2c_final_rc
 call :log "----- SetupComplete finished -----"
 
 REM --- final RC calculation ---

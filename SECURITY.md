@@ -43,6 +43,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 * The baseline is designed to be idempotent. Re-running the post-install script should not introduce drift.
 * Stage B rollback (Winlogon cleanup, removal of any lab RunOnce helpers, bootstrap disable in normal mode) always runs once after Stage A and chooses between normal and recovery paths based on Stage A’s outcome and internal validation, reducing lockout risk by attempting cleanup even when account provisioning fails.
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
+* Platform compatibility checks (Edition/DisplayVersion/CurrentBuild) fail closed but still route to the shared final RC block: the script logs the mismatch, sets `FAILED=1`, skips autologon/task registration, logs `[RC] returning <FINAL_RC>`, and exits with that code for consistent monitoring.
 * **Temporary debug note:** if you temporarily replaced `utilman.exe` with `cmd.exe` for diagnostics, restore the original `utilman.exe` immediately after testing to prevent escalation from the logon screen.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
 
