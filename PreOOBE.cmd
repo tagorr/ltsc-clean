@@ -109,7 +109,7 @@ if "%FAILED%"=="0" (
 
 REM Bootstrap: one-time local admin + autologon
 call :log [STEP] Launch BootstrapLocalAdmin.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\BootstrapLocalAdmin.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\BootstrapLocalAdmin.ps1" >> "%LOGFILE%" 2>&1
 set "PSRC=%ERRORLEVEL%"
 if not "%PSRC%"=="0" (
   set "FAILED=1"

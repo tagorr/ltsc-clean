@@ -80,12 +80,14 @@ S
 
   * [ ] Launches `BootstrapLocalAdmin.ps1` in the expected way.
   * [ ] Does not modify Winlogon, RunOnce, or logon policies if this is forbidden by design.
+  * [ ] Redirects stdout and stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log` (no separate bootstrap log file).
 * [ ] `BootstrapLocalAdmin.ps1`:
 
   * [ ] Creates a temporary `bootstrap` account with minimal required rights where applicable.
   * [ ] Sets or updates the password using only expected commands (PowerShell or `net.exe`).
   * [ ] Marks `bootstrap` as active (`/active:yes`) if required by the scenario.
-  * [ ] Logs key steps to a clear log (Panther or a separate log, according to documentation).
+  * [ ] Emits `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines in `%WINDIR%\Panther\PreOOBE.log` for key lifecycle steps (account creation, password set/activate, Administrators membership, `.bootstrap.pw` write/ACL/attributes).
+  * [ ] Bootstrap log entries do not include the password or derived secret values (technical actions/errors only).
   * [ ] Does not leave extra handlers or resources (including RunOnce entries or tasks that are not described in the design).
 
 ---

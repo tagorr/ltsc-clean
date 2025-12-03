@@ -175,6 +175,8 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
 
+  `PreOOBE.cmd` redirects stdout+stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log`; `BootstrapLocalAdmin.ps1` emits structured `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines for bootstrap lifecycle steps without ever logging the password itself.
+
 * Script header in `SetupComplete.cmd` (compact):
 
   ```bat
