@@ -114,6 +114,9 @@ S
         - `0` on success;
         - the first fatal DISM RC when present (`L2C_FIRST_BAD_RC`);
         - or `1` when `FAILED==1` without a captured fatal RC.
+* [ ] Platform gate (EditionID, DisplayVersion, CurrentBuild) does not exit early: on mismatch it logs an ERROR, sets `FAILED=1`, and jumps to the shared final RC label (for example `l2c_final_rc`).
+* [ ] All failure scenarios, including platform mismatches, reach the final RC block and emit the tail line `[RC] returning <FINAL_RC>` in `SetupComplete.log`.
+* [ ] Single top-level exit path: the final RC block at the shared label logs `[RC] returning <FINAL_RC>` and `exit /b %FINAL_RC%`; no other top-level `exit /b` paths are used for script termination.
 
 #### 4.2. `.bootstrap.pw` check and Stage B gate
 
