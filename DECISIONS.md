@@ -245,11 +245,11 @@ See section **5.1** below for details and a sample verification snippet.
 
 **Mismatch policy (clarified):**
 
-- **Edition** or **Build** mismatch → log **ERROR** and **exit** without changes.
+- **Edition** or **Build** mismatch → log **ERROR**, set `FAILED=1`, and jump to the shared final RC tail so `[RC] returning <code>` is still logged.
 
 - **DisplayVersion** mismatch → behavior is controlled by `STRICT_DISPLAYVERSION`:
 
-  - `1` → log **ERROR** and **exit**;
+  - `1` → log **ERROR**, set `FAILED=1`, and jump to the shared final RC tail;
 
   - `0` → log **WARN** and **continue** (best‑effort).
 
@@ -257,19 +257,31 @@ See section **5.1** below for details and a sample verification snippet.
 
 ```bat
 
-if /i not "%ED%"=="%REQUIRED_EDITION%" exit /b 1
+if /i not "%ED%"=="%REQUIRED_EDITION%" (
+  call :log "[ERROR] EditionID=%ED% (expected %REQUIRED_EDITION%). Aborting."
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 
 for /f "tokens=1" %%# in ("%CB%") do set /a BUILD=%%#
 
-if %BUILD% LSS %MIN_BUILD% exit /b 1
+if %BUILD% LSS %MIN_BUILD% (
+  call :log "[ERROR] CurrentBuild=%CBN% (expected >= %MBN%). Aborting."
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 
 if /i not "%DV%"=="%REQUIRED_DV%" (
-
-  if "%STRICT_DISPLAYVERSION%"=="1" exit /b 1 else call :log "[WARN] DV mismatch; proceeding"
-
+  if "%STRICT_DISPLAYVERSION%"=="1" (
+    call :log "[ERROR] DisplayVersion=%DV% (expected %REQUIRED_DV%). Aborting."
+    set "FAILED=1"
+    goto :l2c_final_rc
+  ) else call :log "[WARN] DV mismatch; proceeding"
 )
 
 ```
+
+Platform gate failures now flow through the same final RC aggregation block as servicing and other failures: `SetupComplete.cmd` computes `FINAL_RC` (preferring `L2C_FIRST_BAD_RC`, otherwise `1` when `FAILED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code. This guarantees a single observable end marker for operators and CI even when the platform is unsupported.
 
 ## 6. Major decisions and rationale
 
