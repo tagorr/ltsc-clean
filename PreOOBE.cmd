@@ -18,7 +18,7 @@ goto :main
 :: Subroutines
 :: --------------------------
 :ts
-  for /f %%# in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do (
+  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do (
     set "TS=%%#"
     goto :eof
   )
@@ -27,7 +27,7 @@ goto :eof
 
 :log
   set "msg=%*"
-  for /f %%G in ('powershell.exe -NoProfile -NonInteractive -Command "Get-Date -Format o"') do set "ts=%%G"
+  for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o"') do set "ts=%%G"
   >>"%LOGFILE%" echo [%ts%] %msg%
   exit /b 0
 
@@ -109,7 +109,7 @@ if "%FAILED%"=="0" (
 
 REM Bootstrap: one-time local admin + autologon
 call :log [STEP] Launch BootstrapLocalAdmin.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\BootstrapLocalAdmin.ps1" >> "%LOGFILE%" 2>&1
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\BootstrapLocalAdmin.ps1" >> "%LOGFILE%" 2>&1
 set "PSRC=%ERRORLEVEL%"
 if not "%PSRC%"=="0" (
   set "FAILED=1"

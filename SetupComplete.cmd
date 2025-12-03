@@ -90,10 +90,10 @@ if /I "%LOG_TS_ENGINE%"=="WMIC" (
   set "TS_RAW="
 )
 if not defined TS if /I "%LOG_TS_ENGINE%"=="POWERSHELL" (
-  for /f %%G in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do set "TS=%%G"
+  for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do set "TS=%%G"
 )
 if not defined TS (
-  for /f %%G in ('powershell -NoProfile -Command "Get-Date -Format \"yyyy-MM-ddTHH:mm:ss\"" 2^>nul') do set "TS=%%G"
+  for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format \"yyyy-MM-ddTHH:mm:ss\"" 2^>nul') do set "TS=%%G"
 )
 if not defined TS set "TS=%DATE:~6,4%-%DATE:~3,2%-%DATE:~0,2%T%TIME:~0,8%"
 <nul set /p "=[%TS%] %MSG%" >> "%LOG%"
@@ -397,7 +397,7 @@ set "PWFILE=%L2C_BOOTSTRAP_SECRET%"
 
 REM Secret ACL/attribute validation (SEC-2)
 for /f "usebackq delims=" %%# in (`
-  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
+  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
     -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
     -BootstrapPath "%L2C_BOOTSTRAP_SECRET%" ^
     -PrimaryAdminPath "%L2C_PRIMARYADMIN_SECRET%" 2^>nul
@@ -478,7 +478,7 @@ REM Autologon only if the bootstrap password is known and SEC-2 passed for both 
 if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
   reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
-  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
+  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
   call :winlogon_handle_default_password
 ) else (
   call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
@@ -564,7 +564,7 @@ call :task_disable "\Microsoft\Windows\Customer Experience Improvement Program\U
 call :task_disable "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector"
 call :task_disable "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
 REM Ensure outbound firewall rule bound to DiagTrack exists
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if(-not (Get-NetFirewallRule -DisplayName 'Block Telemetry Service (DiagTrack)' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -DisplayName 'Block Telemetry Service (DiagTrack)' -Direction Outbound -Action Block -Enabled True -Service DiagTrack -Profile Any }" >nul 2>&1
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if(-not (Get-NetFirewallRule -DisplayName 'Block Telemetry Service (DiagTrack)' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -DisplayName 'Block Telemetry Service (DiagTrack)' -Direction Outbound -Action Block -Enabled True -Service DiagTrack -Profile Any }" >nul 2>&1
 call :fw_block_diagtrack
 
 :: ------------ Delivery Optimization ------------
@@ -621,7 +621,7 @@ for %%S in (XblGameSave XboxGipSvc XboxNetApiSvc) do (
   sc stop   %%S >nul 2>&1
 )
 :: Optional removal of Xbox Game Bar if present (harmless on LTSC if missing)
-powershell -NoP -NonI -Command "Get-AppxPackage -AllUsers *XboxGamingOverlay* ^| Remove-AppxPackage" >nul 2>&1
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-AppxPackage -AllUsers *XboxGamingOverlay* ^| Remove-AppxPackage" >nul 2>&1
 
 :: ------------ Features (DISM /Disable-Feature) ------------
 call :log "[SECTION] Features"
@@ -776,7 +776,7 @@ exit /b 0
 
 :after_telemetry_hardening
 :ts
-  for /f %%# in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do (
+  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do (
     set "TS=%%#"
     goto :eof
   )
