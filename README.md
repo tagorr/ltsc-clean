@@ -99,11 +99,20 @@ This baseline expects the primary local admin password to be supplied explicitly
      * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
    * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
-   * calls `ValidateSecrets.ps1` near the start to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords, logging `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`;
-   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the ACL/attribute flag is OK, validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
+   * calls `ValidateSecrets.ps1` near the start to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, and logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`;
+   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid; validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
      * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition.
    * if the primary admin secret is missing or invalid, ACL/attribute checks fail, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task; the script exits with a non-zero RC, leaving the system in a recovery state.
+
+   Example `SetupComplete.log` excerpt (healthy gate):
+
+   ```text
+   [SECTION] Secret ACL validation (bootstrap=1, primaryadmin=1)
+   [INFO] primary admin secret loaded from .primaryadmin.pw
+   [INFO] Winlogon autologon primed for 'bootstrap'
+   [INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)
+   ```
 
 5. The system reboots as part of normal Setup. At the first console logon (Hyper-V Basic console), Winlogon performs AutoAdminLogon with `bootstrap`. This is visible only on the console session, not on Hyper-V Enhanced (RDP) sessions.
 
@@ -644,8 +653,8 @@ Short walkthrough of the intended behavior:
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
    * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, anything else is failure;
    * for `3010` and `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting;
-   * calls `ValidateSecrets.ps1` near the start to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords and logs the resulting flags;
-   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the ACL/attribute flag is OK, validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
+   * calls `ValidateSecrets.ps1` near the start to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate;
+   * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid, validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
 
      * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`;
