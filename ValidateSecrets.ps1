@@ -70,8 +70,23 @@ function Test-SecretAcl {
     return $true
 }
 
-$bootstrapOk = Test-SecretAcl -Path $BootstrapPath
-$primaryOk = Test-SecretAcl -Path $PrimaryAdminPath
+# Main logic: compute two flags and an exit code as a bitmask:
+# bit 0 (1)  bootstrapOk
+# bit 1 (2)  primaryOk
 
-Write-Output ("set L2C_BOOTSTRAP_PW_ACL_OK={0}" -f ($(if ($bootstrapOk) { '1' } else { '0' })))
-Write-Output ("set L2C_PRIMARYADMIN_PW_ACL_OK={0}" -f ($(if ($primaryOk) { '1' } else { '0' })))
+try {
+    $bootstrapOk = Test-SecretAcl -Path $BootstrapPath
+    $primaryOk   = Test-SecretAcl -Path $PrimaryAdminPath
+
+    [int]$code = 0
+    if ($bootstrapOk) { $code = $code -bor 1 } # bit 0
+    if ($primaryOk)   { $code = $code -bor 2 } # bit 1
+
+    exit $code
+}
+catch {
+    # In case of an internal error we treat this as "both invalid" and return exit code 0,
+    # so that SetupComplete enters recovery mode.
+    # You may log the error details here if needed, but this is not part of the contract.
+    exit 0
+}
