@@ -168,6 +168,30 @@ function Set-UserAdsi([string]$User, [string]$FullName, [string]$Description, [s
   }
 }
 
+function Set-L2CLocalUserPasswordAdsi {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $UserName,
+    [Parameter(Mandatory = $true)]
+    [string] $Password
+  )
+
+  $userPath = "WinNT://$env:COMPUTERNAME/$UserName,user"
+
+  try {
+    $user = [ADSI] $userPath
+  } catch {
+    throw "Failed to bind ADSI local user '$UserName'. The account does not exist or cannot be opened."
+  }
+
+  try {
+    $user.SetPassword($Password)
+    $user.SetInfo()
+  } catch {
+    throw "Failed to set password for local user '$UserName' via ADSI. $($_.Exception.Message)"
+  }
+}
+
 function Test-AdministratorsMembership([string]$User) {
   try {
     $group = [ADSI]("WinNT://$env:COMPUTERNAME/$script:AdministratorsGroupName,group")
@@ -219,15 +243,15 @@ try {
     $exists = Get-LocalUserExists $PrimaryUser
     if (-not $exists) {
       Write-Verbose "Stage A: creating local user $PrimaryUser"
-      & net.exe user "$PrimaryUser" "$pwd" /add | Out-Null 2>$null
+      & net.exe user "$PrimaryUser" /add | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to create user $PrimaryUser (exitcode $LASTEXITCODE)" }
+      Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
       & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
       Write-SetupLog "User $PrimaryUser created and activated"
     } else {
       Write-Verbose "Stage A: updating password for $PrimaryUser"
-      & net.exe user "$PrimaryUser" "$pwd" | Out-Null 2>$null
-      if ($LASTEXITCODE -ne 0) { throw "Failed to set password for $PrimaryUser (exitcode $LASTEXITCODE)" }
+      Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
       Write-SetupLog "Password updated for $PrimaryUser"
       & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
