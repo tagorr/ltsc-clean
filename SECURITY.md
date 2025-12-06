@@ -142,7 +142,9 @@ The primary admin account password is **never** stored in `DefaultPassword`. It 
 
 ## Secret threat model
 
-* Password values never appear in Task Scheduler definitions, command lines, RunOnce keys, or logs; the only storage locations are the hardened on-disk secrets (`.bootstrap.pw` and `.primaryadmin.pw`) with Hidden+System attributes and explicit `SYSTEM` + Administrators ACLs.
+* For the long-lived primary admin (`primaryadmin`), the password is never placed on any process command line and does not appear in Windows Security 4688 process creation events even when command-line logging is enabled. The baseline does not intentionally log this password anywhere. The value lives only in `.primaryadmin.pw` (Hidden+System, inheritance disabled, explicit `SYSTEM` + local Administrators ACL) and is applied via the WinNT ADSI provider (`SetPassword` + `SetInfo`) inside `CreatePrimaryAdmin.ps1`.
+* The temporary `bootstrap` administrator password is set during the early PreOOBE phase using native operating system tooling. It may be observable in short-lived process command lines or low-level logs inside this early phase. This is an accepted, limited risk for a short-lived account that is disabled and cleaned up by the end of the pipeline.
+* Password values never appear in Task Scheduler definitions, RunOnce keys, or intentional logs; the only storage locations are the hardened on-disk secrets (`.bootstrap.pw` and `.primaryadmin.pw`) with Hidden+System attributes and explicit `SYSTEM` + Administrators ACLs.
 * Attempts to weaken those secrets (extra ACEs, inheritance enabled, missing attributes, deleting or emptying `.primaryadmin.pw`, or using unsupported characters) cause `SetupComplete.cmd` to fail closed: no temporary autologon, no Stage B registration, and an exit that requires interactive follow-up using the logs.
 * Happy path: both secrets are provisioned correctly, the gate opens once, a single automatic `bootstrap` logon runs Stage B, the system migrates to `primaryadmin`, disables `bootstrap`, removes the secrets and scheduled task, restores logon policies, and (if the Panther flag was present) performs the single controlled reboot.
 

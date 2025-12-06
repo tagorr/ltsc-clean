@@ -62,6 +62,7 @@ S
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
   * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).
+  * [ ] Password application uses the WinNT ADSI provider (`SetPassword` + `SetInfo`); any `net.exe user` calls for `primaryadmin` are limited to `/add` or `/active:yes` with no password arguments.
   * [ ] Behavior is defined for:
 
     * [ ] Missing, unreadable, or empty `.primaryadmin.pw`.
@@ -71,7 +72,8 @@ S
     * [ ] A clear `StageAAbortReason` is set.
     * [ ] Stage A does not attempt to create or modify the user with an invalid or missing password.
     * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
-  * [ ] Password value never appears in task XML, command lines, or logs.
+  * [ ] For `primaryadmin`, the password value never appears in task XML, command lines, or the baseline's own logs.
+  * [ ] With Audit Process Creation + command-line logging enabled, Security 4688 events do not show the `primaryadmin` password on any process command line.
 
 ---
 
