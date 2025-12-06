@@ -730,6 +730,16 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - The exit-code contract is resilient to localization/encoding and keeps stdout available for diagnostics without risking mis-parsed gate data.
 - The previous stdout/`for /f` contract is deprecated and removed; future changes to secret validation must keep this exit-code bitmask bridge aligned between `ValidateSecrets.ps1` and `SetupComplete.cmd` and be recorded here before code changes.
 
+## ADR-010: ADSI for primaryadmin password; bootstrap remains native in PreOOBE
+
+**Date:** 2025-12-05
+
+**Context:** Both bootstrap and primaryadmin passwords were previously set via `net.exe user <user> <password> ...`, which surfaces passwords in process command lines and Security 4688 events when command-line logging is enabled.
+
+**Decision:** For the long-lived `primaryadmin` account, apply the password via the WinNT ADSI provider (`SetPassword` + `SetInfo`) after any `net.exe user ... /add` without password arguments; no `net.exe user <password>` calls remain. The temporary `bootstrap` password stays on native OS tooling in PreOOBE because ADSI proved unreliable there; the early-phase exposure is accepted and documented in `SECURITY.md`.
+
+**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password may still be observable in short-lived command lines or low-level logs during PreOOBE; this is an intentionally accepted, time-bounded risk for a temporary account that is disabled/cleaned up by the end of the pipeline.
+
 ## ADR-007: DISM RC classification and FINAL_RC aggregation
 
 **Date:** 2025-11-23
