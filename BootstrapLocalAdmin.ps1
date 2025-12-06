@@ -30,30 +30,6 @@ function Write-BootstrapLog {
     Write-Host ("[BOOTSTRAP] [{0}] {1}" -f $Level, $Message)
 }
 
-function Set-L2CLocalUserPasswordAdsi {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $UserName,
-        [Parameter(Mandatory = $true)]
-        [string] $Password
-    )
-
-    $userPath = "WinNT://$env:COMPUTERNAME/$UserName,user"
-
-    try {
-        $user = [ADSI] $userPath
-    } catch {
-        throw "Failed to bind ADSI local user '$UserName'. The account does not exist or cannot be opened."
-    }
-
-    try {
-        $user.SetPassword($Password)
-        $user.SetInfo()
-    } catch {
-        throw "Failed to set password for local user '$UserName' via ADSI. $($_.Exception.Message)"
-    }
-}
-
 $exitCode = 0
 
 try {
@@ -63,7 +39,7 @@ try {
 
     # Ensure user exists; create if missing (rc 0 = created, 2 = already exists)
     Write-BootstrapLog ("Ensuring local user '{0}' exists" -f $u)
-    & net.exe user $u /add /y | Out-Null 2>$null
+    & net.exe user $u $PasswordPlain /add /y | Out-Null 2>$null
     $rc = $LASTEXITCODE
     if ($rc -ne 0 -and $rc -ne 2) {
         Write-BootstrapLog ("Failed to create user '{0}' (rc={1})" -f $u, $rc) 'ERROR'
@@ -76,8 +52,7 @@ try {
 
     # Always set password explicitly and activate
     Write-BootstrapLog ("Setting password and activating '{0}'" -f $u)
-    Set-L2CLocalUserPasswordAdsi -UserName $u -Password $PasswordPlain
-    & net.exe user $u /active:yes | Out-Null 2>$null
+    & net.exe user $u $PasswordPlain /active:yes | Out-Null 2>$null
     if ($LASTEXITCODE -ne 0) {
         $rc = $LASTEXITCODE
         Write-BootstrapLog ("Failed to set password/activate '{0}' (rc={1})" -f $u, $rc) 'ERROR'
