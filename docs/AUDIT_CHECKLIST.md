@@ -74,7 +74,6 @@ S
     * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
   * [ ] For `primaryadmin`, the password value never appears in task XML, command lines, or the baseline's own logs.
   * [ ] With Audit Process Creation + command-line logging enabled, Security 4688 events do not show the `primaryadmin` password on any process command line.
-
 * [ ] Negative test: build an ISO that forces `.bootstrap.pw` ACL hardening to fail (for example by breaking `Set-Acl`), confirm `PreOOBE.log` shows the ACL failure and the delete attempt (success / nothing to delete / failure), verify the run does not leave `.bootstrap.pw` silently with weak ACLs, and observe that `ValidateSecrets`/`SetupComplete` treat the missing/empty secret as `bootstrap=0` so the gate stays closed and Stage B is not registered.
 
 ---
