@@ -74,7 +74,8 @@ S
     * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
   * [ ] For `primaryadmin`, the password value never appears in task XML, command lines, or the baseline's own logs.
   * [ ] With Audit Process Creation + command-line logging enabled, Security 4688 events do not show the `primaryadmin` password on any process command line.
-* [ ] When ACL hardening of `%WINDIR%\Setup\Scripts\.bootstrap.pw` fails in `BootstrapLocalAdmin.ps1`, `PreOOBE.log` shows the ACL failure and delete attempt; in the negative test run the file is deleted and not left on disk with incorrect ACLs, and any deletion failure would be logged as an error; `SetupComplete`/`ValidateSecrets` treat the missing/empty secret as `bootstrap=0` so Stage B is not registered.
+
+* [ ] Negative test: build an ISO that forces `.bootstrap.pw` ACL hardening to fail (for example by breaking `Set-Acl`), confirm `PreOOBE.log` shows the ACL failure and the delete attempt (success / nothing to delete / failure), verify the run does not leave `.bootstrap.pw` silently with weak ACLs, and observe that `ValidateSecrets`/`SetupComplete` treat the missing/empty secret as `bootstrap=0` so the gate stays closed and Stage B is not registered.
 
 ---
 
@@ -259,6 +260,26 @@ S
   * [ ] Log entry `"Stage A failed: ..."` is written with `ERROR` level.
   * [ ] `$StageA_Succeeded = $false`.
   * [ ] `$rc = 1`.
+
+#### 5.5. Primary admin ADSI failure (negative test)
+
+* [ ] Build a test ISO that forces `Set-L2CLocalUserPasswordAdsi` to throw (for example by injecting a deliberate exception) and install on a clean VM so CreatePrimaryAdmin runs once.
+* [ ] `SetupComplete.log` shows:
+
+  * [ ] Stage A loading `.primaryadmin.pw` (`Primary admin secret loaded from .primaryadmin.pw`).
+  * [ ] An error `Failed to set password via ADSI for primaryadmin: ...` including the simulated ADSI failure text.
+  * [ ] For a newly created account: a rollback entry `Rolled back user primaryadmin after password failure (delete rc=...)` (or the delete failure variant).
+  * [ ] For a pre-existing account: a log entry `Skipping deletion because primaryadmin existed before this run`.
+  * [ ] `Stage A failed: ...` followed by `Stage B running in recovery mode (StageA RC=1)` and recovery logs noting secrets/`bootstrap` preserved and outcome `ABORTED` with the ADSI failure reason.
+* [ ] `C:\ProgramData\l2c_master_*.log` shows:
+
+  * [ ] `mode=recovery`.
+  * [ ] `.primaryadmin.pw` and `.bootstrap.pw` cleanup states recorded as preserved.
+  * [ ] OUTCOME stating the run was aborted because ADSI password setting for `primaryadmin` failed.
+* [ ] VM state after the failed run:
+
+  * [ ] The local Administrators group does not contain `primaryadmin` (the new account was rolled back).
+  * [ ] `bootstrap` remains enabled for operator investigation.
 
 ---
 
