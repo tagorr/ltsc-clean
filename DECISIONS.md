@@ -738,7 +738,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 **Decision:** For the long-lived `primaryadmin` account, apply the password via the WinNT ADSI provider (`SetPassword` + `SetInfo`) after any `net.exe user ... /add` without password arguments; no `net.exe user <password>` calls remain. The temporary `bootstrap` password stays on native OS tooling in PreOOBE because ADSI proved unreliable there; the early-phase exposure is accepted and documented in `SECURITY.md`.
 
-**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password may still be observable in short-lived command lines or low-level logs during PreOOBE; this is an intentionally accepted, time-bounded risk for a temporary account that is disabled/cleaned up by the end of the pipeline.
+**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password may still be observable in short-lived command lines or low-level logs during PreOOBE; this is an intentionally accepted, time-bounded risk for a temporary account that is disabled/cleaned up by the end of the pipeline. When ACL hardening of `.bootstrap.pw` fails in `BootstrapLocalAdmin.ps1`, the script attempts to delete the secret and logs success/failure; `SetupComplete`/`ValidateSecrets` treat a missing or empty `.bootstrap.pw` as `bootstrap=0`, the gate stays closed, and Stage B is not registered, with outcomes visible in `PreOOBE.log` and `SetupComplete.log`.
 
 ## ADR-007: DISM RC classification and FINAL_RC aggregation
 
