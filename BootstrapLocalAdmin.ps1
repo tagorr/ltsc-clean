@@ -112,7 +112,18 @@ try {
         Write-BootstrapLog ("ACL applied to '{0}' successfully" -f $pwPath)
     } catch {
         Write-BootstrapLog ("Failed to apply ACL to '{0}': {1}" -f $pwPath, $_.Exception.Message) 'ERROR'
-        Write-Error ("[ERROR] Failed to apply ACL to '{0}': {1}" -f $pwPath, $_.Exception.Message)
+        try {
+            if (Test-Path -LiteralPath $pwPath) {
+                Write-BootstrapLog ("Attempting to delete '{0}' after ACL failure" -f $pwPath) 'WARN'
+                Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
+                Write-BootstrapLog ("Deleted '{0}' after ACL failure" -f $pwPath) 'WARN'
+            } else {
+                Write-BootstrapLog ("Password file '{0}' does not exist at ACL failure; nothing to delete" -f $pwPath) 'WARN'
+            }
+        } catch {
+            $cleanupMessage = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+            Write-BootstrapLog ("Failed to delete '{0}' after ACL failure: {1}" -f $pwPath, $cleanupMessage) 'ERROR'
+        }
         throw
     }
 
