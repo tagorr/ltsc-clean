@@ -59,6 +59,10 @@ S
     * [ ] Stage B registration and autologon priming are blocked.
   * [ ] A single combined gate (FAILED==0, `.bootstrap.pw` present/non-empty, `.primaryadmin.pw` present and ACL/attribute OK, allowed characters) controls temporary logon tweaks, autologon priming, and Stage B registration.
   * [ ] For a happy-path run, `SetupComplete.log` shows `[SECTION] Secret ACL validation (bootstrap=1, primaryadmin=1)` before CreatePrimaryAdmin is scheduled; for a deliberate ACL/attribute/absence fault in either secret the log shows at least one `0` and SetupComplete enters the fail-closed/recovery path (no task registration or autologon priming).
+* [ ] `.primaryadmin.pw` formatting checks:
+
+  * [ ] Positive: the file contains exactly one non-empty line with the password; the gate opens and Stage B is registered.
+  * [ ] Negative (leading empty line): the first line is empty and the password is on the second line; `SetupComplete.log` and the Stage A master log show the secret as unusable, the gate stays closed, and Stage B is not registered.
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
   * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).

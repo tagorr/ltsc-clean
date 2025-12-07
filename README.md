@@ -228,6 +228,16 @@ The file is sensitive. In the normal unattended flow Stage B deletes it on succe
 
 This file is not part of the repository and must be created by the operator before deployment using the same ACL/attribute shape as `.bootstrap.pw`. The password is never logged or echoed and never appears in task XML or command lines. If the file is missing, fails ACL/attribute checks, or contains invalid characters, `SetupComplete.cmd` logs the error, skips autologon priming, and does not register the `\L2C\CreatePrimaryAdmin` task.
 
+### .primaryadmin.pw file format
+
+- The file must contain exactly one non-empty line with the password.
+- Only the first line is used:
+  - `SetupComplete.cmd` reads the first line via `set /p`.
+  - Stage A of `CreatePrimaryAdmin.ps1` reads only the first line via `Get-Content -TotalCount 1` and trims the trailing end-of-line.
+- If the file is empty, or if the first line is empty or whitespace-only, the secret is treated as unusable and the gate remains closed (fail-closed).
+- Additional lines after the first are ignored; do not place the password on line 2 or later, and avoid leading blank lines entirely.
+- Intended format: exactly one non-empty line with the password and no leading blank lines; a trailing end-of-line after that line is acceptable but not required.
+
 ### Password generator
 
 * `New-StrongPassword` is retained as a utility function, but Stage A does not use it for `primaryadmin`.

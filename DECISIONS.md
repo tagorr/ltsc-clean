@@ -768,6 +768,11 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 **Consequences:**
 
 - The pipeline proceeds only when exit code `3` is returned; any missing/invalid secret or internal validator error yields a fail-closed state (autologon and Stage B registration are skipped).
+- The contract intentionally remains coarse and fail-closed:
+  - `ValidateSecrets.ps1` returns `0` both when the ACL/attribute/content validation fails for both secrets and when the validator itself encounters an internal error (for example, unexpected I/O failure or an unhandled exception).
+  - `SetupComplete.cmd` decodes exit `0` as `bootstrap=0, primaryadmin=0`, keeps the gate closed, and does not register Stage B.
+  - Operators cannot distinguish “both secrets invalid” from “validator crashed” by exit code alone; this is a deliberate trade-off to keep the bridge simple and fail-closed.
+- Operational note: when the gate reports `bootstrap=0, primaryadmin=0`, operators must treat the secrets as unusable and investigate both misconfigured secret files and potential validator failures using the logs.
 - The exit-code contract is resilient to localization/encoding and keeps stdout available for diagnostics without risking mis-parsed gate data.
 - The previous stdout/`for /f` contract is deprecated and removed; future changes to secret validation must keep this exit-code bitmask bridge aligned between `ValidateSecrets.ps1` and `SetupComplete.cmd` and be recorded here before code changes.
 
