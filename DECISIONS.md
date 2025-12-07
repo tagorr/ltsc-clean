@@ -716,30 +716,6 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - `AGENTS.md` continues to enforce locale-agnostic DISM usage, RC policy, SID-based admin resolution, and strict password source file cleanup/logging for any future edits to these scripts.
 - `AGENTS.md` also documents the DISM return-code classification (success, reboot, LTSC warning whitelist, fatal) and the FINAL_RC aggregation model for SetupComplete.cmd.
 
-## ADR-009: Exit-code bitmask replaces stdout parsing for secret validation
-
-**Date:** 2025-12-05
-
-**Context:** Earlier, `ValidateSecrets.ps1` printed `set ...` statements to stdout and `SetupComplete.cmd` parsed them via `for /f ... do call`. That bridge was brittle (locale/encoding dependent) and mingled contract data with free-form output.
-
-**Decision:** `ValidateSecrets.ps1` now encodes its results solely in the process exit code: a 0–3 bitmask where bit0 indicates the bootstrap secret passed ACL/attribute checks and bit1 indicates the primary-admin secret passed. `SetupComplete.cmd` invokes the validator as a child process, reads `%ERRORLEVEL%`, decodes the bits into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`, and gates autologon/Stage B registration on both bits being `1`.
-
-**Consequences:**
-
-- The pipeline proceeds only when exit code `3` is returned; any missing/invalid secret or internal validator error yields a fail-closed state (autologon and Stage B registration are skipped).
-- The exit-code contract is resilient to localization/encoding and keeps stdout available for diagnostics without risking mis-parsed gate data.
-- The previous stdout/`for /f` contract is deprecated and removed; future changes to secret validation must keep this exit-code bitmask bridge aligned between `ValidateSecrets.ps1` and `SetupComplete.cmd` and be recorded here before code changes.
-
-## ADR-010: ADSI for primaryadmin password; bootstrap remains native in PreOOBE
-
-**Date:** 2025-12-05
-
-**Context:** Both bootstrap and primaryadmin passwords were previously set via `net.exe user <user> <password> ...`, which surfaces passwords in process command lines and Security 4688 events when command-line logging is enabled.
-
-**Decision:** For the long-lived `primaryadmin` account, apply the password via the WinNT ADSI provider (`SetPassword` + `SetInfo`) after any `net.exe user ... /add` without password arguments; no `net.exe user <password>` calls remain. The temporary `bootstrap` password stays on native OS tooling in PreOOBE because ADSI proved unreliable there; the early-phase exposure is accepted and documented in `SECURITY.md`.
-
-**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password may still be observable in short-lived command lines or low-level logs during PreOOBE; this is an intentionally accepted, time-bounded risk for a temporary account that is disabled/cleaned up by the end of the pipeline.
-
 ## ADR-007: DISM RC classification and FINAL_RC aggregation
 
 **Date:** 2025-11-23
@@ -780,3 +756,42 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Secrets live only on disk in hardened files between `SetupComplete.cmd` and the end of Stage B; they never traverse command lines or task XML.
 - Any ACL/attribute drift or invalid/missing secret blocks autologon and Stage B, forcing a fail-closed posture with explicit logging.
 - The single gate keeps temporary policy relaxation, Winlogon priming, and Stage B scheduling aligned; operators can reason about success/failure from the log without chasing partial configurations.
+
+## ADR-009: Exit-code bitmask replaces stdout parsing for secret validation
+
+**Date:** 2025-12-05
+
+**Context:** Earlier, `ValidateSecrets.ps1` printed `set ...` statements to stdout and `SetupComplete.cmd` parsed them via `for /f ... do call`. That bridge was brittle (locale/encoding dependent) and mingled contract data with free-form output.
+
+**Decision:** `ValidateSecrets.ps1` now encodes its results solely in the process exit code: a 0–3 bitmask where bit0 indicates the bootstrap secret passed ACL/attribute checks and bit1 indicates the primary-admin secret passed. `SetupComplete.cmd` invokes the validator as a child process, reads `%ERRORLEVEL%`, decodes the bits into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`, and gates autologon/Stage B registration on both bits being `1`.
+
+**Consequences:**
+
+- The pipeline proceeds only when exit code `3` is returned; any missing/invalid secret or internal validator error yields a fail-closed state (autologon and Stage B registration are skipped).
+- The exit-code contract is resilient to localization/encoding and keeps stdout available for diagnostics without risking mis-parsed gate data.
+- The previous stdout/`for /f` contract is deprecated and removed; future changes to secret validation must keep this exit-code bitmask bridge aligned between `ValidateSecrets.ps1` and `SetupComplete.cmd` and be recorded here before code changes.
+
+## ADR-010: ADSI for primaryadmin password; bootstrap remains native in PreOOBE
+
+**Date:** 2025-12-06
+
+**Context:** Both bootstrap and primaryadmin passwords were previously set via `net.exe user <user> <password> ...`, which surfaces passwords in process command lines and Security 4688 events when command-line logging is enabled.
+
+**Decision:**
+
+For the long-lived `primaryadmin` account:
+
+- The password is applied via the WinNT ADSI provider (`SetPassword` + `SetInfo`) after any `net.exe user ... /add` call that does not include password arguments; no `net.exe user <password>` calls remain.
+- When Stage A creates `primaryadmin`, the flow is `net.exe user <PrimaryUser> /add` (no password) → `Set-L2CLocalUserPasswordAdsi` → `net.exe user ... /active:yes`.
+- If ADSI password setting fails after a successful `net.exe user <PrimaryUser> /add`, Stage A:
+  - logs `Failed to set password via ADSI for <user>: <error>`,
+  - attempts rollback via `net.exe user <user> /delete` and logs the delete return code (`Rolled back user ... after password failure (delete rc=...)` or an equivalent delete failure log entry),
+  - throws so that Stage A fails closed and forces recovery.
+- When the `primaryadmin` account already exists before Stage A, the script only calls `Set-L2CLocalUserPasswordAdsi`. If ADSI fails, Stage A:
+  - logs the error,
+  - logs `Skipping deletion because <user> existed before this run`,
+  - throws; no deletion is attempted for pre-existing accounts.
+
+The temporary `bootstrap` password stays on native OS tooling in PreOOBE because ADSI proved unreliable there; the early-phase exposure is accepted and documented in `SECURITY.md`.
+
+**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password may still be observable in short-lived command lines or low-level logs during PreOOBE; this is an intentionally accepted, time-bounded risk for a temporary account that is disabled/cleaned up by the end of the pipeline. ADSI failures can no longer leave a freshly created `primaryadmin` orphaned with an unset password: the creation is rolled back and recovery mode is entered; for pre-existing `primaryadmin` the account is preserved but the run still fails closed and drops into recovery.
