@@ -245,13 +245,33 @@ try {
       Write-Verbose "Stage A: creating local user $PrimaryUser"
       & net.exe user "$PrimaryUser" /add | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to create user $PrimaryUser (exitcode $LASTEXITCODE)" }
-      Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
+      try {
+        Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
+      } catch {
+        $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+        Write-SetupLog ("Failed to set password via ADSI for {0}: {1}" -f $PrimaryUser, $msg) 'ERROR'
+        & net.exe user "$PrimaryUser" /delete | Out-Null 2>$null
+        $delRc = $LASTEXITCODE
+        if ($delRc -eq 0) {
+          Write-SetupLog ("Rolled back user {0} after password failure (delete rc={1})" -f $PrimaryUser,$delRc) 'WARN'
+        } else {
+          Write-SetupLog ("Failed to delete user {0} after password failure (rc={1})" -f $PrimaryUser,$delRc) 'ERROR'
+        }
+        throw
+      }
       & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
       Write-SetupLog "User $PrimaryUser created and activated"
     } else {
       Write-Verbose "Stage A: updating password for $PrimaryUser"
-      Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
+      try {
+        Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
+      } catch {
+        $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+        Write-SetupLog ("Failed to set password via ADSI for existing user {0}: {1}" -f $PrimaryUser, $msg) 'ERROR'
+        Write-SetupLog ("Skipping deletion because {0} existed before this run" -f $PrimaryUser) 'WARN'
+        throw
+      }
       Write-SetupLog "Password updated for $PrimaryUser"
       & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
       if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
