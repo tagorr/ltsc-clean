@@ -98,6 +98,7 @@ This baseline expects the primary local admin password to be supplied explicitly
      * `-2146498548` / `2148468748` – warning, feature not recognized in this image; logged and treated as success;
      * `-2146498541` / `2148468755` – warning, invalid install state for this feature; logged and treated as success;
      * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
+     * the whitelist is intentionally narrow (only the codes above); any other non-zero DISM return code is treated as a hard failure that blocks unattended provisioning until an operator reviews `SetupComplete.log` and `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` and extends the whitelist deliberately only if the new code is confirmed benign;
    * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
    * calls `ValidateSecrets.ps1` near the start to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, and logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`;

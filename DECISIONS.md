@@ -729,6 +729,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
   - -2146498541 / 2148468755 (“invalid install state for this feature”).
   For these codes, `:run_dism` logs a warning, sets `HAS_DISM_WARN=1`, and returns success.
 - All other non-success DISM return codes remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
+- The whitelist is intentionally narrow (e.g., `3010`, `1641`, the codes above); any other non-zero DISM return code is treated as a hard failure that fail-closed, blocks Stage B registration, and requires operator investigation before the whitelist can be extended.
 - At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, `FINAL_RC=0`. The script logs “[RC] returning %FINAL_RC%” and exits with that code.
 
 **Consequences:**
