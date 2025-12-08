@@ -100,30 +100,6 @@ function Reg-Del([string]$Key, [string]$Name) {
     Write-SetupLog "Reg DEL failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
   }
 }
-function Invoke-RngFill([byte[]]$Buffer) {
-  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-  try { $rng.GetBytes($Buffer) } finally { $rng.Dispose() }
-}
-function New-StrongPassword([int]$Length = 20) {
-  if ($Length -lt 12) { $Length = 12 }
-  $upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".ToCharArray()
-  $lower = "abcdefghijklmnopqrstuvwxyz".ToCharArray()
-  $digits = "0123456789".ToCharArray()
-  $sym   = "!@#$^*-_=+".ToCharArray()
-  $all = ($upper + $lower + $digits + $sym)
-  $bytes = New-Object byte[] ($Length)
-  Invoke-RngFill $bytes
-  $chars = New-Object char[] ($Length)
-  $chars[0] = $upper[$bytes[0] % $upper.Length]
-  $chars[1] = $lower[$bytes[1] % $lower.Length]
-  $chars[2] = $digits[$bytes[2] % $digits.Length]
-  $chars[3] = $sym[$bytes[3] % $sym.Length]
-  for ($i = 4; $i -lt $Length; $i++) { $chars[$i] = $all[$bytes[$i] % $all.Length] }
-  $shuffle = New-Object byte[] ($Length)
-  Invoke-RngFill $shuffle
-  for ($i = 0; $i -lt $Length; $i++) { $j = $shuffle[$i] % $Length; $t = $chars[$i]; $chars[$i] = $chars[$j]; $chars[$j] = $t }
-  -join $chars
-}
 
 function Get-LocalUserExists([string]$User) {
   & net.exe user "$User" | Out-Null 2>$null
