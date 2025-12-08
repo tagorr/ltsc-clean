@@ -13,7 +13,6 @@ if not exist "%WINDIR%\Logs\DISM" mkdir "%WINDIR%\Logs\DISM" >nul 2>&1
 
 :: ------------ config flags ------------
 set "LOG_TS_ENGINE=POWERSHELL"
-set "REBOOT_ON_RC=1"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
 set "FAILED=0"
@@ -330,21 +329,6 @@ set "RC=%ERRORLEVEL%"
 call :track_rc %RC%
 call :handle_rc "EXE" %RC%
 exit /b %RC%
-
-:trim_primaryadmin_password
-if not defined L2C_PRIMARYADMIN_PASSWORD goto :eof
-if "%L2C_PRIMARYADMIN_PASSWORD%"=="" goto :eof
-:_trim_primaryadmin_password_loop
-if not defined L2C_PRIMARYADMIN_PASSWORD goto :_trim_primaryadmin_password_done
-if "%L2C_PRIMARYADMIN_PASSWORD%"=="" goto :_trim_primaryadmin_password_done
-set "L2C_PW_LAST=%L2C_PRIMARYADMIN_PASSWORD:~-1%"
-if "%L2C_PW_LAST%"==" " (
-  set "L2C_PRIMARYADMIN_PASSWORD=%L2C_PRIMARYADMIN_PASSWORD:~0,-1%"
-  goto :_trim_primaryadmin_password_loop
-)
-:_trim_primaryadmin_password_done
-set "L2C_PW_LAST="
-goto :eof
 
 :validate_primaryadmin_password
 set "L2C_PW_CHECK=%L2C_PRIMARYADMIN_PASSWORD%"
