@@ -238,11 +238,6 @@ This file is not part of the repository and must be created by the operator befo
 - Additional lines after the first are ignored; do not place the password on line 2 or later, and avoid leading blank lines entirely.
 - Intended format: exactly one non-empty line with the password and no leading blank lines; a trailing end-of-line after that line is acceptable but not required.
 
-### Password generator
-
-* `New-StrongPassword` is retained as a utility function, but Stage A does not use it for `primaryadmin`.
-* The character set excludes `&` and `%` to avoid command line quoting issues when a generated password is used in cmd.exe context.
-
 ## What this baseline does
 
 > The baseline does not disable `WinHttpAutoProxySvc`. WPAD is controlled via supported WinINET and WinHTTP keys.
