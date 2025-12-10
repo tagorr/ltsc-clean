@@ -330,12 +330,13 @@ S
   * [ ] All errors are logged as `WARN` but do not break Stage B.
   * [ ] Logs contain a `"RunOnce cleaned"` entry or an explanation of the error.
 
-#### 6.5. Password source files cleanup (best effort)
+#### 6.5. Password source files cleanup (normal vs recovery)
 
 * [ ] In normal Stage B mode:
 
   * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are deleted when present; success or failure is logged for each.
   * [ ] Cleanup states (`removed`, `missing`, `error`) for each file are recorded in the master log.
+  * [ ] Any cleanup state `error` for either secret triggers the secret cleanup failure branch: `OUTCOME: FAIL - secret cleanup error ...`, `StageB_Succeeded=$false`, and (when `$rc` was `0`) `rc` is set to `3`.
 * [ ] In recovery mode:
 
   * [ ] Both secrets are intentionally preserved for another Stage A attempt.
@@ -357,6 +358,7 @@ S
   * [ ] Formed in one of three formats: `SUCCESS`, `FAIL`, or `ABORTED` with a reason.
   * [ ] Written to the same file in the same encoding.
   * [ ] Logged via `Write-SetupLog` with `INFO` or `ERROR` level depending on the outcome.
+  * [ ] Secret cleanup error case emits `OUTCOME: FAIL - secret cleanup error (bootstrap/primaryadmin secrets not removed)`, logs `End B (FAIL - secret cleanup error)` at `ERROR` level, sets `StageB_Succeeded=$false`, and returns `rc=3` when no previous failure code was set.
 * [ ] If Stage B fails before finalization:
 
   * [ ] The master log still receives at least one line indicating an early FAIL.
@@ -381,7 +383,7 @@ S
 
   * [ ] If Stage B fails (non-zero return code), regardless of mode:
 
-    * [ ] No automatic reboot is performed, even if the Panther flag exists.
+    * [ ] No automatic reboot is performed, even if the Panther flag exists (including secret cleanup errors that keep `StageB_Succeeded=$false`).
     * [ ] The log clearly records that the reboot was suppressed because Stage B failed.
 
 * [ ] Stage B never triggers an automatic reboot unless Stage B itself succeeded; reboot logic is explicitly gated on Stage B success.
