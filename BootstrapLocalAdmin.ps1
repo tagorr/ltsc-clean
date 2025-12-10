@@ -1,4 +1,6 @@
 # Generate bootstrap password (A-Za-z0-9 and safe symbols)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 $chars = [char[]]'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-'
 
 if (-not $chars -or $chars.Count -eq 0) {
@@ -15,8 +17,6 @@ finally {
 }
 
 $PasswordPlain = -join ($bytes | ForEach-Object { $chars[ $_ % $chars.Count ] })
-
-$ErrorActionPreference = 'Stop'
 
 function Write-BootstrapLog {
     param(

@@ -43,7 +43,8 @@ S
   * [ ] File ACL is restricted (SYSTEM + Administrators only), inheritance disabled, Hidden + System attributes set.
 * [ ] In `SetupComplete.cmd`:
 
-  * [ ] `ValidateSecrets.ps1` is invoked near the start with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`.
+  * [ ] `ValidateSecrets.ps1` is invoked near the start with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors.
+  * [ ] When the validator returns `4`, `SetupComplete.cmd` logs an explicit internal-failure message (rc=4), sets `FAILED=1`, keeps both ACL flags at `0`, and treats both secrets as invalid for gating.
   * [ ] There is a check for the existence of `.bootstrap.pw` and that the file is not empty (at least one non-empty line).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
   * [ ] `.primaryadmin.pw` is read via `set /p` (first line only) only when the ACL/attribute check succeeded, is non-empty as read, and respects the allowed character set/format (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`).
@@ -57,7 +58,7 @@ S
     * [ ] An `[ERROR]` is logged.
     * [ ] `FAILED=1` is set.
     * [ ] Stage B registration and autologon priming are blocked.
-  * [ ] A single combined gate (FAILED==0, `.bootstrap.pw` present/non-empty, `.primaryadmin.pw` present and ACL/attribute OK, allowed characters) controls temporary logon tweaks, autologon priming, and Stage B registration.
+  * [ ] A single combined gate (FAILED==0, `.bootstrap.pw` present/non-empty, `.primaryadmin.pw` present and ACL/attribute OK, allowed characters) controls temporary logon tweaks, autologon priming, and Stage B registration; the gate also stays closed when the validator returns exit code `4` (internal error) because `FAILED=1` is set and both ACL flags remain `0`.
   * [ ] For a happy-path run, `SetupComplete.log` shows `[SECTION] Secret ACL validation (bootstrap=1, primaryadmin=1)` before CreatePrimaryAdmin is scheduled; for a deliberate ACL/attribute/absence fault in either secret the log shows at least one `0` and SetupComplete enters the fail-closed/recovery path (no task registration or autologon priming).
 * [ ] `.primaryadmin.pw` formatting checks:
 
@@ -91,6 +92,7 @@ S
   * [ ] Redirects stdout and stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log` (no separate bootstrap log file).
 * [ ] `BootstrapLocalAdmin.ps1`:
 
+  * [ ] Runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` (same defensive posture as `CreatePrimaryAdmin.ps1`).
   * [ ] Creates a temporary `bootstrap` account with minimal required rights where applicable.
   * [ ] Sets or updates the password using only expected commands (PowerShell or `net.exe`).
   * [ ] Marks `bootstrap` as active (`/active:yes`) if required by the scenario.
