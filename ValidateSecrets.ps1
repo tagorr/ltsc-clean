@@ -7,6 +7,9 @@ param(
     [string]$PrimaryAdminPath
 )
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 function Test-SecretAcl {
     param(
         [Parameter(Mandatory = $true)]
@@ -85,8 +88,7 @@ try {
     exit $code
 }
 catch {
-    # In case of an internal error we treat this as "both invalid" and return exit code 0,
-    # so that SetupComplete enters recovery mode.
-    # You may log the error details here if needed, but this is not part of the contract.
-    exit 0
+    Write-Error "Internal error while validating secrets: $($_.Exception.Message)" -ErrorAction Continue
+    exit 4
 }
+
