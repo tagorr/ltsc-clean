@@ -764,16 +764,15 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 **Context:** Earlier, `ValidateSecrets.ps1` printed `set ...` statements to stdout and `SetupComplete.cmd` parsed them via `for /f ... do call`. That bridge was brittle (locale/encoding dependent) and mingled contract data with free-form output.
 
-**Decision:** `ValidateSecrets.ps1` now encodes its results solely in the process exit code: a 0–3 bitmask where bit0 indicates the bootstrap secret passed ACL/attribute checks and bit1 indicates the primary-admin secret passed. `SetupComplete.cmd` invokes the validator as a child process, reads `%ERRORLEVEL%`, decodes the bits into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`, and gates autologon/Stage B registration on both bits being `1`.
+**Decision:** `ValidateSecrets.ps1` now encodes its results solely in the process exit code: a 0–3 bitmask where bit0 indicates the bootstrap secret passed ACL/attribute checks and bit1 indicates the primary-admin secret passed, and exit code `4` indicates an internal validator error. The validator runs under `Set-StrictMode -Version Latest` with `$ErrorActionPreference='Stop'` so unexpected conditions surface as errors; internal errors are caught and returned as `4` rather than being mapped to `0`. `SetupComplete.cmd` invokes the validator as a child process, reads `%ERRORLEVEL%`, decodes the bits into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`, and gates autologon/Stage B registration on both bits being `1`.
 
 **Consequences:**
 
-- The pipeline proceeds only when exit code `3` is returned; any missing/invalid secret or internal validator error yields a fail-closed state (autologon and Stage B registration are skipped).
-- The contract intentionally remains coarse and fail-closed:
-  - `ValidateSecrets.ps1` returns `0` both when the ACL/attribute/content validation fails for both secrets and when the validator itself encounters an internal error (for example, unexpected I/O failure or an unhandled exception).
-  - `SetupComplete.cmd` decodes exit `0` as `bootstrap=0, primaryadmin=0`, keeps the gate closed, and does not register Stage B.
-  - Operators cannot distinguish “both secrets invalid” from “validator crashed” by exit code alone; this is a deliberate trade-off to keep the bridge simple and fail-closed.
-- Operational note: when the gate reports `bootstrap=0, primaryadmin=0`, operators must treat the secrets as unusable and investigate both misconfigured secret files and potential validator failures using the logs.
+- The pipeline proceeds only when exit code `3` is returned; any missing/invalid secret keeps the gate closed. An internal validator failure returns `4`, is logged explicitly, sets `FAILED=1`, keeps both ACL flags at `0`, and blocks autologon and Stage B registration.
+- The contract remains fail-closed but now differentiates internal errors:
+  - `ValidateSecrets.ps1` returns `4` when the validator itself encounters an internal error (for example, unexpected I/O failure or an unhandled exception).
+  - `SetupComplete.cmd` treats `RC=4` as a hard validation failure, logs the internal error, sets `FAILED=1`, keeps `bootstrap=0, primaryadmin=0`, and does not register Stage B.
+- Operational note: when the gate reports `bootstrap=0, primaryadmin=0` because of `RC` in `0..3`, operators should treat the secrets as unusable and inspect logs; `RC=4` explicitly signals a validator failure and keeps the system in recovery until investigated.
 - The exit-code contract is resilient to localization/encoding and keeps stdout available for diagnostics without risking mis-parsed gate data.
 - The previous stdout/`for /f` contract is deprecated and removed; future changes to secret validation must keep this exit-code bitmask bridge aligned between `ValidateSecrets.ps1` and `SetupComplete.cmd` and be recorded here before code changes.
 

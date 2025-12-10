@@ -644,6 +644,8 @@ All `SetupComplete.cmd` steps log live timestamps computed inside the script; th
 
 Short walkthrough of the intended behavior:
 
+PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePrimaryAdmin.ps1`) run with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` so unexpected errors surface instead of being silently ignored.
+
 1. `PreOOBE.cmd` (pass `specialize`) is invoked from `autounattend.xml` and:
 
    * applies early privacy and telemetry policies;
@@ -661,7 +663,7 @@ Short walkthrough of the intended behavior:
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
    * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, anything else is failure;
    * for `3010` and `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting;
-   * calls `ValidateSecrets.ps1` near the start to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate;
+   * calls `ValidateSecrets.ps1` near the start to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate; when the validator returns `4` (internal error) `SetupComplete.cmd` logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration);
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid, validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
 
      * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
