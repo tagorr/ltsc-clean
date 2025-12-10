@@ -178,6 +178,7 @@ Normal path:
 * disables the `bootstrap` account;
 * deletes the scheduled task `\L2C\CreatePrimaryAdmin`;
 * deletes `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`;
+* if either secret delete fails (cleanup state `error`), Stage B logs a secret cleanup error outcome, keeps `StageB_Succeeded=$false`, and suppresses any automatic reboot even if the Panther flag exists;
 * removes any leftover `RunOnce` entries added for diagnostics;
 * if `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B completed successfully in normal mode:
 
