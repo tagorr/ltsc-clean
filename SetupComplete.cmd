@@ -691,12 +691,6 @@ if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
 
 call :log "[INFO] Evaluating reboot requirement"
 if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
-if not "%NEEDS_REBOOT%"=="1" (
-  findstr /i /c:"RC=3010" /c:"RC=1641" "%LOG%" >nul && (
-    call :flag_reboot
-    set "NEEDS_REBOOT=1"
-  )
-)
 
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
