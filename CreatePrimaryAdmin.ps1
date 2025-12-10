@@ -421,11 +421,19 @@ try {
   }
   $finalLogEntries += ("[{0}] Stage B finalize end" -f ([DateTime]::UtcNow.ToString('o')))
 
+  $SecretCleanupError = $false
+  if (-not $isRecovery -and $StageA_Succeeded -and (($pwCleanupState -eq 'error') -or ($primaryPwCleanupState -eq 'error'))) {
+    $SecretCleanupError = $true
+    Write-SetupLog 'Secret cleanup error: .bootstrap.pw and/or .primaryadmin.pw could not be removed' 'ERROR'
+  }
+
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllLines($MasterLogPath, $finalLogEntries, $utf8NoBom)
   Write-SetupLog ("Master log created: {0}" -f $MasterLogPath)
   if ($StageAAbortReason) {
     $outcomeLine = "OUTCOME: ABORTED - $StageAAbortReason"
+  } elseif ($SecretCleanupError) {
+    $outcomeLine = 'OUTCOME: FAIL - secret cleanup error (bootstrap/primaryadmin secrets not removed)'
   } elseif ($StageA_Succeeded) {
     $outcomeLine = 'OUTCOME: SUCCESS'
   } else {
@@ -434,14 +442,19 @@ try {
   $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
   $sw.WriteLine($outcomeLine)
   $sw.Dispose()
-  $outcomeLevel = if ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
+  $outcomeLevel = if ($SecretCleanupError) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
-  if ($StageA_Succeeded) {
+  if ($SecretCleanupError) {
+    Write-SetupLog "End B (FAIL - secret cleanup error)" 'ERROR'
+    if ($rc -eq 0) { $rc = 3 }
+    $StageB_Succeeded = $false
+  } elseif ($StageA_Succeeded) {
     Write-SetupLog "End B (SUCCESS)"
+    $StageB_Succeeded = $true
   } else {
     Write-SetupLog "End B (RECOVERY COMPLETE)" 'WARN'
+    $StageB_Succeeded = $true
   }
-  $StageB_Succeeded = $true
 }
 catch {
   Write-SetupLog ("End B (FAIL) - {0}" -f $_.Exception.Message) 'ERROR'
