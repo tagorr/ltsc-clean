@@ -419,6 +419,9 @@ try {
   if ($primaryPwCleanupState -ne 'unknown') {
     $finalLogEntries += ("[{0}] primaryadmin.pw cleanup state={1}" -f ([DateTime]::UtcNow.ToString('o')), $primaryPwCleanupState)
   }
+  $rebootFlagPath = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'
+  $rebootFlagState = if (Test-Path -LiteralPath $rebootFlagPath) { 'present' } else { 'absent' }
+  $finalLogEntries += ("[{0}] Panther reboot flag before Stage B decision: {1}" -f ([DateTime]::UtcNow.ToString('o')), $rebootFlagState)
   $finalLogEntries += ("[{0}] Stage B finalize end" -f ([DateTime]::UtcNow.ToString('o')))
 
   $SecretCleanupError = $false
@@ -474,12 +477,33 @@ catch {
 
 $flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'
 if (Test-Path -LiteralPath $flag) {
+  if (-not $utf8NoBom) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  }
   if (-not $StageB_Succeeded) {
     Write-SetupLog 'Reboot flag present but Stage B did not complete successfully; suppressing automatic reboot to allow operator inspection' 'WARN'
+    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+    try {
+      $sw.WriteLine("[{0}] Stage B: Panther reboot suppressed (StageB_Succeeded=false)" -f ([DateTime]::UtcNow.ToString('o')))
+    } finally {
+      $sw.Dispose()
+    }
   } elseif ($isRecovery) {
     Write-SetupLog 'Reboot flag present in recovery mode; not rebooting to allow operator fix' 'WARN'
+    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+    try {
+      $sw.WriteLine("[{0}] Stage B: Panther reboot suppressed (recovery mode)" -f ([DateTime]::UtcNow.ToString('o')))
+    } finally {
+      $sw.Dispose()
+    }
   } else {
     Write-SetupLog 'Reboot flag detected, initiating restart'
+    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+    try {
+      $sw.WriteLine("[{0}] Stage B: Panther reboot flag consumed, initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+    } finally {
+      $sw.Dispose()
+    }
     Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
     & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
     exit $rc

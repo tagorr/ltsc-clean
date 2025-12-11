@@ -133,6 +133,7 @@ The primary admin account password is **never** stored in `DefaultPassword`. It 
 * The secrets are expected to exist on disk only between the end of `SetupComplete.cmd` and the end of Stage B. In the normal Stage B path, both secrets are deleted and the scheduled task is removed; if either delete operation fails (`cleanup state = error`) Stage B is treated as failed, the master log records `OUTCOME: FAIL - secret cleanup error`, `StageB_Succeeded` stays false, and automatic reboot is suppressed even when the Panther flag exists. In recovery they are intentionally preserved (and logged) for a later retry.
 * WARN/ERROR entries about `.bootstrap.pw` or `.primaryadmin.pw` in Stage B logs (ACL, read/validation, delete failures) are intentional signals; operators should treat them as triggers for manual review rather than noise.
 * Any relaxation of these `.bootstrap.pw` / `.primaryadmin.pw` requirements (ACL shape, retention beyond Stage B, validation constraints, logging guarantees) must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
+* The Stage B master log (`%ProgramData%\l2c_master_<timestamp>.log`) records the Panther flag state before the Stage B decision and logs whether the flag was consumed (`Stage B: Panther reboot flag consumed, initiating automatic restart`) or suppressed (`Stage B: Panther reboot suppressed (...)`), giving operators an auditable trail for reboot outcomes.
 
 ### ValidateSecrets internal failures
 

@@ -91,4 +91,3 @@ catch {
     Write-Error "Internal error while validating secrets: $($_.Exception.Message)" -ErrorAction Continue
     exit 4
 }
-
