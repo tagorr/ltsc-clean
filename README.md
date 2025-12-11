@@ -58,6 +58,7 @@ This baseline expects the primary local admin password to be supplied explicitly
   1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status; captures stdout/stderr from `BootstrapLocalAdmin.ps1` as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines
   2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (ISO-8601 timestamps)
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
+  4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed or consumed)
 
 ### Media layout example
 
@@ -100,7 +101,7 @@ This baseline expects the primary local admin password to be supplied explicitly
      * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
      * the whitelist is intentionally narrow (only the codes above); any other non-zero DISM return code is treated as a hard failure that blocks unattended provisioning until an operator reviews `SetupComplete.log` and `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` and extends the whitelist deliberately only if the new code is confirmed benign;
    * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
-   * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately;
+   * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately; the decision is based on the current run only (the script does not scan prior `SetupComplete.log` history);
    * calls `ValidateSecrets.ps1` near the start to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0–3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration);
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid; validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
      * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
@@ -121,7 +122,7 @@ This baseline expects the primary local admin password to be supplied explicitly
 6. At the first interactive logon, the scheduled task `\L2C\CreatePrimaryAdmin` executes `CreatePrimaryAdmin.ps1` as SYSTEM. The script:
 
    * runs Stage A to create or update the primary local admin account and group memberships using the password read directly from `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM;
-   * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`, and process the Panther `_needs_reboot.flag`; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path (recovery mode or Stage B failures do not reboot automatically).
+   * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`, and process the Panther `_needs_reboot.flag`; secret cleanup failures are treated as `StageB_Succeeded=false` and keep any reboot suppressed even when the flag exists; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path. The master log in `%ProgramData%` records the Panther flag state before the Stage B decision and whether Stage B consumed the flag (automatic restart) or suppressed it (recovery or StageB_Succeeded=false).
 
 RunOnce is not used by this baseline to start `CreatePrimaryAdmin.ps1` or to drive reboots. Any RunOnce snippets in this repository are strictly for optional lab diagnostics.
 
@@ -681,16 +682,13 @@ PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePri
 
    * Stage A creates or updates the primary local admin (`primaryadmin` by default) and adds it to required groups; it reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM and never reads `.bootstrap.pw`;
    * Stage B:
-
      * in the normal path:
-
        * restores logon policies (`DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, clears `DefaultPassword` and related values);
-       * disables `bootstrap`, deletes the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`;
-       * if `_needs_reboot.flag` exists and Stage B completed successfully in normal mode, logs the requirement, deletes the flag, and performs one `shutdown.exe /r /t 0`;
+       * disables `bootstrap`, deletes the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`; secret cleanup errors keep `StageB_Succeeded=$false`, set a FAIL outcome, and suppress any automatic reboot even if the Panther flag exists;
+       * if `_needs_reboot.flag` exists and Stage B completed successfully in normal mode, logs the requirement (including the flag state before the decision), deletes the flag, writes `Stage B: Panther reboot flag consumed, initiating automatic restart` to the master log, and performs one `shutdown.exe /r /t 0`;
      * in the recovery path:
-
        * sets `DevicePasswordLessBuildVersion=0`, keeps `bootstrap`, the task, and both password source files for another attempt;
-       * logs any `_needs_reboot.flag`, skips the automatic reboot, and leaves the flag for manual follow up;
+       * logs any `_needs_reboot.flag`, writes `Stage B: Panther reboot suppressed (recovery mode)` to the master log, skips the automatic reboot, and leaves the flag for manual follow up;
        * logs a WARN outcome for manual follow up.
 
 After a successful normal run the system has no AutoAdminLogon configured, `bootstrap` is disabled, `_needs_reboot.flag` is cleared, and `primaryadmin` (or the chosen primary account) is the main administrative identity; in recovery mode or when Stage B fails the flag may remain as a marker for manual action.

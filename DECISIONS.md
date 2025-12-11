@@ -129,7 +129,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
    * only when both secrets are present and valid and the script has not failed, configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task with a PowerShell call that carries no password arguments; Stage A reads `.primaryadmin.pw` directly under SYSTEM;
    * if the primary admin secret is missing or invalid, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
 
-3. All post-install configuration runs once, with detailed logging and guarded checks.
+3. All post-install configuration runs once, with detailed logging and guarded checks. Reboot requirement is computed from the current run only; the script does not scan older `SetupComplete.log` content for prior `3010/1641` markers.
 
 4. Post-install configuration completes. `SetupComplete.cmd` writes the `Panther flag` only when servicing returned `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; in all other cases the flag is not created and no reboot is requested.
 
@@ -175,7 +175,11 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
 
+  4. `%ProgramData%\l2c_master_<timestamp>.log`
+
   `PreOOBE.cmd` redirects stdout+stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log`; `BootstrapLocalAdmin.ps1` emits structured `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines for bootstrap lifecycle steps without ever logging the password itself.
+
+  The Stage B master log aggregates Stage A/B steps, secret cleanup states, and Panther flag handling, including whether the reboot flag was consumed or suppressed.
 
 * Script header in `SetupComplete.cmd` (compact):
 
@@ -750,7 +754,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - `ValidateSecrets.ps1` runs at the start of `SetupComplete.cmd`, verifies the ACL/attribute shape of both files without reading passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap secret valid, bit1=primary admin secret valid); `SetupComplete.cmd` decodes `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK` instead of parsing stdout.
 - `SetupComplete.cmd` requires `.bootstrap.pw` to exist and be non-empty, and `.primaryadmin.pw` to exist, pass the ACL/attribute check, and be readable with the allowed character set. A single gate (FAILED=0 plus both secrets validated and loaded) controls temporary logon policy relaxation, Winlogon priming for `bootstrap` (`DefaultUserName`/`DefaultDomainName`/`DefaultPassword` read from `.bootstrap.pw`), and registration of the SYSTEM/Highest OnLogon task `\L2C\CreatePrimaryAdmin` without embedding passwords.
 - If the gate fails, `SetupComplete.cmd` logs the reason, skips autologon and task creation, and exits in recovery (non-zero RC) rather than leaving partial state.
-- Stage A of `CreatePrimaryAdmin.ps1` re-reads `.primaryadmin.pw` under SYSTEM and aborts if it is missing, unreadable, empty, or contains unsupported characters; the password never appears in Task Scheduler definitions, command lines, or logs. Normal Stage B deletes both secrets, removes the task, restores logon policies, disables `bootstrap`, and consumes the Panther flag if present; recovery retains the secrets/task for manual review and a later retry.
+- Stage A of `CreatePrimaryAdmin.ps1` re-reads `.primaryadmin.pw` under SYSTEM and aborts if it is missing, unreadable, empty, or contains unsupported characters; the password never appears in Task Scheduler definitions, command lines, or logs. Normal Stage B deletes both secrets, removes the task, restores logon policies, disables `bootstrap`, records the Panther flag state in the master log, and consumes the flag if present; recovery retains the secrets/task for manual review and a later retry. Secret cleanup errors keep `StageB_Succeeded=false` and suppress any automatic reboot even when the flag exists.
 
 **Consequences / Security impact:**
 

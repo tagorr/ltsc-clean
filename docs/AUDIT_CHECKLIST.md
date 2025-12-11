@@ -387,6 +387,7 @@ S
 
     * [ ] No automatic reboot is performed, even if the Panther flag exists (including secret cleanup errors that keep `StageB_Succeeded=$false`).
     * [ ] The log clearly records that the reboot was suppressed because Stage B failed.
+  * [ ] The master log records the Panther flag state before the Stage B decision and a clear action line: `Stage B: Panther reboot flag consumed, initiating automatic restart` in the successful normal path, or a suppression variant (`StageB_Succeeded=false` or `recovery mode`) when no reboot occurred.
 
 * [ ] Stage B never triggers an automatic reboot unless Stage B itself succeeded; reboot logic is explicitly gated on Stage B success.
 
