@@ -384,18 +384,22 @@ REM Secret ACL/attribute validation (exit code bitmask from ValidateSecrets.ps1)
   -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
   -BootstrapPath "%L2C_BOOTSTRAP_SECRET%" ^
   -PrimaryAdminPath "%L2C_PRIMARYADMIN_SECRET%" >nul 2>&1
+
 set "RC=%ERRORLEVEL%"
+
 set "L2C_BOOTSTRAP_PW_ACL_OK=0"
 set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
+
 if "%RC%"=="4" (
   set "FAILED=1"
   call :log "[ERROR] Secret validator internal failure (rc=4); treating both secrets as invalid"
 ) else (
-  set /a TMP=%RC% ^& 1
-  if "%TMP%"=="1" set "L2C_BOOTSTRAP_PW_ACL_OK=1"
-  set /a TMP=%RC% ^& 2
-  if "%TMP%"=="2" set "L2C_PRIMARYADMIN_PW_ACL_OK=1"
+  set /a TMP=RC ^& 1
+  set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
+  set /a TMP=RC ^& 2
+  set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
 )
+
 set "TMP="
 call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%, primaryadmin=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
 
