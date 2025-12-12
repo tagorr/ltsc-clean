@@ -60,6 +60,58 @@ This baseline expects the primary local admin password to be supplied explicitly
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
   4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed or consumed)
 
+## Operator triage and recovery
+
+Use the current-run logs as your single source of truth. Start from the symptom you see and follow the pointers below.
+
+### Symptom: no automatic login into the primary admin (you land on a normal logon screen or only see `bootstrap`)
+
+1. Open `%WINDIR%\Panther\SetupComplete.log`.
+2. Find the line:
+
+   - `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`
+
+   This tells you whether `ValidateSecrets.ps1` accepted the ACL/attribute shape for each secret in the current run.
+3. Scan for any `[ERROR]` / `[WARN]` lines near that section that mention:
+
+   - secret validator internal error (`rc=4`) or similar “internal failure” wording;
+   - recovery / gate closed due to invalid or missing `.bootstrap.pw` or `.primaryadmin.pw`;
+   - malformed primary admin secret (empty first line or unsupported characters).
+4. Confirm whether Stage B was ever registered:
+
+   - look for an `[INFO]` line about scheduling `\L2C\CreatePrimaryAdmin`;
+   - if it is missing, the combined gate did not open, so no first-logon master will run automatically.
+
+High-level interpretation:
+- `bootstrap=1, primaryadmin=1` and task scheduled → Stage B should run on first logon; if it didn’t, check task presence manually.
+- any `0` flag or an internal validator error (`rc=4`) → `SetupComplete.cmd` stayed fail‑closed and did not schedule Stage B.
+
+### Symptom: Stage B ran, but the system is not in the expected final state
+
+1. Open the most recent `%ProgramData%\l2c_master_<timestamp>.log`.
+2. Look for:
+
+   - the final `OUTCOME: ...` line (`SUCCESS`, `FAIL`, or `ABORTED`);
+   - cleanup state lines:
+     - `bootstrap.pw cleanup state=removed/missing/error/preserved`
+     - `primaryadmin.pw cleanup state=removed/missing/error/preserved`
+   - Panther flag decision lines:
+     - `Panther reboot flag before Stage B decision: present/absent`
+     - `Stage B: Panther reboot flag consumed, initiating automatic restart`
+     - `Stage B: Panther reboot suppressed (StageB_Succeeded=false)`
+     - `Stage B: Panther reboot suppressed (recovery mode)`
+
+Interpretation:
+- `OUTCOME: SUCCESS` plus both secrets `removed` → normal final state.
+- any secret `cleanup state=error` → secrets may still exist on disk and require immediate manual inspection and secure removal.
+- a “reboot suppressed …” line → no automatic reboot happened; handle recovery manually even if the Panther flag was present.
+
+### Symptom: failure during PreOOBE / bootstrap phase
+
+1. Open `%WINDIR%\Panther\PreOOBE.log`.
+2. Review `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries from `BootstrapLocalAdmin.ps1` and any PreOOBE `[ERROR]` lines.
+3. If PreOOBE failed, the pipeline did not reach `SetupComplete.cmd` or Stage B; this log is the first triage point.
+
 ### Media layout example
 
 ```text
@@ -107,6 +159,22 @@ This baseline expects the primary local admin password to be supplied explicitly
      * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
      * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition.
    * if the primary admin secret is missing or invalid, ACL/attribute checks fail, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task; the script exits with a non-zero RC, leaving the system in a recovery state.
+
+#### Safe rerun semantics for SetupComplete.cmd
+
+If you manually rerun `SetupComplete.cmd`:
+- it does not scan historical `SetupComplete.log` for older `3010/1641` markers; it decides whether to write `%WINDIR%\Panther\_needs_reboot.flag` based only on the current run’s servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`;
+- it re-runs secret validation and logs the current ACL/attribute and format status of `.bootstrap.pw` / `.primaryadmin.pw`.
+
+A rerun does not undo a previously successful Stage B. If Stage B has already deleted the secrets, `SetupComplete.cmd` may see them as missing and stay on a recovery-style path, but it does not invalidate the existing primary admin account or re-enable bootstrap in a way that breaks assumptions.
+
+#### When both ACL flags are 0 (bootstrap=0, primaryadmin=0)
+
+When `[SECTION] Secret ACL validation (bootstrap=0, primaryadmin=0)` appears, both secrets failed validation in this run. This can mean missing files, incorrect ACL/attributes, or an internal validator failure (`rc=4`) that causes a fail‑closed result.
+
+Operator follow-up:
+- look for an `[ERROR]` line that reports an internal validator error (`rc=4`) or similar wording; in that case treat it as a validator problem and note that Stage B was intentionally not registered;
+- if there is no internal validator error, inspect both secrets on disk for presence, correct ACL/Hidden+System attributes, and (for `.primaryadmin.pw`) the format rules below.
 
    Example `SetupComplete.log` excerpt (healthy gate):
 
@@ -203,6 +271,22 @@ Recovery path:
 
 Stage B logs the cleanup state for both secret files in the master log.
 
+#### Secret cleanup states in the Stage B master log
+
+Stage B records one cleanup state per secret in `%ProgramData%\l2c_master_<timestamp>.log`:
+
+* `bootstrap.pw cleanup state=removed` / `primaryadmin.pw cleanup state=removed`  
+  The file was present and Stage B deleted it successfully. Expect it to be gone.
+
+* `... cleanup state=missing`  
+  The file was not present when Stage B attempted cleanup. This can be benign (for example a prior run or manual deletion), but means this run did not delete it.
+
+* `... cleanup state=error`  
+  Stage B attempted deletion and failed (ACL/lock/I/O). This forces `OUTCOME: FAIL - secret cleanup error (bootstrap/primaryadmin secrets not removed)`, keeps `StageB_Succeeded=$false`, and suppresses any automatic reboot even if `_needs_reboot.flag` exists. Always inspect and remove any remaining secrets manually.
+
+* `... cleanup state=preserved`  
+  Recovery mode: Stage B intentionally kept the secrets for another Stage A attempt. Remove them manually once no longer needed.
+
 Diagnostics checklist:
 
 * primary admin is present and in Administrators (and Remote Desktop Users if desired);
@@ -240,6 +324,29 @@ This file is not part of the repository and must be created by the operator befo
 - If the file is empty, or if the first line is empty or whitespace-only, the secret is treated as unusable and the gate remains closed (fail-closed).
 - Additional lines after the first are ignored; do not place the password on line 2 or later, and avoid leading blank lines entirely.
 - Intended format: exactly one non-empty line with the password and no leading blank lines; a trailing end-of-line after that line is acceptable but not required.
+
+Allowed characters and structure:
+
+- Allowed characters are restricted to `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` only. No spaces, tabs, control characters, or other punctuation.
+- No leading or trailing whitespace. The scripts do not trim; any whitespace makes the secret invalid.
+
+Examples:
+
+Valid:
+- `Admin2025#alpha`
+- `Root-User_01`
+- `Pa55word#A`
+
+Invalid:
+- empty first line with password on line 2 (first line is the only one read)
+- leading space: ` Admin2025#alpha`
+- trailing space: `Admin2025#alpha `
+- embedded space: `Admin 2025#alpha`
+- unsupported punctuation: `Admin2025!alpha`
+
+How violations show up:
+- In `%WINDIR%\Panther\SetupComplete.log`, the secret ACL validation section may show `primaryadmin=0` and the combined gate stays closed, so autologon priming and `\L2C\CreatePrimaryAdmin` registration are skipped.
+- In `%ProgramData%\l2c_master_<timestamp>.log`, Stage A records a FAIL/ABORT outcome when it cannot read or validate the first line of `.primaryadmin.pw`.
 
 ## What this baseline does
 
