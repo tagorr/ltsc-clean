@@ -336,7 +336,7 @@ S
 
 * [ ] In normal Stage B mode:
 
-  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are deleted when present; success or failure is logged for each.
+  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are processed for cleanup when present; the script attempts to delete them and records a cleanup state (`removed`, `missing`, `error`, or `preserved`) for each.
   * [ ] Cleanup states (`removed`, `missing`, `error`) for each file are recorded in the master log.
   * [ ] In the happy path, the most recent master log shows `bootstrap.pw cleanup state=removed` and `primaryadmin.pw cleanup state=removed`.
   * [ ] Any `cleanup state=error` is treated as an audit finding requiring follow-up to confirm secrets are not left on disk.
