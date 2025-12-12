@@ -338,6 +338,8 @@ S
 
   * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are deleted when present; success or failure is logged for each.
   * [ ] Cleanup states (`removed`, `missing`, `error`) for each file are recorded in the master log.
+  * [ ] In the happy path, the most recent master log shows `bootstrap.pw cleanup state=removed` and `primaryadmin.pw cleanup state=removed`.
+  * [ ] Any `cleanup state=error` is treated as an audit finding requiring follow-up to confirm secrets are not left on disk.
   * [ ] Any cleanup state `error` for either secret triggers the secret cleanup failure branch: `OUTCOME: FAIL - secret cleanup error ...`, `StageB_Succeeded=$false`, and (when `$rc` was `0`) `rc` is set to `3`.
 * [ ] In recovery mode:
 
