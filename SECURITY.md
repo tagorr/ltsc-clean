@@ -45,6 +45,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 * Stage B rollback (Winlogon cleanup, removal of any lab RunOnce helpers, bootstrap disable in normal mode) always runs once after Stage A and chooses between normal and recovery paths based on Stage A’s outcome and internal validation, reducing lockout risk by attempting cleanup even when account provisioning fails.
 * The script returns a non-zero code if steps failed; always review `%WINDIR%\Panther\SetupComplete.log`.
 * Platform compatibility checks (Edition/DisplayVersion/CurrentBuild) fail closed but still route to the shared final RC block: the script logs the mismatch, sets `FAILED=1`, skips autologon/task registration, logs `[RC] returning <FINAL_RC>`, and exits with that code for consistent monitoring.
+* When `FAILED=1` at the recovery gate (gate closed or task creation fails), `SetupComplete.cmd` logs recovery mode and skips autologon/task registration, but still completes servicing/hardening and reboot-flag evaluation.
 * DISM hard-fail policy: only a strict whitelist of known non-fatal warning return codes (for example `3010`, `1641`, and the LTSC “feature not recognized/invalid state” codes) is allowed to continue. Any other non-zero DISM return code is treated as a hard failure that keeps the gate closed and blocks Stage B registration. Operators hitting a new code must review `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` and `%WINDIR%\Panther\SetupComplete.log`, confirm the condition is truly benign, and only then consider extending the whitelist deliberately.
 * **Temporary debug note:** if you temporarily replaced `utilman.exe` with `cmd.exe` for diagnostics, restore the original `utilman.exe` immediately after testing to prevent escalation from the logon screen.
 * Any deviation from the principles above may affect predictability. Document exceptions in your fork and update `DECISIONS.md`.
@@ -62,7 +63,7 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ### Additional clarifications
 
 * UAC remains enabled (it is not lowered).
-* `SetupComplete.cmd` never calls `shutdown.exe` and never schedules a reboot via RunOnce. When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits. Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads this flag after the first interactive logon: in the normal path, only when Stage B succeeded and the flag exists, it logs the requirement, deletes `_needs_reboot.flag`, and performs a single controlled reboot; in recovery mode or when Stage B fails it logs the pending reboot, skips the automatic restart, and leaves the flag as a marker for manual diagnostics.
+* `SetupComplete.cmd` never calls `shutdown.exe` and never schedules a reboot via RunOnce. When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes `%WINDIR%\Panther\_needs_reboot.flag` and exits. If `_needs_reboot.flag` already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (reruns do not delete it and it is treated as `NEEDS_REBOOT=1`). Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads this flag after the first interactive logon: in the normal path, only when Stage B succeeded and the flag exists, it performs a tri-state pending reboot check, logs the result (state/reasons/errors), and either reboots, clears a stale flag without reboot, or reboots conservatively on `unknown`; see `DECISIONS.md` for full semantics and indicators. In recovery mode or when Stage B fails it logs the pending reboot, skips the automatic restart, and leaves the flag as a marker for manual diagnostics.
 
 ## Compatibility controls & safety
 
@@ -73,8 +74,10 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 ### Controlled reboot (Panther flag)
 
 * `SetupComplete.cmd` never calls `shutdown.exe` and never plans a reboot via RunOnce.
-* When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it only writes `%WINDIR%\Panther\_needs_reboot.flag` and exits.
-* Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads the Panther flag after the first interactive logon and, in the **normal** path, only when Stage B succeeded and the flag exists, logs the reboot requirement, deletes the flag and performs a single controlled `shutdown.exe /r /t 0`.
+* When the final servicing return code is `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes `%WINDIR%\Panther\_needs_reboot.flag` and exits; it does not delete a pre-existing flag on entry, and it preserves the flag as a sticky marker while logging a WARN when the flag already exists.
+* If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs a warning that automatic reboot will not occur. Example:
+  `[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur.`
+* Stage B `CreatePrimaryAdmin.ps1` is the only unattended component that reads the Panther flag after the first interactive logon and, in the **normal** path, only when Stage B succeeded and the flag exists, performs a tri-state pending reboot check, logs the result (state/reasons/errors), and then either reboots, clears a stale flag without reboot, or reboots conservatively on `unknown`; see `DECISIONS.md` for full semantics.
 * In the **recovery** path or when Stage B fails (including secret cleanup errors that keep `StageB_Succeeded=$false`), Stage B logs the Panther flag, does not perform an automatic reboot, and leaves the flag in place for manual follow-up.
 * Any new `shutdown.exe` invocations or RunOnce-based reboot logic must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
 
@@ -88,7 +91,7 @@ The script writes a technical log to `%WINDIR%\Panther\SetupComplete.log`. Entri
 
 Installer reboot suppression is enforced: **MSI** use `REBOOT=ReallySuppress /norestart`, **EXE** are invoked with `/norestart` to avoid any reboot inside SetupComplete.
 
-**Unattend hygiene.** After SetupComplete finishes, remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml`.
+**Unattend hygiene.** Operator hygiene only: remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml` if your policy requires it; the scripts do not delete them.
 
 ## Update (2025-09-19) — Privacy & Account Hardening
 - **Deployment precondition:** `PreOOBE.cmd` is **embedded** into `install.wim` at `Windows\Setup\Scripts\`; unattend calls it in `specialize`.
@@ -130,11 +133,11 @@ The primary admin account password is **never** stored in `DefaultPassword`. It 
 * At the start of `SetupComplete.cmd`, `ValidateSecrets.ps1` (StrictMode, `$ErrorActionPreference='Stop'`) checks that both secret files are leaf files, have inheritance disabled, carry only the `SYSTEM` and Administrators FullControl ACEs, and include Hidden+System attributes. It never reads the passwords; instead it returns a 0–3 exit-code bitmask (bit0=bootstrap secret valid, bit1=primary admin secret valid); an internal validator error is returned as exit code `4`. `SetupComplete.cmd` decodes `0..3` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK` and logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`; when `RC=4` it logs a validator failure, sets `FAILED=1`, keeps both flags at `0`, and stays in recovery.
 * `SetupComplete.cmd` enforces a single gate for temporary logon policy relaxations, Winlogon autologon, and registration of `\L2C\CreatePrimaryAdmin`: `FAILED=0`, `.bootstrap.pw` exists and is non-empty, `.primaryadmin.pw` is present, the validator exit code reports both secrets as valid, and `.primaryadmin.pw` is read successfully. If any condition fails (including either bit being `0` or `RC=4` from the validator), it logs why, skips autologon and Stage B registration, keeps only safe policy changes, and exits in recovery with a non-zero RC.
 * With the gate open, `SetupComplete.cmd` relaxes `DisableCAD`/`DevicePasswordLessBuildVersion`, primes Winlogon with `DefaultUserName=bootstrap`, `DefaultDomainName=%COMPUTERNAME%`, and `DefaultPassword` read from `.bootstrap.pw`, and creates the Stage B task. Passwords never appear in the task definition, RunOnce, or command lines; only `DefaultPassword` holds the temporary bootstrap secret and only until Stage B runs.
-* The secrets are expected to exist on disk only between the end of `SetupComplete.cmd` and the end of Stage B. In the normal Stage B path, both secrets are deleted and the scheduled task is removed; if either delete operation fails (`cleanup state = error`) Stage B is treated as failed, the master log records `OUTCOME: FAIL - secret cleanup error`, `StageB_Succeeded` stays false, and automatic reboot is suppressed even when the Panther flag exists. In recovery they are intentionally preserved (and logged) for a later retry.
+* The secrets are expected to exist on disk only from the PreOOBE/bootstrap step (and operator provisioning of `.primaryadmin.pw`) through the end of Stage B. In the normal Stage B path, both secrets are deleted and the scheduled task is removed; if either delete operation fails (`cleanup state = error`) Stage B is treated as failed, the master log records `OUTCOME: FAIL - secret cleanup error`, `StageB_Succeeded` stays false, and automatic reboot is suppressed even when the Panther flag exists. In recovery they are intentionally preserved (and logged) for a later retry.
 * WARN/ERROR entries about `.bootstrap.pw` or `.primaryadmin.pw` in Stage B logs (ACL, read/validation, delete failures) are intentional signals; operators should treat them as triggers for manual review rather than noise.
 * Any relaxation of these `.bootstrap.pw` / `.primaryadmin.pw` requirements (ACL shape, retention beyond Stage B, validation constraints, logging guarantees) must be treated as a security decision and recorded in `DECISIONS.md` before code changes.
 * The restricted character set and single-line format are deliberate to keep parsing predictable, avoid encoding/logging ambiguity, and ensure the validator and Stage A can reason about the secret safely. Do not widen the allowed set without a recorded security decision in `DECISIONS.md`.
-* The Stage B master log (`%ProgramData%\l2c_master_<timestamp>.log`) records the Panther flag state before the Stage B decision and logs whether the flag was consumed (`Stage B: Panther reboot flag consumed, initiating automatic restart`) or suppressed (`Stage B: Panther reboot suppressed (...)`), giving operators an auditable trail for reboot outcomes.
+* The Stage B master log (`%ProgramData%\l2c_master_<timestamp>.log`) records the Panther flag state before the Stage B decision and logs whether the flag was consumed for reboot, cleared as stale, or suppressed, giving operators an auditable trail for reboot outcomes.
 
 ### ValidateSecrets internal failures
 
@@ -159,14 +162,14 @@ The primary admin account password is **never** stored in `DefaultPassword`. It 
 * Password values never appear in Task Scheduler definitions, RunOnce keys, or intentional logs; the only storage locations are the hardened on-disk secrets (`.bootstrap.pw` and `.primaryadmin.pw`) with Hidden+System attributes and explicit `SYSTEM` + Administrators ACLs.
 * Attempts to weaken those secrets (extra ACEs, inheritance enabled, missing attributes, deleting or emptying `.primaryadmin.pw`, or using unsupported characters) cause `SetupComplete.cmd` to fail closed: no temporary autologon, no Stage B registration, and an exit that requires interactive follow-up using the logs.
 * Stage B logs a cleanup state per secret in the master log. Any `cleanup state=error` is a security-significant deviation: secrets may remain on disk, the run is forced to FAIL, and automatic reboot is suppressed. Operational procedures must include locating and securely removing any leftover `.bootstrap.pw` / `.primaryadmin.pw` and investigating why deletion failed.
-* Happy path: both secrets are provisioned correctly, the gate opens once, a single automatic `bootstrap` logon runs Stage B, the system migrates to `primaryadmin`, disables `bootstrap`, removes the secrets and scheduled task, restores logon policies, and (if the Panther flag was present) performs the single controlled reboot.
+* Happy path: both secrets are provisioned correctly, the gate opens once, a single automatic `bootstrap` logon runs Stage B, the system migrates to `primaryadmin`, disables `bootstrap`, removes the secrets and scheduled task, restores logon policies, and, if the Panther flag was present, performs the tri-state decision (reboot, stale-clear without reboot, or conservative reboot on unknown).
 * TOCTOU and local administrators/SYSTEM: secret ACL and content checks happen at discrete points in the pipeline (ValidateSecrets.ps1 in SetupComplete, the gate logic in SetupComplete.cmd, and Stage A of CreatePrimaryAdmin.ps1). A local administrator or code running as SYSTEM can still modify `.bootstrap.pw` or `.primaryadmin.pw` between these steps. This is an accepted TOCTOU limitation: the baseline does not attempt to protect against an attacker who already has local administrator or SYSTEM privileges on the machine; its goal is to prevent misconfiguration and secret leakage on otherwise trusted hosts.
 
 
 ## Logon policies: temporary relaxation and restore
 
 During priming:
-- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, clear `LegalNotice*`, `IgnoreShiftOverride=0 (REG_SZ, with no intermediate "1")`.
+- `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0 (REG_SZ, with no intermediate "1")`.
 
 On rollback:
 - `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.
@@ -175,7 +178,7 @@ The restore guarantee is provided by the idempotent logic in `CreatePrimaryAdmin
 
 In the normal Stage B path:
 
-* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` and `.primaryadmin.pw` are deleted, and, if the Panther flag is present and Stage B completed successfully in the normal path, it is logged, the flag is deleted, and a single controlled reboot is issued via `shutdown.exe /r /t 0`.
+* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, `.bootstrap.pw` and `.primaryadmin.pw` are deleted, and, if the Panther flag is present and Stage B completed successfully in the normal path, it is logged and Stage B performs the tri-state decision: `state=true` consumes the flag and reboots, `state=false` clears the stale flag without reboot, `state=unknown` reboots conservatively.
 
 In the recovery Stage B path:
 
