@@ -16,6 +16,7 @@ if exist "%REBOOT_FLAG%" (
 :: ------------ config flags ------------
 set "LOG_TS_ENGINE=POWERSHELL"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
+set "REBOOT_FLAG_CONTENT=need-reboot"
 set "NEEDS_REBOOT=0"
 set "STAGEB_SKIPPED_GATE=0"
 set "STAGEB_NOT_SCHEDULED=0"
@@ -701,6 +702,7 @@ powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 :: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
   call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
+  set "REBOOT_FLAG_CONTENT=force-reboot"
   set "NEEDS_REBOOT=1"
   call :flag_reboot
 )
@@ -710,7 +712,7 @@ if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
 
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
-  echo need-reboot>"%REBOOT_FLAG%"
+  echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%"
   if "%STAGEB_NOT_SCHEDULED%"=="1" (
     call :log "[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur."
   )
@@ -810,5 +812,5 @@ if errorlevel 1 (
 )
 
 :flag_reboot
-2>nul (echo need-reboot>"%REBOOT_FLAG%")
+2>nul (echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%")
 exit /b 0

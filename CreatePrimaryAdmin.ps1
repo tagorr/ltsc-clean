@@ -579,6 +579,33 @@ if (Test-Path -LiteralPath $flag) {
       $sw.Dispose()
     }
   } else {
+    $forceMarker = 'force-reboot'
+    $flagMarker = $null
+    try {
+      $flagMarker = Get-Content -LiteralPath $flag -TotalCount 1 -ErrorAction Stop | Select-Object -First 1
+      if ($flagMarker) { $flagMarker = $flagMarker.Trim() }
+    } catch {
+      Write-SetupLog ("Failed to read Panther reboot flag marker; proceeding with pending reboot probe: {0}" -f $_.Exception.Message) 'WARN'
+      $flagMarker = $null
+    }
+
+    if ($flagMarker -and ($flagMarker -ieq $forceMarker)) {
+      Write-SetupLog 'Panther reboot flag indicates forced reboot policy; initiating restart' 'WARN'
+      try {
+        $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+        try {
+          $sw.WriteLine("[{0}] Stage B: Panther reboot flag forced (marker=force-reboot); initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+        } finally {
+          $sw.Dispose()
+        }
+      } catch {
+        Write-SetupLog ("Master log write failed (flag forced): {0}" -f $_.Exception.Message) 'WARN'
+      }
+      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
+      exit $rc
+    }
+
     $rebootPending = Test-SystemRebootPending
     $stateText = if ($rebootPending.State) { $rebootPending.State } else { 'unknown' }
     $reasonsText = if ($rebootPending.Reasons -and $rebootPending.Reasons.Count -gt 0) { ($rebootPending.Reasons -join ',') } else { 'none' }
