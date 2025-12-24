@@ -8,7 +8,7 @@
 
 **License:** MIT
 
-**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks, RunOnce). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers); deployment answer files are managed separately.
+**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks; RunOnce only for optional diagnostics/cleanup). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers); deployment answer files are managed separately.
 
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
@@ -41,7 +41,9 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 **Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the “Panther flag”), leaving consumption of that flag to Stage B of `CreatePrimaryAdmin.ps1` after the first interactive logon.
 
-**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe` and must not create RunOnce entries for shutdown. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag, sets `NEEDS_REBOOT=1`, and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`, which only performs the controlled shutdown when Stage B succeeded in the normal path and the Panther flag exists; in recovery mode or when Stage B fails, no automatic reboot occurs and the flag can remain for manual diagnostics.
+`SetupComplete.cmd` does not delete a pre-existing `%WINDIR%\Panther\_needs_reboot.flag` on entry; it logs a WARN when the flag already exists and preserves it as a sticky pending reboot marker.
+
+**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe` and must not create RunOnce entries for shutdown. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag, sets `NEEDS_REBOOT=1`, and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`. In the normal path, when Stage B succeeded and the Panther flag exists, Stage B runs a tri-state pending reboot check (`state=true|false|unknown`, with `true` taking precedence if any reasons exist even if probe errors exist) and then either performs the controlled shutdown (`state=true` or `state=unknown`, conservative) or clears the flag without reboot (`state=false`, stale). Pending reboot indicators are registry markers under Component Based Servicing, Windows Update, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`. In recovery mode or when Stage B fails, no automatic reboot occurs and the flag can remain for manual diagnostics.
 
 ---
 
@@ -77,7 +79,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 | Delivery Optimization | Various places | SetupComplete           | DO policies (Mode 0) |
 
-| `Panther flag` reboot signal | —            | SetupComplete           |`%REBOOT_FLAG%` → `Panther flag` (conditionally when servicing RC is `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; Stage B of `CreatePrimaryAdmin.ps1` consumes the flag)|
+| `Panther flag` reboot signal | —            | SetupComplete           |`%REBOOT_FLAG%` → `Panther flag` (written when servicing RC is `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`, and preserved as sticky when pre-existing; Stage B of `CreatePrimaryAdmin.ps1` consumes the flag in normal mode and may clear it as stale when no pending reboot indicators exist)|
 
 ---
 
@@ -109,11 +111,11 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 * Minimal background activity and minimal telemetry.
 
-* Official tools only: Group Policies and Registry under HKLM, DISM Features & Capabilities, Scheduled Tasks, and RunOnce. No hacks, no unsupported tricks.
+* Official tools only: Group Policies and Registry under HKLM, DISM Features & Capabilities, Scheduled Tasks (RunOnce only for optional diagnostics/cleanup). No hacks, no unsupported tricks.
 
 * Deterministic and idempotent execution. Safe to re-run without harmful side effects.
 
-* No reboots occur inside SetupComplete. Stage B of `CreatePrimaryAdmin.ps1` is the only unattended component that consumes the `Panther flag`, and a single controlled reboot only happens when Stage B succeeded in the normal path and the flag exists (servicing RC `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`). In recovery mode or when Stage B fails, no automatic reboot is triggered and the Panther flag may remain as a marker for manual follow-up.
+* No reboots occur inside SetupComplete. Stage B of `CreatePrimaryAdmin.ps1` is the only unattended component that consumes the `Panther flag`, and a single controlled reboot only happens when Stage B succeeded in the normal path and the flag exists (servicing RC `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`). When the flag is present but no pending reboot indicators exist, Stage B clears it as stale without reboot. In recovery mode or when Stage B fails, no automatic reboot is triggered and the Panther flag may remain as a marker for manual follow-up.
 
 * Primary admin password is an external secret: Stage A of `CreatePrimaryAdmin.ps1` never invents or derives it. `SetupComplete.cmd` validates the password from `%WINDIR%\Setup\Scripts\.primaryadmin.pw` and registers Stage B without embedding secrets; Stage A reads the same file directly under SYSTEM. On the normal path Stage B deletes both `.bootstrap.pw` and `.primaryadmin.pw`; in recovery they are preserved for another Stage A attempt.
 
@@ -129,11 +131,14 @@ The baseline never auto-generates the primary local admin password. Instead it e
    * only when both secrets are present and valid and the script has not failed, configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task with a PowerShell call that carries no password arguments; Stage A reads `.primaryadmin.pw` directly under SYSTEM;
    * if the primary admin secret is missing or invalid, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task.
 
-3. All post-install configuration runs once, with detailed logging and guarded checks. Reboot requirement is computed from the current run only; the script does not scan older `SetupComplete.log` content for prior `3010/1641` markers.
+3. All post-install configuration runs once, with detailed logging and guarded checks. Reboot requirement is computed from the current run's servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`, and a pre-existing `%WINDIR%\Panther\_needs_reboot.flag` is preserved as a sticky pending reboot marker; the script does not scan older `SetupComplete.log` content for prior `3010/1641` markers.
 
-4. Post-install configuration completes. `SetupComplete.cmd` writes the `Panther flag` only when servicing returned `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; in all other cases the flag is not created and no reboot is requested.
+4. Post-install configuration completes. `SetupComplete.cmd` writes the `Panther flag` when servicing returned `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; if a pre-existing flag is detected, it is preserved as a sticky pending reboot marker. In all other cases the flag is not created and no reboot is requested.
+   If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs a warning that automatic reboot will not occur. Example:
+   `[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur.`
+   In the normal path, when Stage B succeeded and `%WINDIR%\Panther\_needs_reboot.flag` exists, Stage B logs a pending reboot check with state/reasons/errors (Example: `Pending reboot check: state=<true|false|unknown> reasons=<...> errors=<...>`) and then: `state=true` consumes the flag and reboots, `state=false` treats the flag as stale and clears it without reboot, `state=unknown` logs a WARN and reboots conservatively (policy-driven, recorded in the master log). State precedence: `true` if any reasons exist even if errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors.
 
-5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A’s outcome and internal validation. Stage A of `CreatePrimaryAdmin.ps1` always reads the secret from `.primaryadmin.pw` under SYSTEM and never falls back to other sources; if the secret is missing or invalid, Stage A fails closed and Stage B runs in recovery. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs the requirement, deletes the flag, and performs a single controlled `shutdown.exe /r /t 0`. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
+5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A’s outcome and internal validation. Stage A of `CreatePrimaryAdmin.ps1` always reads the secret from `.primaryadmin.pw` under SYSTEM and never falls back to other sources; if the secret is missing or invalid, Stage A fails closed and Stage B runs in recovery. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs a pending reboot check with state/reasons/errors (Example: `Pending reboot check: state=<true|false|unknown> reasons=<...> errors=<...>`) and then: `state=true` consumes the flag and performs a single controlled `shutdown.exe /r /t 0`; `state=false` treats the flag as stale and clears it without reboot; `state=unknown` logs a WARN and reboots conservatively (policy-driven, recorded in the master log). State precedence: `true` if any reasons exist even if errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
 
 ## 3. File layout and key paths
 
@@ -163,9 +168,11 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   Both files are deleted by Stage B on the normal path and preserved only when Stage B enters the recovery path.
 
-**SetupComplete.cmd:** servicing/logging and bootstrap/admin pipeline priming; never calls `shutdown.exe` or schedules reboots via RunOnce. It computes whether a reboot is required and writes the Panther `_needs_reboot.flag` when needed. When `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` are present and valid and the script has not failed, it configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding passwords, relying on Stage A to read `.primaryadmin.pw` under SYSTEM. Stage B of `CreatePrimaryAdmin.ps1` is responsible for consuming the flag and performing the single controlled reboot on the normal path after the first interactive logon.
+**SetupComplete.cmd:** servicing/logging and bootstrap/admin pipeline priming; never calls `shutdown.exe` or schedules reboots via RunOnce. It computes whether a reboot is required and writes the Panther `_needs_reboot.flag` when needed. When `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` are present and valid and the script has not failed, it configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding passwords, relying on Stage A to read `.primaryadmin.pw` under SYSTEM. Stage B of `CreatePrimaryAdmin.ps1` is responsible for consuming or clearing the flag (tri-state pending reboot check: `true`/`false`/`unknown`) and performing the single controlled reboot on the normal path after the first interactive logon when appropriate.
 
-* **EOL:** scripts (.cmd/.ps1) — CRLF; documentation (.md) — LF.
+When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs recovery mode, skips autologon/task registration, but still completes servicing/hardening and reboot-flag evaluation.
+
+* **EOL:** scripts (.cmd/.ps1) - CRLF; documentation (.md) - LF.
 
 * Runtime logs (review in this order)
 
@@ -179,7 +186,7 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   `PreOOBE.cmd` redirects stdout+stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log`; `BootstrapLocalAdmin.ps1` emits structured `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines for bootstrap lifecycle steps without ever logging the password itself.
 
-  The Stage B master log aggregates Stage A/B steps, secret cleanup states, and Panther flag handling, including whether the reboot flag was consumed or suppressed.
+  The Stage B master log aggregates Stage A/B steps, secret cleanup states, and Panther flag handling, including whether the reboot flag was consumed for reboot, cleared as stale, or suppressed.
 
 * Script header in `SetupComplete.cmd` (compact):
 
@@ -195,9 +202,9 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   REM Project: Windows 10 LTSC 2021 - Clean & Quiet Baseline (Official Tools Only)
 
-  setlocal EnableExtensions EnableDelayedExpansion
+  setlocal EnableExtensions
 
-  set "LOGFILE=%WINDIR%\Panther\SetupComplete.log"
+  set "LOG=%WINDIR%\Panther\SetupComplete.log"
 
   set "FAILED=0"
 
@@ -215,15 +222,15 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
 * Each step logs `[SECTION]` and `[STEP]`. Warnings and errors include numeric return codes.
 
-* Groups of related `reg add` operations use a local error flag to produce one consolidated warning.
+* `reg add` operations use the `:regadd` helper and log per-entry success or failure.
 
-* Single commands use an immediate `if errorlevel 1` handler on the next line.
+* DISM calls flow through `:run_dism`/`:track_rc`; once `DISM_HARD_FAIL` is set, further DISM feature/capability calls are skipped for the rest of the run.
 
-* The script returns `%FAILED%` at exit, but never forces a reboot inside SetupComplete.
+* The script aggregates a final exit code: `FINAL_RC=L2C_FIRST_BAD_RC` if set, else `FINAL_RC=1` when `FAILED=1`, else `FINAL_RC=0`; it logs `[RC] returning %FINAL_RC%` before exiting, and never forces a reboot inside SetupComplete.
 
 * Installers are invoked with reboot suppression: **MSI** via `REBOOT=ReallySuppress /norestart`; **EXE** with an equivalent `/norestart` switch to avoid reboots inside SetupComplete.
 
-* **Unattend hygiene:** after `SetupComplete` finishes, remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml`.
+* **Unattend hygiene:** operator hygiene only; remove `%WINDIR%\Panther\Unattend.xml` and `%WINDIR%\Panther\UnattendGC\*.xml` if required by policy (the scripts do not delete them).
 
 ---
 
@@ -231,9 +238,9 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
 * **Centralized DISM logging:** every DISM call goes through a runner that appends `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`.
 
-* **Return codes:** a single handler treats `0` as success; `3010/1641` as success with reboot required (sets `NEEDS_REBOOT=1`); anything else is failure and sets `FAILED=1`.
+* **Return codes:** `3010/1641` mark success with reboot required (set `NEEDS_REBOOT=1` and write the Panther flag). DISM warnings are explicitly whitelisted; other non-zero RCs set `FAILED=1`, and the first fatal code is captured in `L2C_FIRST_BAD_RC` for `FINAL_RC` aggregation.
 
-* **Config flags (defaults):** `LOG_TS_ENGINE=POWERSHELL`, `REBOOT_ON_RC=1`, `ALWAYS_REBOOT_AFTER_FIRST_LOGON=0`.
+* **Config flags (defaults):** `LOG_TS_ENGINE=POWERSHELL`, `ALWAYS_REBOOT_AFTER_FIRST_LOGON=0`.
 
 ## 5. Platform gate
 
@@ -461,7 +468,7 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * **Rationale:** on a fresh LTSC image without cumulative updates, and with multiple DISM servicing operations on the first boot, online component cleanup tends to hit CBS pending operations (for example `0x800F0806`) and does not provide meaningful benefit. WinSxS cleanup (including any use of `/ResetBase`) is considered a separate, post-install or operator-driven maintenance task outside the scope of this project.
 
-* **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` sets `NEEDS_REBOOT=1` and writes the Panther flag so that Stage B of `CreatePrimaryAdmin.ps1` can consume it after the first interactive logon. Stage B clears the flag and performs a single controlled reboot only when Stage B succeeded in the normal path and the flag exists; in recovery mode or when Stage B fails, Stage B logs the pending reboot, skips the automatic restart, and leaves the flag as a marker for manual follow-up.
+* **Reboot handling:** never reboot inside `SetupComplete`. If servicing returns `3010` or `1641`, or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` sets `NEEDS_REBOOT=1` and writes the Panther flag; if a pre-existing flag is found, it is logged and treated as a sticky pending reboot marker (`NEEDS_REBOOT=1`). Stage B of `CreatePrimaryAdmin.ps1` is the only component that acts on the flag after the first interactive logon. In the normal path, only when Stage B succeeded and the flag exists, Stage B runs the tri-state pending reboot check (state precedence: `true` if any reasons exist even if errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors; indicators: CBS and Windows Update markers, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`) and then: `state=true` consumes the flag and reboots, `state=false` clears the stale flag without reboot, `state=unknown` logs a WARN and reboots conservatively. In recovery mode or when Stage B fails, Stage B logs the pending reboot, does not reboot automatically, and the flag may remain for manual follow-up.
 
 ## 7. What we explicitly do not do
 
@@ -509,7 +516,7 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * Quick Assist, SNMP Client, and WMI SNMP Provider capabilities are removed or reported not applicable with correct DISM codes.
 
-* Reboot path verified. When required, the reboot was executed once by Stage B after consuming the Panther flag; no additional automatic reboots are triggered by SetupComplete.
+* Reboot path verified. When the Panther flag is present and Stage B succeeded in the normal path, Stage B performs the tri-state pending reboot check and either reboots (`state=true`/`state=unknown`) or clears the stale flag without reboot (`state=false`); in recovery mode or when Stage B fails, automatic reboot is suppressed. No additional automatic reboots are triggered by SetupComplete.
 
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal path; if they are present, you are either in a recovery scenario or running the master manually (see README for expected behavior).
 
@@ -754,7 +761,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - `ValidateSecrets.ps1` runs at the start of `SetupComplete.cmd`, verifies the ACL/attribute shape of both files without reading passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap secret valid, bit1=primary admin secret valid); `SetupComplete.cmd` decodes `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK` instead of parsing stdout.
 - `SetupComplete.cmd` requires `.bootstrap.pw` to exist and be non-empty, and `.primaryadmin.pw` to exist, pass the ACL/attribute check, and be readable with the allowed character set. A single gate (FAILED=0 plus both secrets validated and loaded) controls temporary logon policy relaxation, Winlogon priming for `bootstrap` (`DefaultUserName`/`DefaultDomainName`/`DefaultPassword` read from `.bootstrap.pw`), and registration of the SYSTEM/Highest OnLogon task `\L2C\CreatePrimaryAdmin` without embedding passwords.
 - If the gate fails, `SetupComplete.cmd` logs the reason, skips autologon and task creation, and exits in recovery (non-zero RC) rather than leaving partial state.
-- Stage A of `CreatePrimaryAdmin.ps1` re-reads `.primaryadmin.pw` under SYSTEM and aborts if it is missing, unreadable, empty, or contains unsupported characters; the password never appears in Task Scheduler definitions, command lines, or logs. Normal Stage B deletes both secrets, removes the task, restores logon policies, disables `bootstrap`, records the Panther flag state in the master log, and consumes the flag if present; recovery retains the secrets/task for manual review and a later retry. Secret cleanup errors keep `StageB_Succeeded=false` and suppress any automatic reboot even when the flag exists.
+- Stage A of `CreatePrimaryAdmin.ps1` re-reads `.primaryadmin.pw` under SYSTEM and aborts if it is missing, unreadable, empty, or contains unsupported characters; the password never appears in Task Scheduler definitions, command lines, or logs. Normal Stage B deletes both secrets, removes the task, restores logon policies, disables `bootstrap`, records the Panther flag state in the master log, and applies the tri-state reboot decision when the flag is present (reboot on `state=true`/`state=unknown`, clear as stale on `state=false`); recovery retains the secrets/task for manual review and a later retry. Secret cleanup errors keep `StageB_Succeeded=false` and suppress any automatic reboot even when the flag exists.
 
 **Consequences / Security impact:**
 
