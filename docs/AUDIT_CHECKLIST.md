@@ -186,10 +186,12 @@ S
 
   * [ ] `[INFO] Reboot required` is logged.
   * [ ] `:flag_reboot` creates `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) with predictable content (for example `need-reboot`).
+  * [ ] If `%REBOOT_FLAG%` already exists at SetupComplete start, a WARN is logged and the flag is preserved as a sticky marker; later, if `NEEDS_REBOOT` is still `0` but the flag exists, `NEEDS_REBOOT` is set to `1` so the flag is kept/written.
+* [ ] If `STAGEB_NOT_SCHEDULED==1` when the flag is written, `SetupComplete.log` includes `[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur.`
 * [ ] Component cleanup and reboot
   * [ ] No `shutdown.exe` calls are present inside `SetupComplete.cmd`.
   * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is created with predictable content.
-  * [ ] Stage B of `CreatePrimaryAdmin.ps1` consumes the Panther flag on the normal path and performs at most one controlled reboot when the flag exists.
+  * [ ] Stage B evaluates the tri-state pending reboot probe when the flag exists in normal mode; it reboots on `true`/`unknown` and clears a stale flag without reboot on `false`.
   * [ ] In recovery mode or when Stage B fails, the flag is left in place as a marker for manual follow-up and no automatic reboot is triggered by Stage B.
 
 #### 4.5. Edge first run experience
@@ -378,7 +380,12 @@ S
   * [ ] `$flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'`.
   * [ ] If the flag exists and Stage B completed successfully in normal mode:
 
-    * [ ] A reboot is performed via `shutdown.exe /r /t 0`, the action is logged, and the flag is deleted.
+    * [ ] Stage B runs the tri-state pending reboot probe and logs `Pending reboot check: state=<true|false|unknown> reasons=<...> errors=<...>`.
+    * [ ] `state=true` → log the reboot action, remove the flag, and call `shutdown.exe /r /t 0`.
+    * [ ] `state=false` → log that the flag is stale, remove the flag, and do not reboot.
+    * [ ] `state=unknown` → log WARN about probe errors, remove the flag, and reboot conservatively with `shutdown.exe /r /t 0`.
+    * [ ] Tri-state probe sources: CBS markers, Windows Update markers, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM:\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`.
+    * [ ] State precedence: `true` if any reasons exist even if probe errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors.
 
   * [ ] If the flag exists but Stage B ran in recovery mode:
 
@@ -389,7 +396,11 @@ S
 
     * [ ] No automatic reboot is performed, even if the Panther flag exists (including secret cleanup errors that keep `StageB_Succeeded=$false`).
     * [ ] The log clearly records that the reboot was suppressed because Stage B failed.
-  * [ ] The master log records the Panther flag state before the Stage B decision and a clear action line: `Stage B: Panther reboot flag consumed, initiating automatic restart` in the successful normal path, or a suppression variant (`StageB_Succeeded=false` or `recovery mode`) when no reboot occurred.
+  * [ ] The master log records the Panther flag state before the Stage B decision and a clear action line for each outcome:
+    * [ ] `Stage B: Panther reboot flag consumed, initiating automatic restart` (`state=true`).
+    * [ ] `Stage B: Panther reboot flag stale (no pending reboot indicators); clearing flag without reboot` (`state=false`).
+    * [ ] `Stage B: Panther reboot flag consumed (pending=unknown due to probe errors); policy=conservative reboot; initiating automatic restart` (`state=unknown`).
+    * [ ] Or a suppression variant (`StageB_Succeeded=false` or `recovery mode`) when no reboot is allowed.
 
 * [ ] Stage B never triggers an automatic reboot unless Stage B itself succeeded; reboot logic is explicitly gated on Stage B success.
 

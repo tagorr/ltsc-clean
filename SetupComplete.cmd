@@ -7,14 +7,18 @@ setlocal EnableExtensions
 :: ------------ logging ------------
 set "LOG=%WINDIR%\Panther\SetupComplete.log"
 set "REBOOT_FLAG=%WINDIR%\Panther\_needs_reboot.flag"
-del /q "%REBOOT_FLAG%" >nul 2>&1
 if not exist "%WINDIR%\Panther" mkdir "%WINDIR%\Panther" >nul 2>&1
 if not exist "%WINDIR%\Logs\DISM" mkdir "%WINDIR%\Logs\DISM" >nul 2>&1
+if exist "%REBOOT_FLAG%" (
+  call :log "[WARN] Pre-existing Panther reboot flag found; treated as a sticky pending reboot marker; it will only be consumed by Stage B in normal mode when safe."
+)
 
 :: ------------ config flags ------------
 set "LOG_TS_ENGINE=POWERSHELL"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "NEEDS_REBOOT=0"
+set "STAGEB_SKIPPED_GATE=0"
+set "STAGEB_NOT_SCHEDULED=0"
 set "FAILED=0"
 set "DISM_HARD_FAIL="
 set "HAS_DISM_WARN="
@@ -493,11 +497,14 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET
     call :track_rc %RC%
     call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
     set "FAILED=1"
+    set "STAGEB_NOT_SCHEDULED=1"
   ) else (
     call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
   )
 ) else (
   call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
+  set "STAGEB_SKIPPED_GATE=1"
+  set "STAGEB_NOT_SCHEDULED=1"
 )
 
 REM === [L2C] Remove legacy RunOnce registration for CreatePrimaryAdmin (only if task created) ===
@@ -704,6 +711,9 @@ if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
   echo need-reboot>"%REBOOT_FLAG%"
+  if "%STAGEB_NOT_SCHEDULED%"=="1" (
+    call :log "[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur."
+  )
 ) else (
 call :log "[INFO] No reboot required"
 )

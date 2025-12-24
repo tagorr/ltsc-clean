@@ -101,6 +101,88 @@ function Reg-Del([string]$Key, [string]$Name) {
   }
 }
 
+function Test-SystemRebootPending {
+  $reasons = New-Object System.Collections.Generic.List[string]
+  $errors  = New-Object System.Collections.Generic.List[string]
+
+  function Add-Reason([string]$Reason) {
+    try {
+      if ($Reason -and -not $reasons.Contains($Reason)) { [void]$reasons.Add($Reason) }
+    } catch {}
+  }
+
+  function Add-Error([string]$Probe, [object]$Err) {
+    try {
+      $msg = $null
+      if ($Err -and $Err.Exception -and $Err.Exception.Message) { $msg = $Err.Exception.Message }
+      elseif ($Err -and $Err.ToString) { $msg = $Err.ToString() }
+      if (-not $msg) { $msg = '<unknown error>' }
+
+      $line = "{0}: {1}" -f $Probe, $msg
+      if (-not $errors.Contains($line)) { [void]$errors.Add($line) }
+    } catch {}
+  }
+
+  try {
+    $cbs = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing'
+    if (Test-Path -LiteralPath (Join-Path $cbs 'RebootPending'))      { Add-Reason 'CBS:RebootPending' }
+    if (Test-Path -LiteralPath (Join-Path $cbs 'RebootInProgress'))   { Add-Reason 'CBS:RebootInProgress' }
+    if (Test-Path -LiteralPath (Join-Path $cbs 'PackagesPending'))    { Add-Reason 'CBS:PackagesPending' }
+    if (Test-Path -LiteralPath (Join-Path $cbs 'PostRebootReporting')){ Add-Reason 'CBS:PostRebootReporting' }
+  } catch { Add-Error 'CBS probe' $_ }
+
+  try {
+    $wu = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update'
+    if (Test-Path -LiteralPath (Join-Path $wu 'RebootRequired'))      { Add-Reason 'WU:RebootRequired' }
+    if (Test-Path -LiteralPath (Join-Path $wu 'PostRebootReporting')) { Add-Reason 'WU:PostRebootReporting' }
+  } catch { Add-Error 'WU probe' $_ }
+
+  try {
+    $sm = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager'
+    if (Test-Path -LiteralPath $sm) {
+      $p = Get-ItemProperty -LiteralPath $sm -ErrorAction Stop
+      foreach ($n in @('PendingFileRenameOperations', 'PendingFileRenameOperations2')) {
+        $prop = $p.PSObject.Properties[$n]
+        if ($prop) {
+          $v = $prop.Value
+          $hasData = $false
+          if ($v -is [Array]) {
+            foreach ($item in $v) {
+              if ($item -and $item.ToString().Trim().Length -gt 0) { $hasData = $true; break }
+            }
+          } else {
+            if ($v -and $v.ToString().Trim().Length -gt 0) { $hasData = $true }
+          }
+          if ($hasData) { Add-Reason ("SessionManager:{0}" -f $n) }
+        }
+      }
+    }
+  } catch { Add-Error 'SessionManager probe' $_ }
+
+  try {
+    $upd = 'HKLM:\SOFTWARE\Microsoft\Updates'
+    if (Test-Path -LiteralPath $upd) {
+      $p = Get-ItemProperty -LiteralPath $upd -ErrorAction Stop
+      $prop = $p.PSObject.Properties['UpdateExeVolatile']
+      if ($prop) {
+        $val = $prop.Value
+        $i = 0
+        if ($null -ne $val -and [int]::TryParse($val.ToString(), [ref]$i) -and $i -gt 0) {
+          Add-Reason 'Installer:UpdateExeVolatile'
+        }
+      }
+    }
+  } catch { Add-Error 'Updates probe' $_ }
+
+  $state = if ($reasons.Count -gt 0) { 'true' } elseif ($errors.Count -gt 0) { 'unknown' } else { 'false' }
+
+  return [pscustomobject]@{
+    State   = $state
+    Reasons = @($reasons)
+    Errors  = @($errors)
+  }
+}
+
 function Get-LocalUserExists([string]$User) {
   & net.exe user "$User" | Out-Null 2>$null
   return ($LASTEXITCODE -eq 0)
@@ -497,16 +579,56 @@ if (Test-Path -LiteralPath $flag) {
       $sw.Dispose()
     }
   } else {
-    Write-SetupLog 'Reboot flag detected, initiating restart'
+    $rebootPending = Test-SystemRebootPending
+    $stateText = if ($rebootPending.State) { $rebootPending.State } else { 'unknown' }
+    $reasonsText = if ($rebootPending.Reasons -and $rebootPending.Reasons.Count -gt 0) { ($rebootPending.Reasons -join ',') } else { 'none' }
+    $errorsText = if ($rebootPending.Errors -and $rebootPending.Errors.Count -gt 0) { ($rebootPending.Errors -join ' | ') } else { 'none' }
+    Write-SetupLog ("Pending reboot check: state={0} reasons={1} errors={2}" -f $stateText, $reasonsText, $errorsText)
+
+    if ($stateText -eq 'true') {
+      Write-SetupLog 'Reboot flag detected, initiating restart'
+     try {
     $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
     try {
-      $sw.WriteLine("[{0}] Stage B: Panther reboot flag consumed, initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+        $sw.WriteLine("[{0}] Stage B: Panther reboot flag consumed, initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
     } finally {
-      $sw.Dispose()
+        $sw.Dispose()
     }
-    Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
-    & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
-    exit $rc
+} catch {
+    Write-SetupLog ("Master log write failed (flag consumed): {0}" -f $_.Exception.Message) 'WARN'
+}
+      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
+      exit $rc
+    } elseif ($stateText -eq 'false') {
+      Write-SetupLog 'Panther reboot flag present but system does not indicate a pending reboot; treating flag as stale and clearing it without reboot' 'WARN'
+      try {
+    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+    try {
+        $sw.WriteLine("[{0}] Stage B: Panther reboot flag stale (no pending reboot indicators); clearing flag without reboot" -f ([DateTime]::UtcNow.ToString('o')))
+    } finally {
+        $sw.Dispose()
+    }
+} catch {
+    Write-SetupLog ("Master log write failed (flag stale): {0}" -f $_.Exception.Message) 'WARN'
+}
+      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+    } else {
+      Write-SetupLog 'Panther reboot flag present but pending reboot state is unknown due to probe errors; rebooting conservatively' 'WARN'
+      try {
+    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+    try {
+        $sw.WriteLine("[{0}] Stage B: Panther reboot flag consumed (pending=unknown due to probe errors); policy=conservative reboot; initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+    } finally {
+        $sw.Dispose()
+    }
+} catch {
+    Write-SetupLog ("Master log write failed (flag consumed pending=unknown): {0}" -f $_.Exception.Message) 'WARN'
+}
+      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
+      exit $rc
+    }
   }
 }
 
