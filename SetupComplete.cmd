@@ -18,6 +18,8 @@ set "LOG_TS_ENGINE=POWERSHELL"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
 set "REBOOT_FLAG_CONTENT=need-reboot"
 set "NEEDS_REBOOT=0"
+set "REBOOT_REQUESTED=0"
+set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=0"
 set "STAGEB_SKIPPED_GATE=0"
 set "STAGEB_NOT_SCHEDULED=0"
 set "FAILED=0"
@@ -712,9 +714,13 @@ if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
 
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
+  set "REBOOT_REQUESTED=1"
   echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%"
-  if "%STAGEB_NOT_SCHEDULED%"=="1" (
-    call :log "[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur."
+  if "%REBOOT_REQUESTED%"=="1" if "%STAGEB_NOT_SCHEDULED%"=="1" if not "%WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED%"=="1" (
+    call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR flag=%REBOOT_FLAG% content=%REBOOT_FLAG_CONTENT% task=\L2C\CreatePrimaryAdmin skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED% automatic reboot will NOT happen; manual reboot required after fixing gate; then rerun pipeline"
+    call :master_log_warn_reboot_flag_no_executor
+    if defined MASTER_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR master_log=%MASTER_LOG_PATH%"
+    set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=1"
   )
 ) else (
 call :log "[INFO] No reboot required"
@@ -811,6 +817,18 @@ if errorlevel 1 (
   exit /b 0
 )
 
+:master_log_warn_reboot_flag_no_executor
+set "MASTER_LOG_PATH="
+for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$p = Join-Path $env:ProgramData ('l2c_master_{0:yyyyMMdd_HHmmss}.log' -f (Get-Date)); Write-Output $p" 2^>nul') do set "MASTER_LOG_PATH=%%G"
+if not defined MASTER_LOG_PATH exit /b 0
+if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
+set "MASTER_LOG_TS="
+for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[DateTime]::UtcNow.ToString('o')" 2^>nul') do set "MASTER_LOG_TS=%%G"
+if not defined MASTER_LOG_TS exit /b 0
+>> "%MASTER_LOG_PATH%" echo [%MASTER_LOG_TS%] WARN_REBOOT_FLAG_NO_EXECUTOR flag=%REBOOT_FLAG% content=%REBOOT_FLAG_CONTENT% task=\L2C\CreatePrimaryAdmin skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%
+exit /b 0
+
 :flag_reboot
+set "REBOOT_REQUESTED=1"
 2>nul (echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%")
 exit /b 0
