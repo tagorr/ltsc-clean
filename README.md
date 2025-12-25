@@ -13,7 +13,7 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 - Harden Windows 10 LTSC 2021 using supported policies and servicing only, no unofficial binaries or hacks.
 - Provide deterministic automation via `PreOOBE.cmd`, `SetupComplete.cmd`, `BootstrapLocalAdmin.ps1`, and `CreatePrimaryAdmin.ps1` with single-pass logging.
-- Expect operators to supply deployment assets (media, `autounattend.xml`) separately; this repo tracks the scripts, decisions, and documentation only.
+- `Autounattend.xml` in this repo is the canonical reference answer file; place it at the media root during the build.
 
 ## Supported SKUs / Requirements
 
@@ -37,16 +37,16 @@ This baseline expects the primary local admin password to be supplied explicitly
 - `CONTRIBUTING.md` - PR rules, PowerShell style, and EOL requirements
 - `LICENSE` - MIT
 
-> `autounattend.xml` is maintained in a separate, access-controlled repository and is intentionally not committed here. Follow `DECISIONS.md` §7 for generation and storage guidance.
+> `Autounattend.xml` in this repo is the canonical reference answer file; place it at the media root during the build. Forks may customize it, but must preserve the minimal contract: specialize `RunSynchronous` invokes `cmd /c "%WINDIR%\Setup\Scripts\PreOOBE.cmd"`.
 
 ## Placement
 
 > Pre-OOBE delivery: `PreOOBE.cmd` is embedded into the target OS image (`install.wim`) at  
 > `Windows\Setup\Scripts\PreOOBE.cmd`. Unattend (pass `specialize` -> `RunSynchronous`) calls this path inside the deployed OS; it is not read from the installation media.
 
-> Privacy and security policies are applied before OOBE via external `PreOOBE.cmd`, invoked from `autounattend.xml` in pass `specialize` (`Microsoft-Windows-Deployment/RunSynchronous`). The script resides at `%WINDIR%\Setup\Scripts\PreOOBE.cmd` inside the installed OS.
+> Privacy and security policies are applied before OOBE via external `PreOOBE.cmd`, invoked from `Autounattend.xml` in pass `specialize` (`Microsoft-Windows-Deployment/RunSynchronous`). The script resides at `%WINDIR%\Setup\Scripts\PreOOBE.cmd` inside the installed OS.
 
-- Put `autounattend.xml` in the root of the installation media.
+- Put `Autounattend.xml` in the root of the installation media.
 - Put `SetupComplete.cmd` at:
 
   ```text
@@ -118,7 +118,7 @@ Interpretation:
 
 ```text
 <USB-ROOT>
-├─ autounattend.xml
+├─ Autounattend.xml
 └─ sources
    └─ $OEM$
       └─ $$
@@ -129,7 +129,7 @@ Interpretation:
 
 > Note: save `SetupComplete.cmd` as UTF-8 without BOM, with CRLF line endings.
 
-### Image binding (autounattend.xml)
+### Image binding (Autounattend.xml)
 
 * The answer file targets Index 1 and sets `<cpi:offlineImage name="Windows 10 Enterprise LTSC">`.
 * At runtime, Windows Setup selects the image by Index; the `<cpi:offlineImage>` entry is for WSIM validation and self documentation only and does not affect drive letters or media paths.
@@ -138,7 +138,7 @@ Interpretation:
 
 ## Install flow
 
-1. Boot from media with `autounattend.xml`.
+1. Boot from media with `Autounattend.xml`.
 
 2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, RunOnce, or Task Scheduler, and logs to `%WINDIR%\Panther\PreOOBE.log` (including stdout/stderr from `BootstrapLocalAdmin.ps1`).
 
@@ -701,7 +701,7 @@ reg add $wl /v AutoAdminLogon /t REG_SZ /d 1 /f
 
 ## Smoke test (short checklist)
 
-* WSIM validates `autounattend.xml` without errors.
+* WSIM validates `Autounattend.xml` without errors.
 * Setup runs to OOBE with a local path, without Microsoft account screens.
 * `SetupComplete.cmd` runs once and writes `%WINDIR%\Panther\SetupComplete.log`.
 * If servicing returns `3010` or `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` and preserves any pre-existing flag as a sticky marker. At the first logon, in normal mode when Stage B succeeded, Stage B performs the tri-state pending reboot check, logs the result (state/reasons/errors), and then reboots, clears a stale flag without reboot, or reboots conservatively on `unknown`; in recovery mode or when Stage B fails the script logs the pending reboot, skips the automatic restart, and leaves the flag for manual inspection. See `DECISIONS.md` for full semantics.
@@ -760,7 +760,7 @@ Short walkthrough of the intended behavior:
 
 PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePrimaryAdmin.ps1`) run with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` so unexpected errors surface instead of being silently ignored.
 
-1. `PreOOBE.cmd` (pass `specialize`) is invoked from `autounattend.xml` and:
+1. `PreOOBE.cmd` (pass `specialize`) is invoked from `Autounattend.xml` and:
 
    * applies early privacy and telemetry policies;
    * calls `BootstrapLocalAdmin.ps1` as SYSTEM;

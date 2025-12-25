@@ -8,7 +8,7 @@
 
 **License:** MIT
 
-**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks; RunOnce only for optional diagnostics/cleanup). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers); deployment answer files are managed separately.
+**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks; RunOnce only for optional diagnostics/cleanup). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers) and the canonical `Autounattend.xml` answer file.
 
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
@@ -37,7 +37,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 - **Constraint (SKU):** Target **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs. Reason: `AllowTelemetry=0` (Security level) is supported on Enterprise.
 
-**Decision.** All DISM operations and policies (IE/Edge, Delivery Optimization, telemetry, OneDrive, etc.) run in `SetupComplete.cmd`. The `autounattend.xml` stays minimal (`windowsPE`, `generalize`, `specialize`, `oobeSystem` only), with no `FirstLogonCommands`.
+**Decision.** All DISM operations and policies (IE/Edge, Delivery Optimization, telemetry, OneDrive, etc.) run in `SetupComplete.cmd`. The `Autounattend.xml` stays minimal (`windowsPE`, `generalize`, `specialize`, `oobeSystem` only), with no `FirstLogonCommands`.
 
 **Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the “Panther flag”), leaving consumption of that flag to Stage B of `CreatePrimaryAdmin.ps1` after the first interactive logon.
 
@@ -49,7 +49,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## 3A. Contract between files
 
-* `autounattend.xml`: without `FirstLogonCommands`, without `RunSynchronous`, without `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`. en-US locales in WinPE and oobeSystem.
+* `Autounattend.xml`: without `FirstLogonCommands`, without `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`; `specialize` includes a single `RunSynchronous` command `cmd /c "%WINDIR%\Setup\Scripts\PreOOBE.cmd"`. en-US locales in WinPE and oobeSystem.
 
 * `SetupComplete.cmd`: all post install work (DISM, policies, services, tasks), detailed logging, a platform gate for LTSC 2021, idempotent behavior, and, when required, computation of `NEEDS_REBOOT` and writing the Panther flag.
 
@@ -144,9 +144,9 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## 3. File layout and key paths
 
-* Unattended answer file (stored outside this repo, delivered with the media)
+* Unattended answer file (canonical in this repo; place on installation media root)
 
-  `autounattend.xml` on installation media root.
+  `Autounattend.xml` on installation media root.
 
 * Pre-OOBE script inside image
 
@@ -544,7 +544,7 @@ We do not append dated addenda; each decision is integrated into its canonical s
 
 * `LICENSE` - MIT.
 
-* `autounattend.xml` - unattended installation.
+* `Autounattend.xml` - unattended installation.
 
 * `SetupComplete.cmd` - post-install baseline script.
 
