@@ -187,7 +187,7 @@ S
   * [ ] `[INFO] Reboot required` is logged.
   * [ ] `:flag_reboot` creates `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) with predictable content (for example `need-reboot`).
   * [ ] If `%REBOOT_FLAG%` already exists at SetupComplete start, a WARN is logged and the flag is preserved as a sticky marker; later, if `NEEDS_REBOOT` is still `0` but the flag exists, `NEEDS_REBOOT` is set to `1` so the flag is re-written during the final evaluation.
-* [ ] If `STAGEB_NOT_SCHEDULED==1` when the flag is written, `SetupComplete.log` includes `[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur.`
+* [ ] If `STAGEB_NOT_SCHEDULED==1` when the flag is written, `SetupComplete.log` includes `[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR ...` and SetupComplete writes a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry containing a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for triage.
 * [ ] Component cleanup and reboot
   * [ ] No `shutdown.exe` calls are present inside `SetupComplete.cmd`.
   * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is created with predictable content.

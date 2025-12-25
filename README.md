@@ -58,7 +58,7 @@ This baseline expects the primary local admin password to be supplied explicitly
   1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status; captures stdout/stderr from `BootstrapLocalAdmin.ps1` as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines
   2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (ISO-8601 timestamps); includes secret gate results, Stage B registration decisions, and reboot-flag evaluation (for example the "Pre-existing Panther reboot flag found..." WARN)
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
-  4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale)
+  4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale); when Stage B is not scheduled, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage
 
 ## Operator triage and recovery
 
@@ -173,8 +173,10 @@ If you manually rerun `SetupComplete.cmd`:
 
 A rerun does not undo a previously successful Stage B. If Stage B has already deleted the secrets, `SetupComplete.cmd` may see them as missing and stay on a recovery-style path, but it does not invalidate the existing primary admin account or re-enable bootstrap in a way that breaks assumptions.
 
-If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs a warning that automatic reboot will not occur. Example:
-`[WARN] Reboot flag was set but Stage B was not scheduled; automatic reboot will not occur.`
+If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_EXECUTOR` with the flag/content/task/skipped_gate/not_scheduled fields and the operator instruction that automatic reboot will NOT happen; manual reboot required after fixing gate; then rerun pipeline. Example:
+`[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR flag=%WINDIR%\Panther\_needs_reboot.flag content=need-reboot task=\L2C\CreatePrimaryAdmin skipped_gate=1 not_scheduled=1 automatic reboot will NOT happen; manual reboot required after fixing gate; then rerun pipeline`
+In that case, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage.
+SetupComplete.log also includes `master_log=<path>`.
 
 #### When both ACL flags are 0 (bootstrap=0, primaryadmin=0)
 
