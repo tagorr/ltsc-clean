@@ -908,7 +908,7 @@ Common causes:
 * `DefaultPassword` is empty or does not match the `bootstrap` password.
 * `AutoAdminLogon` and `ForceAutoLogon` are not `REG_SZ`.
 * `DefaultDomainName` does not equal the computer name.
-* `LegalNotice*` are configured or `DontDisplayLastUserName=1`.
+* `LegalNotice*` are already configured, or `DontDisplayLastUserName=1`.
 * `DevicePasswordLessBuildVersion=2` or `DisableCAD=0` remained from a previous configuration.
 
 If you see a logon screen only in Enhanced session but not in the console, remember that AutoAdminLogon targets the console; this is expected.
