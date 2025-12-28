@@ -329,7 +329,7 @@ This file is not part of the repository and must be created by the operator befo
 - Only the first line is used:
   - `SetupComplete.cmd` reads the first line via `set /p`.
   - Stage A of `CreatePrimaryAdmin.ps1` reads only the first line via `Get-Content -TotalCount 1` and trims the trailing end-of-line.
-- If the file is empty, or if the first line is empty or whitespace-only, the secret is treated as unusable and the gate remains closed (fail-closed).
+- If the file is empty, or if the first line is empty or whitespace-only, the secret is treated as unusable and the gate remains closed (fail-closed: no Stage B scheduling and no Winlogon autologon priming).
 - Additional lines after the first are ignored; do not place the password on line 2 or later, and avoid leading blank lines entirely.
 - Intended format: exactly one non-empty line with the password and no leading blank lines; a trailing end-of-line after that line is acceptable but not required.
 

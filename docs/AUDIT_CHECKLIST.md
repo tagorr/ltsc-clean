@@ -63,7 +63,7 @@ S
 * [ ] `.primaryadmin.pw` formatting checks:
 
   * [ ] Positive: the file contains exactly one non-empty line with the password; the gate opens and Stage B is registered.
-  * [ ] Negative (leading empty line): the first line is empty and the password is on the second line; `SetupComplete.log` and the Stage A master log show the secret as unusable, the gate stays closed, and Stage B is not registered.
+  * [ ] Negative (leading empty line): the first line is empty and the password is on the second line; `SetupComplete.log` shows an `[ERROR]` about empty/disallowed characters, the gate stays closed (no autologon priming), and Stage B is not registered.
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
   * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).
