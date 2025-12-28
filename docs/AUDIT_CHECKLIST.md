@@ -153,8 +153,8 @@ S
 * [ ] Winlogon autologon to `bootstrap`:
 
   * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"` and a valid primary admin secret is present and `FAILED==0`.
-  * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
-  * [ ] If writing the password fails, autologon remains disabled, an `[ERROR]` is logged, `FAILED=1` is set, and Stage B is not registered.
+  * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first creates the `\L2C\CreatePrimaryAdmin` executor task; only then it writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
+  * [ ] If any Winlogon priming sub-step fails after task creation (password write or `reg add`), SetupComplete logs one or more `[ERROR]` entries (depending on the failing sub-step), sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`, rolls back Winlogon autologon-related values (clears `DefaultUserName`/`DefaultDomainName`/`DefaultPassword`, resets `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount`), and attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`.
   * [ ] Temporary logon policy relaxations (`DisableCAD`, `DevicePasswordLessBuildVersion`) occur only when the combined gate passes; skip path logs the gate state.
 
 #### 4.3. CreatePrimaryAdmin task registration (Stage B)
@@ -168,6 +168,8 @@ S
   * [ ] RC is tracked via `track_rc`.
   * [ ] `[ERROR] Failed to create scheduled task ...` is logged.
   * [ ] `FAILED=1` is set.
+  * [ ] No Winlogon autologon values are written in that run (no `DefaultUserName`/`DefaultDomainName`/`DefaultPassword` and no `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount` changes).
+  * [ ] Negative test: force `schtasks /Create` to fail, verify Winlogon autologon values are not written and `STAGEB_NOT_SCHEDULED=1` is set.
 * [ ] In the blocked branch:
 
   * [ ] The log records that Stage B registration was skipped, with explicit `FAILED` and `HAS_BOOTSTRAP_PW` values.

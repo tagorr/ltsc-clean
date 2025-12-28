@@ -158,8 +158,8 @@ Interpretation:
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately; if the flag already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (it is not deleted on entry); the script does not scan prior `SetupComplete.log` history.
    * calls `ValidateSecrets.ps1` near the start to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0–3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration);
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid; validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists (non-empty first line), the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
-     * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`);
-     * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition.
+     * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition;
+     * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`). Winlogon priming happens only after the task is created successfully; if any priming sub-step fails after task creation, SetupComplete logs an `[ERROR]`, rolls back Winlogon autologon-related values, attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`, and sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`.
    * Stage B registration is skipped whenever any gate input fails; `SetupComplete.cmd` logs `[INFO] Stage B registration skipped due to gate (FAILED=..., HAS_BOOTSTRAP_PW=..., L2C_HAS_PRIMARYADMIN_SECRET=..., L2C_BOOTSTRAP_PW_ACL_OK=..., L2C_PRIMARYADMIN_PW_ACL_OK=...)` and does not register the task.
    * if the primary admin secret is missing or invalid, ACL/attribute checks fail, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task; the script exits with a non-zero RC, leaving the system in a recovery state.
    * when the gate is closed or task creation fails (`FAILED=1` at the recovery gate), `SetupComplete.cmd` logs `SetupComplete entered recovery mode; skipping extra registrations`, skips autologon/task registration, but still completes servicing/hardening and evaluates the Panther reboot flag.
@@ -173,8 +173,10 @@ If you manually rerun `SetupComplete.cmd`:
 
 A rerun does not undo a previously successful Stage B. If Stage B has already deleted the secrets, `SetupComplete.cmd` may see them as missing and stay on a recovery-style path, but it does not invalidate the existing primary admin account or re-enable bootstrap in a way that breaks assumptions.
 
-If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_EXECUTOR` with the flag/content/task/skipped_gate/not_scheduled fields and the operator instruction that automatic reboot will NOT happen; manual reboot required after fixing gate; then rerun pipeline. Example:
-`[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR flag=%WINDIR%\Panther\_needs_reboot.flag content=need-reboot task=\L2C\CreatePrimaryAdmin skipped_gate=1 not_scheduled=1 automatic reboot will NOT happen; manual reboot required after fixing gate; then rerun pipeline`
+If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_EXECUTOR`
+with the marker/value/executor_task fields (plus machine-readable `skipped_gate` / `not_scheduled`).
+The operator instruction is that automatic reboot will NOT happen; manual reboot required after fixing gate or scheduling; then rerun pipeline. Example:
+`[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%WINDIR%\Panther\_needs_reboot.flag (value=need-reboot). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=1 not_scheduled=1). Manual reboot required after fixing gate or scheduling, then rerun pipeline.`
 In that case, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage.
 SetupComplete.log also includes `master_log=<path>`.
 
@@ -191,8 +193,8 @@ Operator follow-up:
    ```text
    [SECTION] Secret ACL validation (bootstrap=1, primaryadmin=1)
    [INFO] primary admin secret loaded from .primaryadmin.pw
-   [INFO] Winlogon autologon primed for 'bootstrap'
    [INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)
+   [INFO] Winlogon autologon primed for 'bootstrap'
    ```
 
 5. The system reboots as part of normal Setup. At the first console logon (Hyper-V Basic console), Winlogon performs AutoAdminLogon with `bootstrap`. This is visible only on the console session, not on Hyper-V Enhanced (RDP) sessions.
