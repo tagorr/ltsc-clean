@@ -480,31 +480,12 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET
 )
 reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
 
+REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
 REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
 if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-  reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
-  reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
-  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
-  call :winlogon_handle_default_password
+  call :l2c_stageb_schedule_and_prime
 ) else (
   call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
-)
-
-REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon ===
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-  schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
-    /TR "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
-    /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
-    set "FAILED=1"
-    set "STAGEB_NOT_SCHEDULED=1"
-  ) else (
-    call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
-  )
-) else (
   call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
   set "STAGEB_SKIPPED_GATE=1"
   set "STAGEB_NOT_SCHEDULED=1"
@@ -717,7 +698,7 @@ if "%NEEDS_REBOOT%"=="1" (
   set "REBOOT_REQUESTED=1"
   echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%"
   if "%REBOOT_REQUESTED%"=="1" if "%STAGEB_NOT_SCHEDULED%"=="1" if not "%WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED%"=="1" (
-    call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR flag=%REBOOT_FLAG% content=%REBOOT_FLAG_CONTENT% task=\L2C\CreatePrimaryAdmin skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED% automatic reboot will NOT happen; manual reboot required after fixing gate; then rerun pipeline"
+    call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline."
     call :master_log_warn_reboot_flag_no_executor
     if defined MASTER_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR master_log=%MASTER_LOG_PATH%"
     set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=1"
@@ -753,14 +734,149 @@ call :track_rc %RC%
 
 if "%RC%"=="0" (
   reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :track_rc %RC%
+    set "FAILED=1"
+    call :log "[ERROR] Winlogon AutoAdminLogon setup failed (RC=%RC%)"
+    exit /b %RC%
+  )
+
   reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :track_rc %RC%
+    set "FAILED=1"
+    call :log "[ERROR] Winlogon ForceAutoLogon setup failed (RC=%RC%)"
+    exit /b %RC%
+  )
+
   reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :track_rc %RC%
+    set "FAILED=1"
+    call :log "[ERROR] Winlogon AutoLogonCount setup failed (RC=%RC%)"
+    exit /b %RC%
+  )
   call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
+  exit /b 0
 ) else (
   set "FAILED=1"
   call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
+  exit /b %RC%
 )
 
+exit /b 0
+
+:l2c_stageb_schedule_and_prime
+REM Schedule Stage B executor first, then prime Winlogon autologon only on success (atomicity).
+schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
+  /TR "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
+  /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  call :log "[ERROR] Failed to create scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  exit /b 0
+) else (
+  call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
+)
+
+call :l2c_prime_winlogon_autologon
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :l2c_autologon_prime_failed_after_task %RC%
+)
+exit /b 0
+
+:l2c_prime_winlogon_autologon
+REM Prime Winlogon autologon. Assumes Stage B task already exists.
+reg add "%WL%" /v DefaultUserName    /t REG_SZ    /d bootstrap /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  exit /b %RC%
+)
+
+reg add "%WL%" /v DefaultDomainName  /t REG_SZ    /d "%COMPUTERNAME%" /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  exit /b %RC%
+)
+
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
+call :winlogon_handle_default_password
+exit /b %ERRORLEVEL%
+
+:l2c_autologon_prime_failed_after_task
+REM Autologon priming failed after Stage B task creation: roll back Winlogon and remove executor (best-effort).
+set "RC=%~1"
+call :log "[ERROR] Winlogon autologon priming failed after scheduling Stage B; rolling back Winlogon state and deleting \L2C\CreatePrimaryAdmin (rc=%RC%)"
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+call :winlogon_rollback_autologon
+call :stageb_task_delete_best_effort
+exit /b 0
+
+:winlogon_rollback_autologon
+REM Best-effort rollback of Winlogon autologon state (clears password/user/domain and disables autologon).
+REM Use the global WL.
+
+reg add "%WL%" /v AutoAdminLogon /t REG_SZ /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  call :log "[WARN] Failed to set Winlogon AutoAdminLogon=0 (RC=%RC%)"
+)
+
+reg add "%WL%" /v ForceAutoLogon /t REG_SZ /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  call :log "[WARN] Failed to set Winlogon ForceAutoLogon=0 (RC=%RC%)"
+)
+
+reg add "%WL%" /v AutoLogonCount /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  call :log "[WARN] Failed to set Winlogon AutoLogonCount=0 (RC=%RC%)"
+)
+
+reg delete "%WL%" /v DefaultPassword /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" if not "%RC%"=="2" (
+  call :track_rc %RC%
+  call :log "[ERROR] Failed to delete Winlogon DefaultPassword (RC=%RC%)"
+)
+
+reg delete "%WL%" /v DefaultUserName /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" if not "%RC%"=="2" (
+  call :track_rc %RC%
+  call :log "[WARN] Failed to delete Winlogon DefaultUserName (RC=%RC%)"
+)
+
+reg delete "%WL%" /v DefaultDomainName /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" if not "%RC%"=="2" (
+  call :track_rc %RC%
+  call :log "[WARN] Failed to delete Winlogon DefaultDomainName (RC=%RC%)"
+)
+
+exit /b 0
+
+:stageb_task_delete_best_effort
+schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :track_rc %RC%
+  call :log "[WARN] Failed to delete scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
+)
 exit /b 0
 
 REM ===== Helpers (Telemetry hardening) =====
@@ -825,7 +941,7 @@ if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
 set "MASTER_LOG_TS="
 for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[DateTime]::UtcNow.ToString('o')" 2^>nul') do set "MASTER_LOG_TS=%%G"
 if not defined MASTER_LOG_TS exit /b 0
->> "%MASTER_LOG_PATH%" echo [%MASTER_LOG_TS%] WARN_REBOOT_FLAG_NO_EXECUTOR flag=%REBOOT_FLAG% content=%REBOOT_FLAG_CONTENT% task=\L2C\CreatePrimaryAdmin skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%
+>> "%MASTER_LOG_PATH%" echo [%MASTER_LOG_TS%] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline.
 exit /b 0
 
 :flag_reboot
