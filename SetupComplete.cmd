@@ -338,13 +338,12 @@ call :handle_rc "EXE" %RC%
 exit /b %RC%
 
 :validate_primaryadmin_password
-set "L2C_PW_CHECK=%L2C_PRIMARYADMIN_PASSWORD%"
+set "L2C_PW_CHECK="
 set "L2C_PW_SEEN=0"
-if not defined L2C_PW_CHECK (
-  set "L2C_PW_CHECK="
-  set "L2C_PW_SEEN="
-  exit /b 1
-)
+if not defined L2C_PRIMARYADMIN_PASSWORD exit /b 1
+if "%L2C_PRIMARYADMIN_PASSWORD%"=="" exit /b 1
+set "L2C_PW_CHECK=%L2C_PRIMARYADMIN_PASSWORD%"
+
 :_validate_primaryadmin_password_loop
 if not defined L2C_PW_CHECK goto :_validate_primaryadmin_password_ok
 if "%L2C_PW_CHECK%"=="" if "%L2C_PW_SEEN%"=="1" goto :_validate_primaryadmin_password_ok
@@ -452,13 +451,12 @@ if "%FAILED%"=="0" (
   ) else (
     REM Read and validate primary admin password only if SEC-2 passed for .primaryadmin.pw
     if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-      if not defined L2C_PRIMARYADMIN_PASSWORD (
-        REM Read the password, ignoring Hidden/System attributes
-        set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
-      )
+      set "L2C_PRIMARYADMIN_PASSWORD="
+      REM Read the password, ignoring Hidden/System attributes
+      set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
       REM TEMP: skip trimming; empty is validated by validate_primaryadmin_password helper
       call :validate_primaryadmin_password
-      if not "%ERRORLEVEL%"=="0" (
+      if errorlevel 1 (
         call :log "[ERROR] primary admin password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
       ) else (
         set "L2C_HAS_PRIMARYADMIN_SECRET=1"

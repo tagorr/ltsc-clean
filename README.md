@@ -199,7 +199,7 @@ Operator follow-up:
 
 5. The system reboots as part of normal Setup. At the first console logon (Hyper-V Basic console), Winlogon performs AutoAdminLogon with `bootstrap`. This is visible only on the console session, not on Hyper-V Enhanced (RDP) sessions.
 
-6. At the first interactive logon, the scheduled task `\L2C\CreatePrimaryAdmin` executes `CreatePrimaryAdmin.ps1` as SYSTEM. The script:
+6. If `SetupComplete.cmd` registered it, at the first interactive logon, the scheduled task `\L2C\CreatePrimaryAdmin` executes `CreatePrimaryAdmin.ps1` as SYSTEM; if the gate was closed, the task does not exist and `primaryadmin` is not created. The script:
 
    * runs Stage A to create or update the primary local admin account and group memberships using the password read directly from `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM;
    * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`, and process the Panther `_needs_reboot.flag`; secret cleanup failures are treated as `StageB_Succeeded=false` and keep any reboot suppressed even when the flag exists; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path. The master log in `%ProgramData%` records the Panther flag state before the Stage B decision and whether Stage B consumed the flag (automatic restart) or suppressed it (recovery or StageB_Succeeded=false).

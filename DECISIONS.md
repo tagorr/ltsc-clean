@@ -12,7 +12,7 @@
 
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
-The baseline never auto-generates the primary local admin password. Instead it expects the operator to provide a strong password via `%WINDIR%\Setup\Scripts\.primaryadmin.pw`. `SetupComplete.cmd` reads and validates this secret to gate Stage B while keeping the `\L2C\CreatePrimaryAdmin` task command line free of secrets; Stage A of `CreatePrimaryAdmin.ps1` reads `.primaryadmin.pw` directly under SYSTEM. Both password source files (`.bootstrap.pw` and `.primaryadmin.pw`) are removed by Stage B on the normal path and preserved only when Stage B enters the recovery path.
+The baseline never auto-generates the primary local admin password. Instead it expects the operator to provide a strong password via `%WINDIR%\Setup\Scripts\.primaryadmin.pw`. `SetupComplete.cmd` reads and validates this secret to gate Stage B while keeping the `\L2C\CreatePrimaryAdmin` task command line free of secrets; Stage A of `CreatePrimaryAdmin.ps1` reads `.primaryadmin.pw` directly under SYSTEM. Both password source files (`.bootstrap.pw` and `.primaryadmin.pw`) are removed by Stage B on the normal path and preserved in recovery scenarios, including when the SetupComplete gate is closed and Stage B is not scheduled.
 
 ---
 
