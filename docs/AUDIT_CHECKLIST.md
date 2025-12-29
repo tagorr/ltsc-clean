@@ -63,7 +63,7 @@ S
 * [ ] `.primaryadmin.pw` formatting checks:
 
   * [ ] Positive: the file contains exactly one non-empty line with the password; the gate opens and Stage B is registered.
-  * [ ] Negative (leading empty line): the first line is empty and the password is on the second line; `SetupComplete.log` and the Stage A master log show the secret as unusable, the gate stays closed, and Stage B is not registered.
+  * [ ] Negative (leading empty line): the first line is empty and the password is on the second line; `SetupComplete.log` shows an `[ERROR]` about empty/disallowed characters, the gate stays closed (no autologon priming), and Stage B is not registered.
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
   * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).
@@ -479,14 +479,15 @@ For each document:
 * [ ] When `.bootstrap.pw` is missing at the `SetupComplete` stage:
 
   * [ ] Autologon is not configured.
-  * [ ] Stage B is not registered.
+  * [ ] Stage B is not registered (`schtasks /Query /TN "\L2C\CreatePrimaryAdmin"` fails) and `primaryadmin` is not created.
   * [ ] Logs contain a clear ERROR so that the operator immediately sees what to investigate.
 * [ ] When `.primaryadmin.pw` is missing or invalid at the `SetupComplete` stage:
 
   * [ ] A clear ERROR is logged.
   * [ ] Autologon priming is not configured.
-  * [ ] Stage B is not registered.
+  * [ ] Stage B is not registered (`schtasks /Query /TN "\L2C\CreatePrimaryAdmin"` fails) and `primaryadmin` is not created.
   * [ ] The state clearly indicates that manual intervention is required.
+  * [ ] `SetupComplete.log` ends with a non-zero `[RC] returning ...` when the failure is only the closed gate (`FAILED==1` with no captured fatal servicing RC) (observed: `returning 1`).
 * [ ] When `.bootstrap.pw` is valid, but Stage A fails (for example `net.exe` error, ACL issue, and so on):
 
   * [ ] Stage B runs in recovery mode.
