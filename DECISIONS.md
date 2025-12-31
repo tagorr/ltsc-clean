@@ -21,7 +21,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 ## Process policy: Agent execution model
 
 - Codex CLI is the sole automation agent; its operational rules live in `AGENTS.md` under the “Codex CLI Contract”.
-- The interaction contract is maintained in `INTERACTION_CONTRACT.md` and defines the operational rules for agent-assisted changes.
+- The interaction contract is maintained in `docs/INTERACTION_CONTRACT.md` and defines the operational rules for agent-assisted changes.
 
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
 
