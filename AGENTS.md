@@ -64,8 +64,8 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 * `*.md` stored with LF. `.cmd/.bat/.ps1` stored with CRLF.
 * UTF-8 without BOM everywhere. Zero bytes are forbidden.
-* Local guard: `githooks/pre-commit.cmd` materializes staged files then runs `tools/check-eol-bom.ps1 -IncludePaths`.
-* CI guard reproduces the same checks on `windows-latest`.
+* CI guard enforces the EOL policy in GitHub (CLGuard). Treat .gitattributes as the source of truth for LF vs CRLF expectations.
+* UTF-8 without BOM and “no NUL bytes” are required invariants, but they are not currently enforced by in-repo local hooks. Preserving encoding and avoiding NUL bytes is the responsibility of the operator/coding agent and must be caught via review.
 
 ### Minimal-diff rule
 
