@@ -698,7 +698,8 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 ### Decision
 
-- `SetupComplete.cmd` now calls `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English`, parses the `State :` line, and treats DISM/parse failures as `[ERROR]` with `FAILED=1` + `:track_rc`.
+- `SetupComplete.cmd` now probes capability state via `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English` with output captured to a temp file and parsed for the `State :` line (no `dism | findstr` pipelines, so DISM return codes are preserved).
+- Fatal probe RCs set `FAILED=1` + `:track_rc` (and `DISM_HARD_FAIL=1`); a missing/unparsable `State :` line logs `[WARN]` and skips removal.
 - Capability removal only runs for known states (`Installed`, `Staged`); other states log explicit skip reasons rather than silently continuing.
 - Winlogon autologon switches are configured only if the `DefaultPassword` PowerShell call returns RC=0; on error the script logs `[ERROR]`, sets `FAILED=1`, and leaves autologon off.
 - `schtasks /Create \L2C\CreatePrimaryAdmin` always captures `%ERRORLEVEL%`, logs failures with `[ERROR]`, calls `:track_rc`, and sets `FAILED=1`.
@@ -740,9 +741,10 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Whitelist two DISM warning codes and treat them as non-fatal:
   - -2146498548 / 2148468748 (“feature not recognized in this image”).
   - -2146498541 / 2148468755 (“invalid install state for this feature”).
-  For these codes, `:run_dism` logs a warning, sets `HAS_DISM_WARN=1`, and returns success.
-- All other non-success DISM return codes remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
-- The whitelist is intentionally narrow (e.g., `3010`, `1641`, the codes above); any other non-zero DISM return code is treated as a hard failure that fail-closed, blocks Stage B registration, and requires operator investigation before the whitelist can be extended.
+  For these codes, `:run_dism` logs a warning, sets `HAS_DISM_WARN=1`, and does not set `DISM_HARD_FAIL`.
+- All other DISM return codes outside `{0, 3010, 1641}` and the warning whitelist remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
+- Treat `3010` and `1641` as non-fatal “reboot required” outcomes (success with reboot required). They do not set `DISM_HARD_FAIL` and are not part of the warning whitelist.
+- The warning whitelist is intentionally narrow (only the two codes above); expanding it requires operator investigation and explicit documentation updates. In `SetupComplete.cmd`, Stage B scheduling is gated on `FAILED=0`. Any DISM hard-fail that sets `FAILED=1` therefore prevents Stage B scheduling in that run (fail-closed).
 - At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, `FINAL_RC=0`. The script logs “[RC] returning %FINAL_RC%” and exits with that code.
 
 **Consequences:**
