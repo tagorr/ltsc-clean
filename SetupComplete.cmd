@@ -132,8 +132,7 @@ if not defined FN goto :eof
 call :log "[INFO] %LG% - attempting disable"
 call :run_dism /Disable-Feature /FeatureName:%FN%
 set "RC=%ERRORLEVEL%"
-call :track_rc %RC%
-if not "%RC%"=="0" (
+if defined DISM_HARD_FAIL (
   set "FAILED=1"
   call :log "[ERROR] %LG% disable failed (RC=%RC%)"
 )
@@ -149,25 +148,28 @@ if defined DISM_HARD_FAIL (
 )
 if not defined CAP goto :_cap_cleanup
 set "_cap_state="
-for /f "tokens=2 delims=:" %%S in ('dism /Online /Get-CapabilityInfo /CapabilityName:%CAP% /English ^| findstr /C:"State :"') do (
-  set "_cap_state=%%S"
-)
-set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  call :track_rc %RC%
-  set "FAILED=1"
-  call :log "[ERROR] Capability state retrieval failed for %FR% (%CAP%) (RC=%RC%)"
+set "_cap_probe_out=%TEMP%\l2c_cap_probe_%RANDOM%_%RANDOM%.txt"
+if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
+call :run_dism_capture "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
+set "DISM_RC=%L2C_LAST_DISM_RC%"
+
+REM Hard-fail only. Otherwise, try to parse the output even if RC is non-zero.
+if defined DISM_HARD_FAIL (
+  call :log "[ERROR] Capability state retrieval failed for %FR% (%CAP%) (RC=%DISM_RC%)"
   goto :_cap_cleanup
 )
+
+if not "%DISM_RC%"=="0" (
+  call :log "[WARN] Capability state retrieval returned RC=%DISM_RC% for %FR% (%CAP%); attempting to parse output anyway"
+)
+for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_cap_probe_out%"') do set "_cap_state=%%S"
 if not defined _cap_state (
-  set "FAILED=1"
-  call :log "[ERROR] Capability state missing for %FR% (%CAP%)"
+  call :log "[WARN] Capability state missing for %FR% (%CAP%); skipping removal"
   goto :_cap_cleanup
 )
 set "_cap_state=%_cap_state: =%"
 if not defined _cap_state (
-  set "FAILED=1"
-  call :log "[ERROR] Capability state parse failed for %FR% (%CAP%)"
+  call :log "[WARN] Capability state parse failed for %FR% (%CAP%); skipping removal"
   goto :_cap_cleanup
 )
 echo [CAP] %FR% state=%_cap_state%>>"%LOG%"
@@ -188,17 +190,23 @@ goto :_cap_cleanup
 call :log "[STEP] Remove capability %FR% (%CAP%)"
 call :run_dism /Remove-Capability /CapabilityName:%CAP%
 set "RC=%ERRORLEVEL%"
-call :track_rc %RC%
 if "%RC%"=="0" (
   echo [CAP] %FR% removal succeeded>>"%LOG%"
   goto :_cap_cleanup
 )
-set "FAILED=1"
-call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
+if defined DISM_HARD_FAIL (
+  set "FAILED=1"
+  call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
+) else (
+  echo [CAP] %FR% removal returned RC=%RC% (non-fatal)>>"%LOG%"
+)
 goto :_cap_cleanup
 
 :_cap_cleanup
+if defined _cap_probe_out if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
 set "_cap_state="
+set "_cap_probe_out="
+set "DISM_RC="
 goto :eof
 
 :gate_build
@@ -265,21 +273,40 @@ set "CMD=dism /Online %* /Quiet /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComp
 call :log "[DISM] %CMD%"
 %CMD%
 set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" goto :dism_ok
-if "%RC%"=="3010" goto :dism_rc3010
-if "%RC%"=="1641" goto :dism_rc1641
-if "%RC%"=="-2146498548" goto :dism_warn_unknown_feature
-if "%RC%"=="2148468748" goto :dism_warn_unknown_feature
-if "%RC%"=="-2146498541" goto :dism_warn_invalid_state
-if "%RC%"=="2148468755" goto :dism_warn_invalid_state
-if "%RC%"=="-2146498529" goto :dism_fatal
-if "%RC%"=="2148468767" goto :dism_fatal
-if "%RC%"=="-2146498283" goto :dism_fatal
-if "%RC%"=="2148469013" goto :dism_fatal
-if "%RC%"=="-2147024891" goto :dism_fatal
-if "%RC%"=="2147942405" goto :dism_fatal
-if "%RC%"=="87" goto :dism_fatal
-if "%RC%"=="998" goto :dism_fatal
+set "L2C_LAST_DISM_RC=%RC%"
+call :classify_dism_rc %RC%
+exit /b %RC%
+
+:run_dism_capture
+REM usage: call :run_dism_capture "<outfile>" <DISM-args-without-/Online>
+set "OUT=%~1"
+shift
+set "CMD=dism /Online %1 %2 %3 %4 %5 %6 %7 %8 %9 /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4"
+call :log "[DISM] %CMD%"
+%CMD% 1>"%OUT%" 2>&1
+set "RC=%ERRORLEVEL%"
+set "L2C_LAST_DISM_RC=%RC%"
+call :classify_dism_rc %RC%
+exit /b %RC%
+
+:classify_dism_rc
+REM usage: call :classify_dism_rc <RC>
+set "L2C_DISM_RC=%~1"
+if "%~1"=="0" goto :dism_ok
+if "%~1"=="3010" goto :dism_rc3010
+if "%~1"=="1641" goto :dism_rc1641
+if "%~1"=="-2146498548" goto :dism_warn_unknown_feature
+if "%~1"=="2148468748" goto :dism_warn_unknown_feature
+if "%~1"=="-2146498541" goto :dism_warn_invalid_state
+if "%~1"=="2148468755" goto :dism_warn_invalid_state
+if "%~1"=="-2146498529" goto :dism_fatal
+if "%~1"=="2148468767" goto :dism_fatal
+if "%~1"=="-2146498283" goto :dism_fatal
+if "%~1"=="2148469013" goto :dism_fatal
+if "%~1"=="-2147024891" goto :dism_fatal
+if "%~1"=="2147942405" goto :dism_fatal
+if "%~1"=="87" goto :dism_fatal
+if "%~1"=="998" goto :dism_fatal
 goto :dism_fatal
 
 :dism_rc3010
@@ -300,20 +327,20 @@ exit /b 0
 
 :dism_warn_unknown_feature
 set "HAS_DISM_WARN=1"
-call :log "[DISM] RC=%RC% (warning, feature not recognized in this image)"
+call :log "[DISM] RC=%L2C_DISM_RC% (warning, feature not recognized in this image)"
 exit /b 0
 
 :dism_warn_invalid_state
 set "HAS_DISM_WARN=1"
-call :log "[DISM] RC=%RC% (warning, invalid install state for this feature)"
+call :log "[DISM] RC=%L2C_DISM_RC% (warning, invalid install state for this feature)"
 exit /b 0
 
 :dism_fatal
-call :track_rc %RC%
+call :track_rc %L2C_DISM_RC%
 set "FAILED=1"
 set "DISM_HARD_FAIL=1"
-call :log "[DISM] RC=%RC% (error)"
-exit /b %RC%
+call :log "[DISM] RC=%L2C_DISM_RC% (error)"
+exit /b %L2C_DISM_RC%
 
 :run_msi
 REM usage: call :run_msi "<msi path>" [more MSI properties]
@@ -324,7 +351,7 @@ msiexec /i "%MSI%" /qn REBOOT=ReallySuppress /norestart %*
 set "RC=%ERRORLEVEL%"
 call :track_rc %RC%
 call :handle_rc "MSI" %RC%
-exit /b %RC%
+exit /b %ERRORLEVEL%
 
 :run_exe
 REM usage: call :run_exe "<exe path>" [vendor-specific args]; default /quiet /norestart
@@ -335,7 +362,7 @@ call :log "[EXE] \"%EXE%\" /quiet /norestart %*"
 set "RC=%ERRORLEVEL%"
 call :track_rc %RC%
 call :handle_rc "EXE" %RC%
-exit /b %RC%
+exit /b %ERRORLEVEL%
 
 :validate_primaryadmin_password
 set "L2C_PW_CHECK="
