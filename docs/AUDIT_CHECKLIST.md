@@ -523,3 +523,6 @@ For each document:
 
 * [ ] `SetupComplete.log` shows `[RC] returning 0` for a passing run. For failing runs, non-zero values must match the `FINAL_RC` rules and the first fatal RC captured in `L2C_FIRST_BAD_RC`.
 * [ ] DISM warnings related to missing/not-applicable components on LTSC (whitelisted RCs such as `-2146498548/2148468748` and `-2146498541/2148468755`) are documented as acceptable; any DISM return codes outside `{0, 3010, 1641}` and this warning whitelist must be treated as audit failures and must correspond to a non-zero `FINAL_RC`.
+* [ ] Capability probes use `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English` with output captured to a temp file; no `dism | findstr` pipelines are used for capability decisions (the raw DISM return code must be preserved for classification).
+* [ ] When the probe output lacks a parsable `State :` line, `SetupComplete.cmd` logs a WARN and skips capability removal (no hard-fail is triggered solely by missing state).
+* [ ] When a capability probe produces a fatal DISM return code and sets `DISM_HARD_FAIL=1`, `SetupComplete.log` contains an ERROR for that capability probe and WARN entries for subsequent capabilities being skipped due to the prior fatal DISM RC.

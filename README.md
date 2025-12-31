@@ -154,6 +154,7 @@ Interpretation:
      * `-2146498541` / `2148468755` – warning, invalid install state for this feature; logged and treated as success;
      * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
      * the whitelist is intentionally narrow (only the codes above); any other non-zero DISM return code is treated as a hard failure that blocks unattended provisioning until an operator reviews `SetupComplete.log` and `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` and extends the whitelist deliberately only if the new code is confirmed benign;
+   * probes capability state via `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English` with output captured to a temp file and parsed for the `State :` line (no `dism | findstr` pipelines); if the `State :` line is missing/unparsable it logs a WARN and skips removal, and if the probe produces a fatal DISM RC (`DISM_HARD_FAIL=1`) it logs an ERROR and skips subsequent capability removals;
    * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
    * when a reboot is required or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, writes `%WINDIR%\Panther\_needs_reboot.flag` instead of rebooting immediately; if the flag already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (it is not deleted on entry); the script does not scan prior `SetupComplete.log` history.
    * calls `ValidateSecrets.ps1` near the start to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0–3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration);
@@ -376,7 +377,7 @@ How violations show up:
 * Edge and OneDrive are controlled or blocked by policy.
 * Windows Update UI shows notify behavior; no drivers or other Microsoft products are auto offered.
 * Disabled services remain disabled after reboot.
-* DISM capability removals reported success or not applicable.
+* DISM capability removals logged explicit outcomes (removed, not present, skipped due to missing/unparsable state, or hard-fail with `DISM_HARD_FAIL=1`).
 * `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: Success` entry for the normal path, or a clearly marked `OUTCOME: Recovery` entry when diagnostics are required.
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` are absent in the normal path; if they are present you are either in recovery or running the master manually.
 
