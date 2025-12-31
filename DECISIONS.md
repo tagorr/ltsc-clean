@@ -21,7 +21,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 ## Process policy: Agent execution model
 
 - Codex CLI is the sole automation agent; its operational rules live in `AGENTS.md` under the “Codex CLI Contract”.
-- A full `docs/INTERACTION_CONTRACT.md` will follow in a separate commit to capture the detailed interaction workflow.
+- The interaction contract is maintained in `INTERACTION_CONTRACT.md` and defines the operational rules for agent-assisted changes.
 
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
 
@@ -560,7 +560,7 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 ## Update (2025-09-19)
 
-**Disk selection:** Use Windows Setup UI intentionally: set `OSImage/WillShowUI=Always`, omit `InstallTo` and `InstallToAvailablePartition`. Rationale: avoid unintended writes on multi-disk hosts; preserve control on prod.
+**Disk selection:** Use Windows Setup UI intentionally: omit `DiskConfiguration` and `InstallTo*` in `Autounattend.xml`, so Windows Setup prompts the operator to choose the target disk/partition. Rationale: avoid unintended writes on multi-disk hosts; preserve control on prod.
 
 **Policy application timing:** Apply privacy & local-account policies in `specialize` via `Microsoft-Windows-Deployment/RunSynchronous` so they take effect **before OOBE**.
 

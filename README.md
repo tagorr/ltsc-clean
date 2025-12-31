@@ -742,11 +742,11 @@ Regardless of failure source (platform gate, DISM, or other checks), `SetupCompl
 
 For controlled production environments set `STRICT_DISPLAYVERSION=1`. For forks and experiments keep `0` and adjust `REQUIRED_*` to your target.
 
-All `SetupComplete.cmd` steps log live timestamps computed inside the script; this helps correlate with DISM and CBS logs and debug issues. Implementation is pure `cmd` without per line PowerShell calls.
+All `SetupComplete.cmd` steps log live timestamps computed inside the script; this helps correlate with DISM and CBS logs and debug issues. The orchestration is CMD-first; PowerShell is used only for a small number of targeted helper calls (for example timestamp generation or reading specific values), not as a per-line wrapper around every command.
 
 ## Update (2025-09-19)
 
-* Windows Setup is configured to always show disk and partition selection UI (`WillShowUI=Always`). `InstallTo*` entries were removed to avoid accidental installs to non system disks on multi disk machines.
+* Disk/partition selection is intentionally manual. `Autounattend.xml` omits `DiskConfiguration` and `InstallTo*`, so Windows Setup shows the disk/partition selection UI. This prevents destructive unattended writes on multi-disk hosts.
 * OOBE privacy wizard is suppressed via policy, and the six underlying toggles are disabled by policy in `specialize` (applied before OOBE):
 
   * Diagnostics data (`AllowTelemetry=0`)
