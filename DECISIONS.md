@@ -8,7 +8,7 @@
 
 **License:** MIT
 
-**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks; RunOnce only for optional diagnostics/cleanup). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers) and the canonical `Autounattend.xml` answer file.
+**Description:** A lean, predictable Windows 10 LTSC 2021 baseline with minimal background activity and telemetry. Uses official Microsoft mechanisms only (Policies/Registry, DISM Features & Capabilities, Scheduled Tasks). Conservative, no hacks; deterministic and idempotent. Ships the automation scripts (`PreOOBE.cmd`, `SetupComplete.cmd`, PowerShell helpers) and the canonical `Autounattend.xml` answer file.
 
 This document records the decisions, rationale, scope boundaries, and verification steps for the baseline. It is the single source of truth for what the project does and why.
 
@@ -43,7 +43,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 `SetupComplete.cmd` does not delete a pre-existing `%WINDIR%\Panther\_needs_reboot.flag` on entry; it logs a WARN when the flag already exists and preserves it as a sticky pending reboot marker.
 
-**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe` and must not create RunOnce entries for shutdown. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag, sets `NEEDS_REBOOT=1`, and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`. In the normal path, when Stage B succeeded and the Panther flag exists, Stage B runs a tri-state pending reboot check (`state=true|false|unknown`, with `true` taking precedence if any reasons exist even if probe errors exist) and then either performs the controlled shutdown (`state=true` or `state=unknown`, conservative) or clears the flag without reboot (`state=false`, stale). Pending reboot indicators are registry markers under Component Based Servicing, Windows Update, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`. In recovery mode or when Stage B fails, no automatic reboot occurs and the flag can remain for manual diagnostics.
+**Constraints.** `SetupComplete.cmd` must not call `shutdown.exe`. When servicing returns `0`, the script continues without requesting a reboot. When servicing returns `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, it writes the Panther flag, sets `NEEDS_REBOOT=1`, and leaves the actual reboot to Stage B of `CreatePrimaryAdmin.ps1`. In the normal path, when Stage B succeeded and the Panther flag exists, Stage B runs a tri-state pending reboot check (`state=true|false|unknown`, with `true` taking precedence if any reasons exist even if probe errors exist) and then either performs the controlled shutdown (`state=true` or `state=unknown`, conservative) or clears the flag without reboot (`state=false`, stale). Pending reboot indicators are registry markers under Component Based Servicing, Windows Update, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`. In recovery mode or when Stage B fails, no automatic reboot occurs and the flag can remain for manual diagnostics.
 
 ---
 
@@ -111,7 +111,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 * Minimal background activity and minimal telemetry.
 
-* Official tools only: Group Policies and Registry under HKLM, DISM Features & Capabilities, Scheduled Tasks (RunOnce only for optional diagnostics/cleanup). No hacks, no unsupported tricks.
+* Official tools only: Group Policies and Registry under HKLM, DISM Features & Capabilities, Scheduled Tasks. No hacks, no unsupported tricks.
 
 * Deterministic and idempotent execution. Safe to re-run without harmful side effects.
 
@@ -160,7 +160,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
   `%WINDIR%\Setup\Scripts\BootstrapLocalAdmin.ps1`, `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1`
 
-PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/RunOnce/Tasks.
+PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch Winlogon/Passwordless/Tasks.
 
 * Password source files inside the image
 
@@ -170,7 +170,7 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
   Both files are deleted by Stage B on the normal path and preserved only when Stage B enters the recovery path.
 
-**SetupComplete.cmd:** servicing/logging and bootstrap/admin pipeline priming; never calls `shutdown.exe` or schedules reboots via RunOnce. It computes whether a reboot is required and writes the Panther `_needs_reboot.flag` when needed. When `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` are present and valid and the script has not failed, it configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding passwords, relying on Stage A to read `.primaryadmin.pw` under SYSTEM. Stage B of `CreatePrimaryAdmin.ps1` is responsible for consuming or clearing the flag (tri-state pending reboot check: `true`/`false`/`unknown`) and performing the single controlled reboot on the normal path after the first interactive logon when appropriate.
+**SetupComplete.cmd:** servicing/logging and bootstrap/admin pipeline priming; never calls `shutdown.exe`. It computes whether a reboot is required and writes the Panther `_needs_reboot.flag` when needed. When `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` are present and valid and the script has not failed, it configures temporary Winlogon settings, primes AutoAdminLogon for `bootstrap`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding passwords, relying on Stage A to read `.primaryadmin.pw` under SYSTEM. Stage B of `CreatePrimaryAdmin.ps1` is responsible for consuming or clearing the flag (tri-state pending reboot check: `true`/`false`/`unknown`) and performing the single controlled reboot on the normal path after the first interactive logon when appropriate.
 
 When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs recovery mode, skips autologon/task registration, but still completes servicing/hardening and reboot-flag evaluation.
 
@@ -620,13 +620,13 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 - Stage A performs an ADSI membership pre-check and treats `net.exe localgroup` return codes `0` and `1378` as success, logging `A: SKIP (already member)` when no change is needed.
 
-- Stage B (Winlogon and RunOnce rollback, `bootstrap` deactivation) always runs once after Stage A and selects a normal or recovery path based on Stage A’s outcome and internal validation, guarding any automatic reboot behind Stage B success in the normal path.
+- Stage B (Winlogon rollback, `bootstrap` deactivation) always runs once after Stage A and selects a normal or recovery path based on Stage A’s outcome and internal validation, guarding any automatic reboot behind Stage B success in the normal path.
 
 - Ban `cmd /c` wrappers in Windows PowerShell 5.1; invoke `net.exe` directly to preserve `$LASTEXITCODE` and reduce noise.
 
 **Consequences:**
 
-- Re-running the script is safe: existing Administrators membership is detected, and Stage B can enter a recovery mode after Stage A failures to clean up Winlogon/RunOnce/bootstrap state as far as possible before an operator intervenes.
+- Re-running the script is safe: existing Administrators membership is detected, and Stage B can enter a recovery mode after Stage A failures to clean up Winlogon/bootstrap state as far as possible before an operator intervenes.
 
 - Guarding the Panther-flag-based reboot with Stage B success prevents unwanted reboots when account provisioning or cleanup fails, reducing lockout risk while still providing recovery behavior.
 
@@ -653,14 +653,6 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Editors should be configured accordingly (see `CONTRIBUTING.md`).
 
 ## ADRs – 2025-11
-
-### ADR: Scheduler over RunOnce for primary-admin bootstrap
-
-- Decision: Use `schtasks` (OnLogon, SYSTEM, Highest) to run `CreatePrimaryAdmin.ps1`.
-
-- Rationale: reliability, service isolation, no race with shell init; avoids RunOnce persistence on failures.
-
-- Status: adopted in `SetupComplete.cmd`.
 
 ### ADR: No Delayed Expansion in .cmd
 
@@ -693,7 +685,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Capability removal in `SetupComplete.cmd` relied on `dism /Online /Get-Capabilities | findstr "Installed"` which breaks on non-English output.
 - Winlogon autologon flipped `AutoAdminLogon`/`ForceAutoLogon` even if the PowerShell write of `DefaultPassword` failed, leaving a stuck autologon without credentials.
 - `schtasks /Create \L2C\CreatePrimaryAdmin` was not tracked via `:track_rc`, so failures could be invisible to L2C_FIRST_BAD_RC and exit codes even when task creation failed.
-- Stage B of `CreatePrimaryAdmin.ps1` cleaned Winlogon, RunOnce, the scheduled task, and `.bootstrap.pw`, but many failure paths only emitted DEBUG/WARN entries and did not encode the cleanup result for later tooling.
+- Stage B of `CreatePrimaryAdmin.ps1` cleaned Winlogon, the scheduled task, and `.bootstrap.pw`, but many failure paths only emitted DEBUG/WARN entries and did not encode the cleanup result for later tooling.
 - `.bootstrap.pw` ACLs were recreated using localized “Administrators” names instead of translating the Administrators SID, leaving room for locale regressions.
 
 ### Decision
@@ -711,7 +703,6 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
   - Deletes `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword`, and resets `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount`.
   - Logs `net user bootstrap /active:no` success or WARN with the exact RC.
   - Logs WARN for non-zero RCs from `schtasks.exe /Delete` and still surfaces caught exceptions as WARN.
-  - Removes RunOnce entries via `Remove-ItemProperty -ErrorAction Stop`, logging WARN per entry on failure, and checks the defensive `reg.exe DELETE` RC (warns unless RC ∈ {0,2}).
   - Tracks cleanup state for both `.bootstrap.pw` and `.primaryadmin.pw` in dedicated variables, logs `removed`/`missing`/`error`/`preserved` states for each, and records the resulting state in the Stage B master log summary.
 
 ### Consequences / Impact
@@ -720,7 +711,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - `SetupComplete.cmd` now propagates the first failing RC or a generic FAILED fallback, so monitoring and deployment tooling can rely on exit codes instead of tailing logs.
 - Winlogon autologon now has an all-or-nothing contract: either the password write succeeds and autologon is primed, or autologon stays off with explicit error logging.
 - `.bootstrap.pw` is guaranteed to be ACLed with only SYSTEM and local Administrators; any deviation aborts bootstrap rather than silently weakening protections.
-- Stage B produces deterministic post-bootstrap state (Winlogon, RunOnce, scheduled tasks) and emits machine-readable entries for `.bootstrap.pw` cleanup, improving forensic and automation coverage.
+- Stage B produces deterministic post-bootstrap state (Winlogon, scheduled tasks) and emits machine-readable entries for `.bootstrap.pw` cleanup, improving forensic and automation coverage.
 - Both `.bootstrap.pw` and `.primaryadmin.pw` are guaranteed to be ACLed with only SYSTEM and local Administrators; failures to enforce ACLs or to read/validate the primary admin password abort bootstrap rather than silently weakening protections.
 - Operators can treat WARN/ERROR patterns (missing password file, task delete RC, etc.) as actionable signals without guessing whether the cleanup actually ran.
 

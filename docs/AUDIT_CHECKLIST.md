@@ -88,7 +88,7 @@ S
 * [ ] `PreOOBE.cmd`:
 
   * [ ] Launches `BootstrapLocalAdmin.ps1` in the expected way.
-  * [ ] Does not modify Winlogon, RunOnce, or logon policies if this is forbidden by design.
+  * [ ] Does not modify Winlogon or logon policies if this is forbidden by design.
   * [ ] Redirects stdout and stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log` (no separate bootstrap log file).
 * [ ] `BootstrapLocalAdmin.ps1`:
 
@@ -98,7 +98,7 @@ S
   * [ ] Marks `bootstrap` as active (`/active:yes`) if required by the scenario.
   * [ ] Emits `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines in `%WINDIR%\Panther\PreOOBE.log` for key lifecycle steps (account creation, password set/activate, Administrators membership, `.bootstrap.pw` write/ACL/attributes).
   * [ ] Bootstrap log entries do not include the password or derived secret values (technical actions/errors only).
-  * [ ] Does not leave extra handlers or resources (including RunOnce entries or tasks that are not described in the design).
+  * [ ] Does not leave extra handlers or resources (including tasks that are not described in the design).
 
 ---
 
@@ -174,9 +174,6 @@ S
 
   * [ ] The log records that Stage B registration was skipped, with explicit `FAILED` and `HAS_BOOTSTRAP_PW` values.
 
-#### 4.4. Reboot flow (Panther flag, no RunOnce)
-
-* [ ] All code that used to write `shutdown.exe` into RunOnce has been removed.
 * [ ] When `ALWAYS_REBOOT_AFTER_FIRST_LOGON==1`:
 
   * [ ] `NEEDS_REBOOT=1` is set.
@@ -327,15 +324,6 @@ S
   * [ ] The `bootstrap` account remains active and the task is not deleted.
   * [ ] The log contains a clear entry that `bootstrap` and the task are preserved for manual intervention, as described in SECURITY.md.
 
-#### 6.4. RunOnce cleanup (lab leftovers)
-
-* [ ] Always (in both modes):
-
-  * [ ] Enumerates `HKLM:\...\RunOnce` and removes values related to L2C / CreatePrimaryAdmin / diagnostic helpers (lab leftovers).
-  * [ ] Optionally calls `reg.exe DELETE ... /v <lab-helper> /f` as a defensive measure.
-  * [ ] All errors are logged as `WARN` but do not break Stage B.
-  * [ ] Logs contain a `"RunOnce cleaned"` entry or an explanation of the error.
-
 #### 6.5. Password source files cleanup (normal vs recovery)
 
 * [ ] In normal Stage B mode:
@@ -359,7 +347,7 @@ S
 * [ ] The master log contains:
 
   * [ ] Stage B start with the mode label (normal or recovery).
-  * [ ] Key steps (Winlogon reset, RunOnce cleanup, `.bootstrap.pw` cleanup).
+  * [ ] Key steps (Winlogon reset, `.bootstrap.pw` cleanup).
   * [ ] Stage B completion (`finalize end`).
 * [ ] OUTCOME line:
 
@@ -419,7 +407,7 @@ For each document:
   * [ ] PreOOBE → BootstrapLocalAdmin → SetupComplete → CreatePrimaryAdmin (Stage A/B).
 * [ ] Reboot mechanism:
 
-  * [ ] Only the Panther flag and Stage B are mentioned, not RunOnce.
+  * [ ] Only the Panther flag and Stage B are mentioned.
 * [ ] Behavior is described for:
 
   * [ ] RC 0 (no reboot).
@@ -434,7 +422,7 @@ For each document:
 
 * [ ] All decisions regarding:
 
-  * [ ] Using the Panther flag instead of RunOnce.
+  * [ ] Using the Panther flag.
   * [ ] Calling Stage B when Stage A fails (recovery mode).
   * [ ] Policy of "no reboots inside SetupComplete".
 * [ ] Tables and state diagrams match the real behavior of the scripts.
