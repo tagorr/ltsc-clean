@@ -27,7 +27,7 @@ This baseline expects the primary local admin password to be supplied explicitly
 
 - `PreOOBE.cmd` - specialize-phase privacy policies and bootstrap trigger
 - `SetupComplete.cmd` - post-install baseline script (post-OOBE hardening, Panther flag handling, autologon priming)
-- `BootstrapLocalAdmin.ps1` - temporary admin creation and bootstrap secret writer (`.bootstrap.pw`), no direct Winlogon or RunOnce manipulation
+- `BootstrapLocalAdmin.ps1` - temporary admin creation and bootstrap secret writer (`.bootstrap.pw`), no direct Winlogon manipulation
 - `CreatePrimaryAdmin.ps1` - first-login master that finalizes the baseline (Stage A/B, normal vs recovery, controlled reboot)
 - `DECISIONS.md` - design decisions and rationale
 - `SECURITY.md` - security trade-offs and risk model
@@ -140,7 +140,7 @@ Interpretation:
 
 1. Boot from media with `Autounattend.xml`.
 
-2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, RunOnce, or Task Scheduler, and logs to `%WINDIR%\Panther\PreOOBE.log` (including stdout/stderr from `BootstrapLocalAdmin.ps1`).
+2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, or Task Scheduler, and logs to `%WINDIR%\Panther\PreOOBE.log` (including stdout/stderr from `BootstrapLocalAdmin.ps1`).
 
 3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). Passwords are 24 characters from `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` generated via `RNGCryptoServiceProvider`; `net localgroup` return codes `0` and `2` (`already a member`) are treated as success when adding to Administrators. It does not configure autologon and does not schedule the master. Progress and errors are logged as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries in `PreOOBE.log` without printing the password; on failure the log shows the non-zero RC alongside the preceding bootstrap error lines.
 
@@ -205,8 +205,6 @@ Operator follow-up:
    * runs Stage A to create or update the primary local admin account and group memberships using the password read directly from `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM;
    * runs Stage B once after Stage A to roll back temporary logon configuration, disable `bootstrap`, delete the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`, and process the Panther `_needs_reboot.flag`; secret cleanup failures are treated as `StageB_Succeeded=false` and keep any reboot suppressed even when the flag exists; a controlled reboot only happens when the flag exists and Stage B succeeded in the normal path. The master log in `%ProgramData%` records the Panther flag state before the Stage B decision and whether Stage B consumed the flag (automatic restart) or suppressed it (recovery or StageB_Succeeded=false).
 
-RunOnce is not used by this baseline to start `CreatePrimaryAdmin.ps1` or to drive reboots. Any RunOnce snippets in this repository are strictly for optional lab diagnostics.
-
 ## Idempotent master flow (CreatePrimaryAdmin.ps1)
 
 ### Group resolution and localization
@@ -261,7 +259,6 @@ Normal path:
 * deletes the scheduled task `\L2C\CreatePrimaryAdmin`;
 * deletes `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`;
 * if either secret delete fails (cleanup state `error`), Stage B logs a secret cleanup error outcome, keeps `StageB_Succeeded=$false`, and suppresses any automatic reboot even if the Panther flag exists;
-* removes any leftover `RunOnce` entries added for diagnostics;
 * if `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B completed successfully in normal mode, Stage B performs a tri-state pending reboot check, logs the result (Example: `Pending reboot check: state=true reasons=<...> errors=<...>`), and then either consumes the flag and reboots (`state=true`), clears the stale flag without reboot (`state=false`), or reboots conservatively on `unknown`; state precedence is `true` if any reasons exist even if errors exist, `unknown` only if no reasons but probe errors exist, `false` only if no reasons and no errors; indicators include CBS and Windows Update markers, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`;
 * logs an `OUTCOME: Success` entry in the master log in `C:\ProgramData\l2c_master_<timestamp>.log`.
 
@@ -411,8 +408,6 @@ For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST
    schtasks /Run /TN "\L2C\CreatePrimaryAdmin"
    ```
 
-   The baseline does not use RunOnce to launch `CreatePrimaryAdmin.ps1`.
-
 4. Stage A idempotence
 
    Return code `1378` from `net localgroup` ("already a member") is normal and should not block the run. The script logs it as a skip.
@@ -420,24 +415,6 @@ For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST
 5. Interpolation bug
 
    The interpolation bug around `${User}:` vs `$User:` is fixed (see `DECISIONS.md` for the ADR around Stage A and Stage B).
-
-6. RunOnce for diagnostics only
-
-   If you still use `HKLM\...\RunOnce` for an ad hoc diagnostic helper script, ensure it lives under:
-
-   * `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce`
-
-   and not under the Wow6432Node branch. The baseline itself does not depend on RunOnce.
-
-7. Diagnostic launch
-
-   For a one time diagnostic run you can register a helper `.cmd` in `RunOnce` that logs start and finish and calls:
-
-   ```powershell
-   CreatePrimaryAdmin.ps1 -Verbose
-   ```
-
-   This is diagnostic only. In the unattended baseline `CreatePrimaryAdmin.ps1` is launched solely via the `\L2C\CreatePrimaryAdmin` scheduled task.
 
 ### Autologon priming (SetupComplete)
 
@@ -463,7 +440,6 @@ Post conditions on a successful normal run:
 * `AutoAdminLogon = 0`
 * `ForceAutoLogon = 0`
 * `DefaultPassword` is absent
-* `RunOnce` does not contain bootstrap or master entries
 * `bootstrap` is disabled
 * `primaryadmin` is in `Administrators` (and optionally in `Remote Desktop Users`)
 * `_needs_reboot.flag` has been removed after a successful normal Stage B run; in recovery mode or after a Stage B failure it may remain to signal that a reboot is still pending
@@ -662,15 +638,6 @@ reg delete $logonUI /v LastLoggedOnUser    /f | Out-Null 2>$null
 reg delete $logonUI /v LastLoggedOnSAMUser /f | Out-Null 2>$null
 ```
 
-Register master in RunOnce for lab only:
-
-```powershell
-$ro = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
-reg add $ro /v CreatePrimaryAdmin /t REG_SZ /d 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Scripts\CreatePrimaryAdmin.ps1"' /f | Out-Null 2>$null
-```
-
-This snippet is for ad hoc lab testing only. The baseline does not rely on RunOnce to start `CreatePrimaryAdmin.ps1`.
-
 Reboot snippet (for manual tests):
 
 ```powershell
@@ -683,10 +650,6 @@ Add `/f` only if you need to force close apps.
 
 ```powershell
 reg query 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-```
-
-```powershell
-reg query 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
 ```
 
 ```powershell
@@ -767,13 +730,13 @@ PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePri
 
    * applies early privacy and telemetry policies;
    * calls `BootstrapLocalAdmin.ps1` as SYSTEM;
-   * does not manipulate Winlogon, passwordless settings, RunOnce, or Task Scheduler.
+   * does not manipulate Winlogon, passwordless settings, or Task Scheduler.
 
 2. `BootstrapLocalAdmin.ps1`:
 
    * creates or activates the local account `bootstrap` and assigns a password;
    * writes this password to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators);
-   * does not change Winlogon or Ngc, does not create scheduled tasks and does not write RunOnce keys.
+   * does not change Winlogon or Ngc, does not create scheduled tasks.
 
 3. `SetupComplete.cmd` (runs once after OOBE as SYSTEM) performs:
 
@@ -862,7 +825,6 @@ Practical testing:
 
    reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc" /v DevicePasswordLessBuildVersion
    reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v DisableCAD
-   reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
    schtasks /Query /TN "\L2C\CreatePrimaryAdmin"
    ```
 
@@ -889,7 +851,6 @@ If `.primaryadmin.pw` is missing or invalid, `SetupComplete.cmd` logs the condit
 * There is no `DefaultPassword` and no `AutoLogonCount`; `AutoAdminLogon=0`, `ForceAutoLogon=0`, `IgnoreShiftOverride=0`.
 * Policies: `DisableCAD=0`, `DevicePasswordLessBuildVersion=2` in the normal path.
 * `bootstrap` is disabled (`net user bootstrap /active:no`).
-* `RunOnce` does not contain references to `CreatePrimaryAdmin.ps1`.
 * `%WINDIR%\Panther\SetupComplete.log` contains clean end markers for SetupComplete.
 * `C:\ProgramData\l2c_master_<timestamp>.log` contains `OUTCOME: Success` for the normal path or a clearly marked recovery outcome when applicable.
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist in the normal path.

@@ -426,33 +426,6 @@ try {
     Write-SetupLog "Recovery mode: bootstrap account remains enabled and scheduled task retained" 'WARN'
   }
 
-  Write-Verbose "Stage B: cleaning RunOnce entries"
-  try {
-    $ro = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
-    $me = $MyInvocation.MyCommand.Path
-    $props = Get-ItemProperty -LiteralPath $ro -ErrorAction SilentlyContinue
-    if ($props) {
-      foreach ($n in ($props | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name)) {
-        $v = (Get-ItemPropertyValue -LiteralPath $ro -Name $n -ErrorAction SilentlyContinue) 2>$null
-        if (($n -eq 'CreatePrimaryAdmin') -or ($v -is [string] -and $me -and ($v -match [regex]::Escape($me))) -or ($v -is [string] -and $v -match 'CreatePrimaryAdmin\.ps1')) {
-          try {
-            Remove-ItemProperty -LiteralPath $ro -Name $n -ErrorAction Stop
-          } catch {
-            Write-SetupLog ("RunOnce entry '{0}' removal failed: {1}" -f $n, $_.Exception.Message) 'WARN'
-          }
-        }
-      }
-      & reg.exe DELETE HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce /v CreatePrimaryAdmin /f | Out-Null 2>$null # Defensive sweep for stubborn values
-      $runOnceRc = $LASTEXITCODE
-      if ($runOnceRc -ne 0 -and $runOnceRc -ne 2) {
-        Write-SetupLog ("RunOnce reg delete rc={0}" -f $runOnceRc) 'WARN'
-      }
-    }
-    Write-SetupLog "RunOnce cleaned"
-  } catch {
-    Write-SetupLog "RunOnce cleanup warning: $($_.Exception.Message)" 'WARN'
-  }
-
   # Stage B: remove transient password source files (best-effort)
   $pwCleanupState = 'skipped'
   $primaryPwCleanupState = 'skipped'
@@ -494,7 +467,6 @@ try {
     $primaryPwCleanupState = 'preserved'
   }
 
-  $finalLogEntries += ("[{0}] RunOnce cleanup complete" -f ([DateTime]::UtcNow.ToString('o')))
   if ($pwCleanupState -ne 'unknown') {
     $finalLogEntries += ("[{0}] bootstrap.pw cleanup state={1}" -f ([DateTime]::UtcNow.ToString('o')), $pwCleanupState)
   }
