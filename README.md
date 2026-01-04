@@ -142,7 +142,7 @@ Interpretation:
 
 2. During pass `specialize`, Windows runs `PreOOBE.cmd` from `%WINDIR%\Setup\Scripts\PreOOBE.cmd`. It applies early privacy and security policies and invokes `BootstrapLocalAdmin.ps1` under SYSTEM. `PreOOBE.cmd` does not touch Winlogon, passwordless, or Task Scheduler, and logs to `%WINDIR%\Panther\PreOOBE.log` (including stdout/stderr from `BootstrapLocalAdmin.ps1`).
 
-3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). Passwords are 24 characters from `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` generated via `RNGCryptoServiceProvider`; `net localgroup` return codes `0` and `2` (`already a member`) are treated as success when adding to Administrators. It does not configure autologon and does not schedule the master. Progress and errors are logged as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries in `PreOOBE.log` without printing the password; on failure the log shows the non-zero RC alongside the preceding bootstrap error lines.
+3. `BootstrapLocalAdmin.ps1` creates the temporary admin account `bootstrap`, assigns a strong password, and writes it to `%WINDIR%\Setup\Scripts\.bootstrap.pw` (UTF-8 no BOM, Hidden+System, ACL: SYSTEM and Administrators). Passwords are 24 characters from `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-` generated via `RNGCryptoServiceProvider`; the account is provisioned via `Microsoft.PowerShell.LocalAccounts` cmdlets (fail-closed if unavailable) so the password is not passed to an external process command line. Administrators group resolution remains locale-agnostic via SID `S-1-5-32-544`. It does not configure autologon and does not schedule the master. Progress and errors are logged as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries in `PreOOBE.log` without printing the password; on failure the log shows the bootstrap error lines and a non-zero exit.
 
 4. After OOBE completes, Windows runs `SetupComplete.cmd` as SYSTEM exactly once. The script:
 
@@ -654,7 +654,7 @@ reg query 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
 ```
 
 ```powershell
-net user bootstrap
+net.exe user bootstrap
 ```
 
 ### Debug mode
@@ -670,6 +670,7 @@ reg add $wl /v AutoAdminLogon /t REG_SZ /d 1 /f
 
 * WSIM validates `Autounattend.xml` without errors.
 * Setup runs to OOBE with a local path, without Microsoft account screens.
+* `BootstrapLocalAdmin.ps1` provisions `bootstrap` without passing the password on any external process command line (no `net.exe user <password>` usage for bootstrap).
 * `SetupComplete.cmd` runs once and writes `%WINDIR%\Panther\SetupComplete.log`.
 * If servicing returns `3010` or `1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set, `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` and preserves any pre-existing flag as a sticky marker. At the first logon, in normal mode when Stage B succeeded, Stage B performs the tri-state pending reboot check, logs the result (state/reasons/errors), and then reboots, clears a stale flag without reboot, or reboots conservatively on `unknown`; in recovery mode or when Stage B fails the script logs the pending reboot, skips the automatic restart, and leaves the flag for manual inspection. See `DECISIONS.md` for full semantics.
 * After the reboot:
@@ -853,7 +854,7 @@ If `.primaryadmin.pw` is missing or invalid, `SetupComplete.cmd` logs the condit
 * Primary admin (default `primaryadmin`) exists, is active, and is a member of `Administrators` (and optionally `Remote Desktop Users`).
 * `DefaultPassword` is absent; `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`; `IgnoreShiftOverride=0`.
 * Policies: `DisableCAD=0`, `DevicePasswordLessBuildVersion=2` in the normal path.
-* `bootstrap` is disabled (`net user bootstrap /active:no`).
+* `bootstrap` is disabled (`net.exe user bootstrap /active:no`); Stage B may invoke the same command during teardown, it carries no password and is not a secret-on-CLI exposure.
 * `%WINDIR%\Panther\SetupComplete.log` contains clean end markers for SetupComplete.
 * `C:\ProgramData\l2c_master_<timestamp>.log` contains `OUTCOME: Success` for the normal path or a clearly marked recovery outcome when applicable.
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist in the normal path.

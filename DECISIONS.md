@@ -783,7 +783,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - The exit-code contract is resilient to localization/encoding and keeps stdout available for diagnostics without risking mis-parsed gate data.
 - The previous stdout/`for /f` contract is deprecated and removed; future changes to secret validation must keep this exit-code bitmask bridge aligned between `ValidateSecrets.ps1` and `SetupComplete.cmd` and be recorded here before code changes.
 
-## ADR-010: ADSI for primaryadmin password; bootstrap remains native in PreOOBE
+## ADR-010: ADSI for primaryadmin password; bootstrap uses LocalAccounts in PreOOBE
 
 **Date:** 2025-12-06
 
@@ -804,6 +804,6 @@ For the long-lived `primaryadmin` account:
   - logs `Skipping deletion because <user> existed before this run`,
   - throws; no deletion is attempted for pre-existing accounts.
 
-The temporary `bootstrap` password stays on native OS tooling in PreOOBE because ADSI proved unreliable there; the early-phase exposure is accepted and documented in `SECURITY.md`.
+The temporary `bootstrap` account is provisioned in PreOOBE via `Microsoft.PowerShell.LocalAccounts` cmdlets with a `SecureString` password, keeping the password out of external process command lines while retaining a native Windows implementation.
 
-**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password may still be observable in short-lived command lines or low-level logs during PreOOBE; this is an intentionally accepted, time-bounded risk for a temporary account that is disabled/cleaned up by the end of the pipeline. If `.bootstrap.pw` ACL hardening fails in `BootstrapLocalAdmin.ps1`, the script logs the failure, attempts to delete the secret, and logs whether it was removed, already absent, or failed to delete; when that cleanup leaves the file missing or empty, `ValidateSecrets`/`SetupComplete` decode it as `bootstrap=0`, keep the gate closed, and do not register Stage B. ADSI failures can no longer leave a freshly created `primaryadmin` orphaned with an unset password: the creation is rolled back and recovery mode is entered; for pre-existing `primaryadmin` the account is preserved but the run still fails closed and drops into recovery.
+**Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password is no longer passed as an argument on an external process command line by `BootstrapLocalAdmin.ps1`, reducing exposure in process-creation command-line telemetry. If `.bootstrap.pw` ACL hardening fails in `BootstrapLocalAdmin.ps1`, the script logs the failure, attempts to delete the secret, and logs whether it was removed, already absent, or failed to delete; when that cleanup leaves the file missing or empty, `ValidateSecrets`/`SetupComplete` decode it as `bootstrap=0`, keep the gate closed, and do not register Stage B. ADSI failures can no longer leave a freshly created `primaryadmin` orphaned with an unset password: the creation is rolled back and recovery mode is entered; for pre-existing `primaryadmin` the account is preserved but the run still fails closed and drops into recovery.
