@@ -701,6 +701,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Stage A of `CreatePrimaryAdmin.ps1` reads `.primaryadmin.pw` directly under SYSTEM and never uses `.bootstrap.pw` or command-line parameters for the password. In this baseline the operator-supplied file is the sole source; missing or invalid secrets abort Stage A and force Stage B into recovery.
 - Stage B of `CreatePrimaryAdmin.ps1` now:
   - Deletes `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword`, and resets `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount`.
+  - Verifies post-action that Winlogon is sanitized (treats read errors as failure); if verification fails, Stage B hard-fails and refuses to teardown the `bootstrap`/`\L2C\CreatePrimaryAdmin` executor path, preserves `.bootstrap.pw` and `.primaryadmin.pw`, and suppresses automatic reboot.
   - Logs `net user bootstrap /active:no` success or WARN with the exact RC.
   - Logs WARN for non-zero RCs from `schtasks.exe /Delete` and still surfaces caught exceptions as WARN.
   - Tracks cleanup state for both `.bootstrap.pw` and `.primaryadmin.pw` in dedicated variables, logs `removed`/`missing`/`error`/`preserved` states for each, and records the resulting state in the Stage B master log summary.

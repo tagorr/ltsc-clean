@@ -34,8 +34,8 @@ S
 
 * [ ] Documentation (README, DECISIONS, AGENTS, SECURITY) describes:
 
-  * [ ] Where exactly `.bootstrap.pw` is created (`%WINDIR%\Setup\Scripts`), who reads it, and when it must be deleted or preserved (normal vs recovery).
-  * [ ] Where `.primaryadmin.pw` is expected to exist (`%WINDIR%\Setup\Scripts`), that it is operator-supplied, who reads it (`SetupComplete.cmd` and Stage A), and when it is deleted or preserved (normal vs recovery).
+  * [ ] Where exactly `.bootstrap.pw` is created (`%WINDIR%\Setup\Scripts`), who reads it, and when it must be deleted or preserved (normal success vs recovery; Winlogon cleanup verification failures preserve it).
+  * [ ] Where `.primaryadmin.pw` is expected to exist (`%WINDIR%\Setup\Scripts`), that it is operator-supplied, who reads it (`SetupComplete.cmd` and Stage A), and when it is deleted or preserved (normal success vs recovery; Winlogon cleanup verification failures preserve it).
 * [ ] In `BootstrapLocalAdmin.ps1`:
 
   * [ ] `.bootstrap.pw` is created at the expected path (`%WINDIR%\Setup\Scripts\.bootstrap.pw`).
@@ -155,7 +155,7 @@ S
 
   * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"` and a valid primary admin secret is present and `FAILED==0`.
   * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first creates the `\L2C\CreatePrimaryAdmin` executor task; only then it writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
-  * [ ] If any Winlogon priming sub-step fails after task creation (password write or `reg add`), SetupComplete logs one or more `[ERROR]` entries (depending on the failing sub-step), sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`, rolls back Winlogon autologon-related values (clears `DefaultUserName`/`DefaultDomainName`/`DefaultPassword`, resets `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount`), and attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`.
+  * [ ] If any Winlogon priming sub-step fails after task creation (password write or `reg add`), SetupComplete logs one or more `[ERROR]` entries (depending on the failing sub-step), sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`, rolls back Winlogon autologon-related values (clears `DefaultUserName`/`DefaultDomainName`, removes `DefaultPassword` (absent), resets `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount`), and attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`.
   * [ ] Temporary logon policy relaxations (`DisableCAD`, `DevicePasswordLessBuildVersion`) occur only when the combined gate passes; skip path logs the gate state.
 
 #### 4.3. CreatePrimaryAdmin task registration (Stage B)
@@ -304,8 +304,9 @@ S
 
 * [ ] Always (in both normal and recovery):
 
-  * [ ] `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword` are cleared.
-  * [ ] `AutoAdminLogon=0`, `ForceAutoLogon=0`, `AutoLogonCount=0`.
+  * [ ] `DefaultUserName` and `DefaultDomainName` are cleared; `DefaultPassword` is removed (absent).
+  * [ ] `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`.
+  * [ ] A post-action verification reads `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` and treats read errors as failures; if `DefaultPassword` is present or any autologon value is present and not `0`, Stage B hard-fails and refuses to disable `bootstrap` or delete `\L2C\CreatePrimaryAdmin` (and suppresses any automatic reboot).
   * [ ] `IgnoreShiftOverride` is set to `REG_SZ=0`.
   * [ ] `DisableCAD` is set to `0`.
 * [ ] Additionally:
@@ -329,8 +330,8 @@ S
 
 * [ ] In normal Stage B mode:
 
-  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are processed for cleanup when present; the script attempts to delete them and records a cleanup state (`removed`, `missing`, `error`, or `preserved`) for each.
-  * [ ] Cleanup states (`removed`, `missing`, `error`) for each file are recorded in the master log.
+  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are processed for cleanup when present; the script attempts to delete them only when Winlogon cleanup verification succeeded (`WinlogonSanitizedOk=$true`) and records a cleanup state (`removed`, `missing`, `error`, or `preserved`) for each.
+  * [ ] Cleanup states (`removed`, `missing`, `error`, `preserved`) for each file are recorded in the master log.
   * [ ] In the happy path, the most recent master log shows `bootstrap.pw cleanup state=removed` and `primaryadmin.pw cleanup state=removed`.
   * [ ] Any `cleanup state=error` is treated as an audit finding requiring follow-up to confirm secrets are not left on disk.
   * [ ] Any cleanup state `error` for either secret triggers the secret cleanup failure branch: `OUTCOME: FAIL - secret cleanup error ...`, `StageB_Succeeded=$false`, and (when `$rc` was `0`) `rc` is set to `3`.
@@ -488,7 +489,7 @@ For each document:
   * [ ] No uncontrolled reboot occurs.
   * [ ] Logs clearly describe where and what failed.
   * [ ] The master log records FAIL with a reason.
-* [ ] `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal path; if they are present, you are either in a recovery scenario or running the master manually (see README for expected behavior).
+* [ ] `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal success path; if they are present, you are either in a recovery scenario, after a Winlogon cleanup verification failure, or running the master manually (see README for expected behavior).
 * [ ] FINAL_RC aggregation matches behavior: `L2C_FIRST_BAD_RC` wins if present; otherwise `FINAL_RC=1` when `FAILED==1`, else `0`.
 
 ---
