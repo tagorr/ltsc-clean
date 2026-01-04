@@ -245,8 +245,8 @@ Common work:
 
 * restore Winlogon configuration:
 
-  * clear `DefaultPassword`, `AutoLogonCount`, and other AutoAdminLogon related values;
-  * set `AutoAdminLogon=0` and `ForceAutoLogon=0` (REG_SZ);
+  * remove `DefaultPassword` (must be absent) and ensure other AutoAdminLogon related values (including `AutoLogonCount`) are absent or `0`;
+  * ensure `AutoAdminLogon` and `ForceAutoLogon` are absent or `0` (REG_SZ);
   * reset `IgnoreShiftOverride` to a safe value;
 * reconcile logon related policies:
 
@@ -296,7 +296,7 @@ Stage B records one cleanup state per secret in `%ProgramData%\l2c_master_<times
 Diagnostics checklist:
 
 * primary admin is present and in Administrators (and Remote Desktop Users if desired);
-* `DefaultPassword` and `AutoLogonCount` are absent; `AutoAdminLogon=0` and `ForceAutoLogon=0`;
+* `DefaultPassword` is absent; `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`;
 * `DisableCAD=0` and `DevicePasswordLessBuildVersion=2` in the normal path, `0` in recovery while diagnostics are ongoing;
 * `bootstrap` is disabled in the normal path and remains enabled in the recovery path;
 * `.bootstrap.pw` and `.primaryadmin.pw` have been deleted in the normal path and preserved in recovery;
@@ -437,8 +437,9 @@ Policies while primed:
 
 Post conditions on a successful normal run:
 
-* `AutoAdminLogon = 0`
-* `ForceAutoLogon = 0`
+* `AutoAdminLogon` is absent or `0`
+* `ForceAutoLogon` is absent or `0`
+* `AutoLogonCount` is absent or `0`
 * `DefaultPassword` is absent
 * `bootstrap` is disabled
 * `primaryadmin` is in `Administrators` (and optionally in `Remote Desktop Users`)
@@ -762,8 +763,10 @@ PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePri
    * Stage A creates or updates the primary local admin (`primaryadmin` by default) and adds it to required groups; it reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM and never reads `.bootstrap.pw`;
    * Stage B:
      * in the normal path:
-       * restores logon policies (`DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, clears `DefaultPassword` and related values);
-       * disables `bootstrap`, deletes the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`; secret cleanup errors keep `StageB_Succeeded=$false`, set a FAIL outcome, and suppress any automatic reboot even if the Panther flag exists;
+       * restores logon policies (`DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, removes `DefaultPassword` and related values), then verifies that Winlogon is actually sanitized (`DefaultPassword` absent and `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount` absent or `0`);
+       * if Winlogon cleanup verification fails or cannot be performed, Stage B hard-fails, leaves `bootstrap` enabled, retains the `\L2C\CreatePrimaryAdmin` scheduled task, and suppresses any automatic reboot even if the Panther flag exists;
+       * on success, disables `bootstrap`, deletes the scheduled task and both `.bootstrap.pw` and `.primaryadmin.pw`;
+       * secret cleanup errors keep `StageB_Succeeded=$false`, set a FAIL outcome, and suppress any automatic reboot even if the Panther flag exists;
        * if `_needs_reboot.flag` exists and Stage B completed successfully in normal mode, Stage B performs a tri-state pending reboot check, logs the result (state/reasons/errors), and then either consumes the flag and reboots, clears the stale flag without reboot, or reboots conservatively on `unknown`; see `DECISIONS.md` for full semantics.
      * in the recovery path:
        * sets `DevicePasswordLessBuildVersion=0`, keeps `bootstrap`, the task, and both password source files for another attempt;
@@ -836,7 +839,7 @@ Practical testing:
 7. Wait for `CreatePrimaryAdmin.ps1` to run via the `\L2C\CreatePrimaryAdmin` task. After it completes, verify:
 
    * no `DefaultPassword` value under Winlogon;
-   * `AutoAdminLogon=0` and `ForceAutoLogon=0` (REG_SZ);
+   * `AutoAdminLogon` and `ForceAutoLogon` (REG_SZ), and `AutoLogonCount` are absent or `0`;
    * `DisableCAD=0`;
    * `DevicePasswordLessBuildVersion=2` in the normal path;
    * `bootstrap` is disabled;
@@ -848,7 +851,7 @@ If `.primaryadmin.pw` is missing or invalid, `SetupComplete.cmd` logs the condit
 ## Acceptance checklist after first logon
 
 * Primary admin (default `primaryadmin`) exists, is active, and is a member of `Administrators` (and optionally `Remote Desktop Users`).
-* There is no `DefaultPassword` and no `AutoLogonCount`; `AutoAdminLogon=0`, `ForceAutoLogon=0`, `IgnoreShiftOverride=0`.
+* `DefaultPassword` is absent; `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`; `IgnoreShiftOverride=0`.
 * Policies: `DisableCAD=0`, `DevicePasswordLessBuildVersion=2` in the normal path.
 * `bootstrap` is disabled (`net user bootstrap /active:no`).
 * `%WINDIR%\Panther\SetupComplete.log` contains clean end markers for SetupComplete.
@@ -869,7 +872,7 @@ reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v Di
 
 Common causes:
 
-* `DefaultPassword` is empty or does not match the `bootstrap` password.
+* `DefaultPassword` is missing or does not match the `bootstrap` password.
 * `AutoAdminLogon` and `ForceAutoLogon` are not `REG_SZ`.
 * `DefaultDomainName` does not equal the computer name.
 * `LegalNotice*` are already configured, or `DontDisplayLastUserName=1`.

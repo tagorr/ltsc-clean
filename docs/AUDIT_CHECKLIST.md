@@ -155,7 +155,7 @@ S
 
   * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"` and a valid primary admin secret is present and `FAILED==0`.
   * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first creates the `\L2C\CreatePrimaryAdmin` executor task; only then it writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
-  * [ ] If any Winlogon priming sub-step fails after task creation (password write or `reg add`), SetupComplete logs one or more `[ERROR]` entries (depending on the failing sub-step), sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`, rolls back Winlogon autologon-related values (clears `DefaultUserName`/`DefaultDomainName`/`DefaultPassword`, resets `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount`), and attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`.
+  * [ ] If any Winlogon priming sub-step fails after task creation (password write or `reg add`), SetupComplete logs one or more `[ERROR]` entries (depending on the failing sub-step), sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`, rolls back Winlogon autologon-related values (clears `DefaultUserName`/`DefaultDomainName`, removes `DefaultPassword` (absent), resets `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount`), and attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`.
   * [ ] Temporary logon policy relaxations (`DisableCAD`, `DevicePasswordLessBuildVersion`) occur only when the combined gate passes; skip path logs the gate state.
 
 #### 4.3. CreatePrimaryAdmin task registration (Stage B)
@@ -304,8 +304,9 @@ S
 
 * [ ] Always (in both normal and recovery):
 
-  * [ ] `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword` are cleared.
-  * [ ] `AutoAdminLogon=0`, `ForceAutoLogon=0`, `AutoLogonCount=0`.
+  * [ ] `DefaultUserName` and `DefaultDomainName` are cleared; `DefaultPassword` is removed (absent).
+  * [ ] `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`.
+  * [ ] A post-action verification reads `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` and treats read errors as failures; if `DefaultPassword` is present or any autologon value is present and not `0`, Stage B hard-fails and refuses to disable `bootstrap` or delete `\L2C\CreatePrimaryAdmin` (and suppresses any automatic reboot).
   * [ ] `IgnoreShiftOverride` is set to `REG_SZ=0`.
   * [ ] `DisableCAD` is set to `0`.
 * [ ] Additionally:

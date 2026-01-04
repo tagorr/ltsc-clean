@@ -101,6 +101,54 @@ function Reg-Del([string]$Key, [string]$Name) {
   }
 }
 
+function Get-RegValueState([string]$KeyPath, [string]$Name) {
+  try {
+    $item = Get-ItemProperty -LiteralPath $KeyPath -ErrorAction Stop
+    $prop = $item.PSObject.Properties[$Name]
+    if ($null -eq $prop) {
+      return [pscustomobject]@{ State = 'absent'; Value = $null; Error = $null }
+    }
+    return [pscustomobject]@{ State = 'present'; Value = $prop.Value; Error = $null }
+  } catch {
+    $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+    return [pscustomobject]@{ State = 'error'; Value = $null; Error = $msg }
+  }
+}
+
+function Test-ZeroDisabled([object]$Value) {
+  if ($null -eq $Value) { return $false }
+  try {
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [uint32] -or $Value -is [uint64] -or $Value -is [byte]) {
+      return ([int64]$Value -eq 0)
+    }
+    return ($Value.ToString().Trim() -eq '0')
+  } catch {
+    return $false
+  }
+}
+
+function Test-WinlogonSanitized([string]$WinlogonKeyPath) {
+  $reasons = New-Object System.Collections.Generic.List[string]
+
+  $dp = Get-RegValueState -KeyPath $WinlogonKeyPath -Name 'DefaultPassword'
+  if ($dp.State -eq 'error') {
+    [void]$reasons.Add(("DefaultPassword read error: {0}" -f $dp.Error))
+  } elseif ($dp.State -eq 'present') {
+    [void]$reasons.Add('DefaultPassword still present')
+  }
+
+  foreach ($name in @('AutoAdminLogon','ForceAutoLogon','AutoLogonCount')) {
+    $v = Get-RegValueState -KeyPath $WinlogonKeyPath -Name $name
+    if ($v.State -eq 'error') {
+      [void]$reasons.Add(("{0} read error: {1}" -f $name, $v.Error))
+    } elseif ($v.State -eq 'present' -and -not (Test-ZeroDisabled $v.Value)) {
+      [void]$reasons.Add(("{0} not disabled (value={1})" -f $name, $v.Value))
+    }
+  }
+
+  return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); Reasons = @($reasons) }
+}
+
 function Test-SystemRebootPending {
   $reasons = New-Object System.Collections.Generic.List[string]
   $errors  = New-Object System.Collections.Generic.List[string]
@@ -268,6 +316,7 @@ $StageA_Succeeded = $false
 $StageA_RC = 0
 $StageAAbortReason = $null
 $StageB_Succeeded = $false
+$WinlogonSanitizedOk = $true
 
 Write-SetupLog "Begin A: Primary admin creation/config"
 try {
@@ -397,31 +446,46 @@ try {
   }
   $finalLogEntries += ("[{0}] Winlogon and logon policies reset" -f ([DateTime]::UtcNow.ToString('o')))
 
-  if (-not $isRecovery) {
-    Write-Verbose "Stage B: deactivating bootstrap account"
-    & net.exe user bootstrap /active:no | Out-Null 2>$null
-    $bootstrapRC = $LASTEXITCODE
-    if ($bootstrapRC -eq 0) {
-      Write-SetupLog "bootstrap deactivated"
-    } else {
-      Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
-    }
-    $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
+  $wlPs = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+  $wlTest = Test-WinlogonSanitized -WinlogonKeyPath $wlPs
+  if (-not $wlTest.Ok) {
+    $WinlogonSanitizedOk = $false
+    Write-SetupLog 'HARD FAIL: Winlogon cleanup verification failed; refusing to teardown executor/bootstrap.' 'ERROR'
+    foreach ($r in $wlTest.Reasons) { Write-SetupLog ("Winlogon verify: {0}" -f $r) 'ERROR' }
+    $finalLogEntries += ("[{0}] HARD FAIL: Winlogon cleanup verification failed; executor/bootstrap teardown suppressed" -f ([DateTime]::UtcNow.ToString('o')))
+    foreach ($r in $wlTest.Reasons) { $finalLogEntries += ("[{0}] Winlogon verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $r) }
+    if ($rc -eq 0) { $rc = 4 }
+  }
 
-    Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
-    $taskDeleteRC = -1
-    try {
-      & schtasks.exe /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
-      $taskDeleteRC = $LASTEXITCODE
-      if ($taskDeleteRC -eq 0) {
-        Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
-      } elseif ($taskDeleteRC -ne 0) {
-        Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
+  if (-not $isRecovery) {
+    if ($WinlogonSanitizedOk) {
+      Write-Verbose "Stage B: deactivating bootstrap account"
+      & net.exe user bootstrap /active:no | Out-Null 2>$null
+      $bootstrapRC = $LASTEXITCODE
+      if ($bootstrapRC -eq 0) {
+        Write-SetupLog "bootstrap deactivated"
+      } else {
+        Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
       }
-    } catch {
-      Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
+      $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
+
+      Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
+      $taskDeleteRC = -1
+      try {
+        & schtasks.exe /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
+        $taskDeleteRC = $LASTEXITCODE
+        if ($taskDeleteRC -eq 0) {
+          Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
+        } elseif ($taskDeleteRC -ne 0) {
+          Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
+        }
+      } catch {
+        Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
+      }
+      $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
+    } else {
+      Write-SetupLog 'Winlogon cleanup verification failed; leaving bootstrap account enabled and scheduled task retained' 'ERROR'
     }
-    $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
   } else {
     Write-SetupLog "Recovery mode: bootstrap account remains enabled and scheduled task retained" 'WARN'
   }
@@ -491,6 +555,8 @@ try {
     $outcomeLine = "OUTCOME: ABORTED - $StageAAbortReason"
   } elseif ($SecretCleanupError) {
     $outcomeLine = 'OUTCOME: FAIL - secret cleanup error (bootstrap/primaryadmin secrets not removed)'
+  } elseif ($StageA_Succeeded -and (-not $WinlogonSanitizedOk)) {
+    $outcomeLine = 'OUTCOME: FAIL - Winlogon cleanup verification failed (executor/bootstrap retained)'
   } elseif ($StageA_Succeeded) {
     $outcomeLine = 'OUTCOME: SUCCESS'
   } else {
@@ -499,11 +565,15 @@ try {
   $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
   $sw.WriteLine($outcomeLine)
   $sw.Dispose()
-  $outcomeLevel = if ($SecretCleanupError) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
+  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk)) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
   if ($SecretCleanupError) {
     Write-SetupLog "End B (FAIL - secret cleanup error)" 'ERROR'
     if ($rc -eq 0) { $rc = 3 }
+    $StageB_Succeeded = $false
+  } elseif (-not $WinlogonSanitizedOk) {
+    Write-SetupLog "End B (FAIL - Winlogon cleanup verification failed)" 'ERROR'
+    if ($rc -eq 0) { $rc = 4 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded) {
     Write-SetupLog "End B (SUCCESS)"
