@@ -409,123 +409,6 @@ exit /b 0
 
 :main
 
-REM === [L2C] Winlogon bootstrap + CAD/NGC policies (idempotent) ===
-set "WL=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-set "SYS=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc"
-
-REM Password source (created by BootstrapLocalAdmin.ps1):
-set "PWFILE=%L2C_BOOTSTRAP_SECRET%"
-
-REM Secret ACL/attribute validation (exit code bitmask from ValidateSecrets.ps1)
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
-  -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
-  -BootstrapPath "%L2C_BOOTSTRAP_SECRET%" ^
-  -PrimaryAdminPath "%L2C_PRIMARYADMIN_SECRET%" >nul 2>&1
-
-set "RC=%ERRORLEVEL%"
-
-set "L2C_BOOTSTRAP_PW_ACL_OK=0"
-set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
-
-if "%RC%"=="4" (
-  set "FAILED=1"
-  call :log "[ERROR] Secret validator internal failure (rc=4); treating both secrets as invalid"
-) else (
-  set /a TMP=RC ^& 1
-  set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
-  set /a TMP=RC ^& 2
-  set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
-)
-
-set "TMP="
-call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%, primaryadmin=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
-
-REM Bootstrap secret presence check
-if exist "%PWFILE%" (
-  set "BOOTSTRAP_CHECK="
-  REM Read the first line of the file, standard set /p VAR=<FILE syntax
-  set /p BOOTSTRAP_CHECK=<"%PWFILE%"
-)
-if defined BOOTSTRAP_CHECK set "HAS_BOOTSTRAP_PW=1"
-set "BOOTSTRAP_CHECK="
-
-:after_pw_check
-REM Bootstrap secret gate
-if not "%HAS_BOOTSTRAP_PW%"=="1" (
-  set "FAILED=1"
-  call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
-)
-if "%HAS_BOOTSTRAP_PW%"=="1" if not "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
-  set "FAILED=1"
-  call :log "[ERROR] .bootstrap.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
-)
-
-REM Primary admin secret SEC-2 gate: ACL/attributes must be valid before reading
-if "%FAILED%"=="0" (
-  if exist "%L2C_PRIMARYADMIN_SECRET%" (
-    if not "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-      set "FAILED=1"
-      call :log "[ERROR] .primaryadmin.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
-    )
-  )
-)
-
-REM Primary admin secret presence and load gate
-if "%FAILED%"=="0" (
-  if not exist "%L2C_PRIMARYADMIN_SECRET%" (
-    call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" not found; Stage B registration will be skipped."
-  ) else (
-    REM Read and validate primary admin password only if SEC-2 passed for .primaryadmin.pw
-    if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-      set "L2C_PRIMARYADMIN_PASSWORD="
-      REM Read the password, ignoring Hidden/System attributes
-      set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
-      REM TEMP: skip trimming; empty is validated by validate_primaryadmin_password helper
-      call :validate_primaryadmin_password
-      if errorlevel 1 (
-        call :log "[ERROR] primary admin password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
-      ) else (
-        set "L2C_HAS_PRIMARYADMIN_SECRET=1"
-        call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
-      )
-    )
-  )
-)
-
-REM If we are still not in FAILED, require that primary admin secret has been successfully loaded
-if "%FAILED%"=="0" if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
-  set "FAILED=1"
-)
-
-set "L2C_PRIMARYADMIN_PASSWORD="
-
-REM Temporary logon policies
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-  REM Temp logon relax, only if secret present
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
-) else (
-  call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
-)
-reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
-
-REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
-REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-  call :l2c_stageb_schedule_and_prime
-) else (
-  call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
-  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
-  set "STAGEB_SKIPPED_GATE=1"
-  set "STAGEB_NOT_SCHEDULED=1"
-)
-
-REM === [L2C] Recovery gate (no extra registrations on failure) ===
-if "%FAILED%"=="1" (
-  call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
-)
-
 :: ------------ Edge Update policies ------------
 call :log "[SECTION] Edge Update policies"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "UpdateDefault" "REG_DWORD" "0"
@@ -694,6 +577,123 @@ if exist "%DEFNTUSER%" (
 powercfg -h off >nul 2>&1
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul 2>&1
 powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
+
+REM === [L2C] Winlogon bootstrap + CAD/NGC policies (idempotent) ===
+set "WL=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+set "SYS=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+set "NGC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc"
+
+REM Password source (created by BootstrapLocalAdmin.ps1):
+set "PWFILE=%L2C_BOOTSTRAP_SECRET%"
+
+REM Secret ACL/attribute validation (exit code bitmask from ValidateSecrets.ps1)
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
+  -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
+  -BootstrapPath "%L2C_BOOTSTRAP_SECRET%" ^
+  -PrimaryAdminPath "%L2C_PRIMARYADMIN_SECRET%" >nul 2>&1
+
+set "RC=%ERRORLEVEL%"
+
+set "L2C_BOOTSTRAP_PW_ACL_OK=0"
+set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
+
+if "%RC%"=="4" (
+  set "FAILED=1"
+  call :log "[ERROR] Secret validator internal failure (rc=4); treating both secrets as invalid"
+) else (
+  set /a TMP=RC ^& 1
+  set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
+  set /a TMP=RC ^& 2
+  set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
+)
+
+set "TMP="
+call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%, primaryadmin=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
+
+REM Bootstrap secret presence check
+if exist "%PWFILE%" (
+  set "BOOTSTRAP_CHECK="
+  REM Read the first line of the file, standard set /p VAR=<FILE syntax
+  set /p BOOTSTRAP_CHECK=<"%PWFILE%"
+)
+if defined BOOTSTRAP_CHECK set "HAS_BOOTSTRAP_PW=1"
+set "BOOTSTRAP_CHECK="
+
+:after_pw_check
+REM Bootstrap secret gate
+if not "%HAS_BOOTSTRAP_PW%"=="1" (
+  set "FAILED=1"
+  call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
+)
+if "%HAS_BOOTSTRAP_PW%"=="1" if not "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
+  set "FAILED=1"
+  call :log "[ERROR] .bootstrap.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
+)
+
+REM Primary admin secret SEC-2 gate: ACL/attributes must be valid before reading
+if "%FAILED%"=="0" (
+  if exist "%L2C_PRIMARYADMIN_SECRET%" (
+    if not "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+      set "FAILED=1"
+      call :log "[ERROR] .primaryadmin.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
+    )
+  )
+)
+
+REM Primary admin secret presence and load gate
+if "%FAILED%"=="0" (
+  if not exist "%L2C_PRIMARYADMIN_SECRET%" (
+    call :log "[ERROR] primary admin secret file \"%L2C_PRIMARYADMIN_SECRET%\" not found; Stage B registration will be skipped."
+  ) else (
+    REM Read and validate primary admin password only if SEC-2 passed for .primaryadmin.pw
+    if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+      set "L2C_PRIMARYADMIN_PASSWORD="
+      REM Read the password, ignoring Hidden/System attributes
+      set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
+      REM TEMP: skip trimming; empty is validated by validate_primaryadmin_password helper
+      call :validate_primaryadmin_password
+      if errorlevel 1 (
+        call :log "[ERROR] primary admin password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
+      ) else (
+        set "L2C_HAS_PRIMARYADMIN_SECRET=1"
+        call :log "[INFO] primary admin secret loaded from .primaryadmin.pw"
+      )
+    )
+  )
+)
+
+REM If we are still not in FAILED, require that primary admin secret has been successfully loaded
+if "%FAILED%"=="0" if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
+  set "FAILED=1"
+)
+
+set "L2C_PRIMARYADMIN_PASSWORD="
+
+REM Temporary logon policies
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+  REM Temp logon relax, only if secret present
+  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
+  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+) else (
+  call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
+)
+reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
+
+REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
+REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+  call :l2c_stageb_schedule_and_prime
+) else (
+  call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
+  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
+  set "STAGEB_SKIPPED_GATE=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+)
+
+REM === [L2C] Recovery gate (no extra registrations on failure) ===
+if "%FAILED%"=="1" (
+  call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
+)
 
 :: ------------ mark reboot requirement via panther flag ------------
 if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (

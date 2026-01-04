@@ -43,7 +43,7 @@ S
   * [ ] File ACL is restricted (SYSTEM + Administrators only), inheritance disabled, Hidden + System attributes set.
 * [ ] In `SetupComplete.cmd`:
 
-  * [ ] `ValidateSecrets.ps1` is invoked near the start with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors.
+  * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors.
   * [ ] When the validator returns `4`, `SetupComplete.cmd` logs an explicit internal-failure message (rc=4), sets `FAILED=1`, keeps both ACL flags at `0`, and treats both secrets as invalid for gating.
   * [ ] There is a check for the existence of `.bootstrap.pw` and that the file is not empty (at least one non-empty line).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
@@ -118,6 +118,7 @@ S
 
   * [ ] Uses a single tracking path via `L2C_FIRST_BAD_RC`.
   * [ ] Does not lose the first non-success RC.
+* [ ] Execution order: DISM feature/capability servicing occurs before the Stage B gateway (secret validation + gate + optional scheduling/Winlogon priming), and the gateway runs before the Panther reboot-flag evaluation section.
 * [ ] Start and end logging:
 
   * [ ] `----- SetupComplete started -----`.
