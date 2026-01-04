@@ -94,8 +94,9 @@ S
 
   * [ ] Runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` (same defensive posture as `CreatePrimaryAdmin.ps1`).
   * [ ] Creates a temporary `bootstrap` account with minimal required rights where applicable.
-  * [ ] Sets or updates the password using only expected commands (PowerShell or `net.exe`).
-  * [ ] Marks `bootstrap` as active (`/active:yes`) if required by the scenario.
+  * [ ] Sets or updates the password using `Microsoft.PowerShell.LocalAccounts` cmdlets (with `SecureString`).
+  * [ ] Does not pass the bootstrap password as an argument on any external process command line (for example, no `net.exe user <user> <password> ...`).
+  * [ ] Ensures `bootstrap` is enabled (`Enable-LocalUser`) if required by the scenario.
   * [ ] Emits `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines in `%WINDIR%\Panther\PreOOBE.log` for key lifecycle steps (account creation, password set/activate, Administrators membership, `.bootstrap.pw` write/ACL/attributes).
   * [ ] Bootstrap log entries do not include the password or derived secret values (technical actions/errors only).
   * [ ] Does not leave extra handlers or resources (including tasks that are not described in the design).
