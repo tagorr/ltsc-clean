@@ -493,7 +493,7 @@ try {
   # Stage B: remove transient password source files (best-effort)
   $pwCleanupState = 'skipped'
   $primaryPwCleanupState = 'skipped'
-  if (-not $isRecovery) {
+  if (-not $isRecovery -and $WinlogonSanitizedOk) {
     $pwCleanupState = 'unknown'
     $primaryPwCleanupState = 'unknown'
     try {
@@ -525,8 +525,12 @@ try {
       Write-SetupLog ("primaryadmin.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
       $primaryPwCleanupState = 'error'
     }
-  } else {
+  } elseif ($isRecovery) {
     Write-SetupLog 'Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt' 'WARN'
+    $pwCleanupState = 'preserved'
+    $primaryPwCleanupState = 'preserved'
+  } else {
+    Write-SetupLog 'Winlogon cleanup verification failed; preserving bootstrap.pw and primaryadmin.pw' 'ERROR'
     $pwCleanupState = 'preserved'
     $primaryPwCleanupState = 'preserved'
   }
