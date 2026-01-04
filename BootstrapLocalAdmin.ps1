@@ -37,46 +37,93 @@ try {
 
     Write-BootstrapLog ("Starting bootstrap for local admin '{0}'" -f $u)
 
+    # Require LocalAccounts cmdlets (avoid secret-on-CLI)
+    try {
+        Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop
+
+        $requiredCmdlets = @(
+            'Get-LocalUser',
+            'New-LocalUser',
+            'Set-LocalUser',
+            'Enable-LocalUser',
+            'Get-LocalGroup',
+            'Get-LocalGroupMember',
+            'Add-LocalGroupMember'
+        )
+
+        foreach ($c in $requiredCmdlets) {
+            if (-not (Get-Command -Name $c -ErrorAction SilentlyContinue)) {
+                throw [System.Exception]::new("Missing required cmdlet '$c'.")
+            }
+        }
+    } catch {
+        Write-BootstrapLog ("LocalAccounts module/cmdlets unavailable: {0}" -f $_.Exception.Message) 'ERROR'
+        throw
+    }
+
+    $pwSecure = ConvertTo-SecureString -String $PasswordPlain -AsPlainText -Force
+
     # Ensure user exists; create if missing (rc 0 = created, 2 = already exists)
     Write-BootstrapLog ("Ensuring local user '{0}' exists" -f $u)
-    & net.exe user $u $PasswordPlain /add /y | Out-Null 2>$null
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0 -and $rc -ne 2) {
-        Write-BootstrapLog ("Failed to create user '{0}' (rc={1})" -f $u, $rc) 'ERROR'
-        throw [System.Exception]::new("Failed to create user '$u' (rc=$rc).")
-    } elseif ($rc -eq 0) {
-        Write-BootstrapLog ("Local user '{0}' created" -f $u)
-    } else {
-        Write-BootstrapLog ("Local user '{0}' already exists" -f $u)
+    try {
+        $existingUser = Get-LocalUser -Name $u -ErrorAction SilentlyContinue
+        if ($null -eq $existingUser) {
+            New-LocalUser -Name $u -Password $pwSecure -ErrorAction Stop | Out-Null
+            Write-BootstrapLog ("Local user '{0}' created" -f $u)
+        } else {
+            Write-BootstrapLog ("Local user '{0}' already exists" -f $u)
+        }
+    } catch {
+        Write-BootstrapLog ("Failed to create user '{0}': {1}" -f $u, $_.Exception.Message) 'ERROR'
+        throw
     }
 
     # Always set password explicitly and activate
     Write-BootstrapLog ("Setting password and activating '{0}'" -f $u)
-    & net.exe user $u $PasswordPlain /active:yes | Out-Null 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        $rc = $LASTEXITCODE
-        Write-BootstrapLog ("Failed to set password/activate '{0}' (rc={1})" -f $u, $rc) 'ERROR'
-        throw [System.Exception]::new("Failed to set password/activate '$u' (rc=$rc).")
+    try {
+        Set-LocalUser -Name $u -Password $pwSecure -ErrorAction Stop
+        Enable-LocalUser -Name $u -ErrorAction Stop
+    } catch {
+        Write-BootstrapLog ("Failed to set password/activate '{0}': {1}" -f $u, $_.Exception.Message) 'ERROR'
+        throw
     }
 
     # Resolve Administrators via SID to stay locale-agnostic
     $adminsSid = [System.Security.Principal.SecurityIdentifier]'S-1-5-32-544'
-    $adminsAccount = $adminsSid.Translate([System.Security.Principal.NTAccount])
-    $adminGroup = $adminsAccount.Value.Split('\')[-1]
+    try {
+        $adminGroup = (Get-LocalGroup -SID $adminsSid.Value -ErrorAction Stop).Name
+    } catch {
+        Write-BootstrapLog ("Failed to resolve Administrators group via SID '{0}': {1}" -f $adminsSid.Value, $_.Exception.Message) 'ERROR'
+        throw
+    }
 
     Write-BootstrapLog ("Resolved Administrators group as '{0}'" -f $adminGroup)
 
     # Add to Administrators (2 = already a member)
     Write-BootstrapLog ("Adding '{0}' to local group '{1}'" -f $u, $adminGroup)
-    & net.exe localgroup $adminGroup $u /add | Out-Null 2>$null
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0 -and $rc -ne 2) {
-        Write-BootstrapLog ("Failed to add '{0}' to Administrators (rc={1})" -f $u, $rc) 'ERROR'
-        throw [System.Exception]::new("Failed to add '$u' to Administrators (rc=$rc).")
-    } elseif ($rc -eq 0) {
-        Write-BootstrapLog ("User '{0}' added to Administrators" -f $u)
-    } else {
-        Write-BootstrapLog ("User '{0}' already in Administrators" -f $u)
+    try {
+        $members = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
+        $uFull = ('{0}\{1}' -f $env:COMPUTERNAME, $u)
+
+        $alreadyMember = $false
+        foreach ($m in $members) {
+            if ($null -ne $m -and $null -ne $m.Name) {
+                if ($m.Name -ieq $uFull -or $m.Name -ieq $u -or $m.Name -ieq ('.\{0}' -f $u)) {
+                    $alreadyMember = $true
+                    break
+                }
+            }
+        }
+
+        if ($alreadyMember) {
+            Write-BootstrapLog ("User '{0}' already in Administrators" -f $u)
+        } else {
+            Add-LocalGroupMember -Group $adminGroup -Member $uFull -ErrorAction Stop
+            Write-BootstrapLog ("User '{0}' added to Administrators" -f $u)
+        }
+    } catch {
+        Write-BootstrapLog ("Failed to add '{0}' to Administrators: {1}" -f $u, $_.Exception.Message) 'ERROR'
+        throw
     }
 
     $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
@@ -102,7 +149,13 @@ try {
         $acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
 
         $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule 'NT AUTHORITY\SYSTEM','FullControl','Allow'
-        $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsAccount,'FullControl','Allow'
+        try {
+            $adminsNtAccount = $adminsSid.Translate([System.Security.Principal.NTAccount])
+        } catch {
+            Write-BootstrapLog ("Failed to translate Administrators SID '{0}' to NTAccount for ACL: {1}" -f $adminsSid.Value, $_.Exception.Message) 'ERROR'
+            throw
+        }
+        $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsNtAccount,'FullControl','Allow'
 
         [void]$acl.AddAccessRule($ruleSystem)
         [void]$acl.AddAccessRule($ruleAdmins)
