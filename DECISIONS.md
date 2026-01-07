@@ -25,17 +25,19 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
 
-- **Context:** Stage A could fail on the message `ADSI update failed for $User:` — PowerShell 5.1 parsed `$User:` incorrectly and aborted during the ADSI update.
+- **Context:** In the older ADSI-based Stage A, the message `ADSI update failed for $User:` could fail because PowerShell 5.1 parsed `$User:` incorrectly and aborted during the ADSI update.
 
 - **Decision:** narrowly replace the text with `ADSI update failed for ${User}:` with no other script changes.
 
 - **Consequences:** fatal Stage A stopper removed; run predictability improved.
 
+- **Status:** historical (Stage A now uses `Microsoft.PowerShell.LocalAccounts` instead of ADSI).
+
 - **Related:** see “Idempotent Stage A; guard Stage B” about Stage A idempotence and the Stage B guard.
 
 ## 2A. Move servicing from XML into SetupComplete
 
-- **Constraint (SKU):** Target **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs. Reason: `AllowTelemetry=0` (Security level) is supported on Enterprise.
+**Constraint (SKU):** Target **Windows 10 Enterprise LTSC 2021 (EnterpriseS)** or compatible **Enterprise** SKUs. Reason: `AllowTelemetry=0` (Security level) is supported on Enterprise.
 
 **Decision.** All DISM operations and policies (IE/Edge, Delivery Optimization, telemetry, OneDrive, etc.) run in `SetupComplete.cmd`. The `Autounattend.xml` stays minimal (`windowsPE`, `generalize`, `specialize`, `oobeSystem` only), with no `FirstLogonCommands`.
 
@@ -630,6 +632,8 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 - Guarding the Panther-flag-based reboot with Stage B success prevents unwanted reboots when account provisioning or cleanup fails, reducing lockout risk while still providing recovery behavior.
 
+**Status:** superseded (Stage A no longer uses ADSI; see ADR-011).
+
 ## ADR-006: EOL policy (CRLF for scripts, LF for Markdown)
 
 **Date:** 2025-10-13
@@ -807,3 +811,21 @@ For the long-lived `primaryadmin` account:
 The temporary `bootstrap` account is provisioned in PreOOBE via `Microsoft.PowerShell.LocalAccounts` cmdlets with a `SecureString` password, keeping the password out of external process command lines while retaining a native Windows implementation.
 
 **Consequences:** The `primaryadmin` password no longer appears in process command lines or Security 4688 logs, aligning with audit expectations for the final admin identity. The bootstrap password is no longer passed as an argument on an external process command line by `BootstrapLocalAdmin.ps1`, reducing exposure in process-creation command-line telemetry. If `.bootstrap.pw` ACL hardening fails in `BootstrapLocalAdmin.ps1`, the script logs the failure, attempts to delete the secret, and logs whether it was removed, already absent, or failed to delete; when that cleanup leaves the file missing or empty, `ValidateSecrets`/`SetupComplete` decode it as `bootstrap=0`, keep the gate closed, and do not register Stage B. ADSI failures can no longer leave a freshly created `primaryadmin` orphaned with an unset password: the creation is rolled back and recovery mode is entered; for pre-existing `primaryadmin` the account is preserved but the run still fails closed and drops into recovery.
+
+**Status:** superseded (Stage A no longer uses ADSI; see ADR-011).
+
+## ADR-011: LocalAccounts for primaryadmin password (supersedes ADR-010)
+
+**Date:** 2026-01-07
+
+**Context:** Reduce legacy ADSI surface area while keeping the password off external process command lines and preserving fail-closed + recovery entrypoint semantics.
+
+**Decision:**
+
+- Stage A requires a 64-bit PowerShell process and `Microsoft.PowerShell.LocalAccounts` availability; missing prerequisites are treated as a hard preflight failure.
+- The password is applied via `New-LocalUser`/`Set-LocalUser` with a `SecureString`; the password is never passed as plaintext on an external process command line.
+- Stage A creates or updates the local user, enables it, and enforces required local group membership via SID-based group resolution (`Get-LocalGroup -SID` + `Add-LocalGroupMember`).
+- Rollback remains fail-closed and observable: when Stage A created `primaryadmin` during this run and a later Stage A step fails, it attempts best-effort rollback via `Remove-LocalUser` and forces recovery; when the user existed before this run, Stage A does not delete it on failure.
+- For pre-existing users only, Stage A makes a best-effort attempt to clear “must change password at next logon” via `net.exe user <user> /logonpasswordchg:no` (no secrets on CLI).
+
+**Consequences:** The password remains off external process command lines and task XML, while Stage A no longer depends on ADSI. Failure modes remain fail-closed and preserve the recovery entrypoint (scheduled task + bootstrap + secrets) for operator investigation and retry.
