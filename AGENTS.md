@@ -167,4 +167,4 @@ Disclaimer: this is a manual engineering test. Inside `SetupComplete.cmd` no reb
 * Run `schtasks /Query /TN "\L2C\CreatePrimaryAdmin"`. If the task is missing, register it again (see README → "Registering the master task in Task Scheduler"). Ensure that `.bootstrap.pw` is absent before a manual rerun, or that it contains a lab password with correct ACL and attributes.
 * Run `schtasks /Run /TN "\L2C\CreatePrimaryAdmin"` and verify that Stage B again cleans Winlogon state and, on success, removes the scheduled task and produces a fresh `l2c_master_<ts>.log`.
 
-**Known fix:** message `ADSI update failed for ${User}:` — see `DECISIONS.md` (ADR about Stage A/Stage B and `$User:` interpolation).
+**Known fix (historical):** message `ADSI update failed for ${User}:` — this was tied to the older ADSI-based Stage A; Stage A no longer uses ADSI, so this message should not occur in current runs (see `DECISIONS.md`).

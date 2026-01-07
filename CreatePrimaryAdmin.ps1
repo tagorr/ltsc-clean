@@ -75,30 +75,132 @@ if ($VerboseLog) {
   Write-SetupLog ("Resolved Remote Desktop Users -> {0}" -f $script:RemoteDesktopGroupName) 'DEBUG'
 }
 
-function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data) {
+function Get-RegExePath {
+  $windir = $env:WINDIR
+  if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    return (Join-Path $windir 'sysnative\reg.exe')
+  }
+  return (Join-Path $windir 'System32\reg.exe')
+}
+
+function Convert-RegKeyToHiveAndSubKey([string]$Key) {
+  $m = [regex]::Match($Key, '^(?<hive>HKLM|HKCU|HKCR|HKU|HKCC|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG)\\(?<sub>.+)$')
+  if (-not $m.Success) { return $null }
+  $h = $m.Groups['hive'].Value.ToUpperInvariant()
+  $sub = $m.Groups['sub'].Value
+  $hive = $null
+  switch ($h) {
+    'HKLM' { $hive = [Microsoft.Win32.RegistryHive]::LocalMachine }
+    'HKEY_LOCAL_MACHINE' { $hive = [Microsoft.Win32.RegistryHive]::LocalMachine }
+    'HKCU' { $hive = [Microsoft.Win32.RegistryHive]::CurrentUser }
+    'HKEY_CURRENT_USER' { $hive = [Microsoft.Win32.RegistryHive]::CurrentUser }
+    'HKCR' { $hive = [Microsoft.Win32.RegistryHive]::ClassesRoot }
+    'HKEY_CLASSES_ROOT' { $hive = [Microsoft.Win32.RegistryHive]::ClassesRoot }
+    'HKU' { $hive = [Microsoft.Win32.RegistryHive]::Users }
+    'HKEY_USERS' { $hive = [Microsoft.Win32.RegistryHive]::Users }
+    'HKCC' { $hive = [Microsoft.Win32.RegistryHive]::CurrentConfig }
+    'HKEY_CURRENT_CONFIG' { $hive = [Microsoft.Win32.RegistryHive]::CurrentConfig }
+  }
+  if ($null -eq $hive) { return $null }
+  return [pscustomobject]@{ Hive = $hive; SubKey = $sub }
+}
+
+function Test-RegKeyAccessDenied([string]$Key) {
   try {
-    & reg.exe ADD $Key /v $Name /t $Type /d $Data /f | Out-Null 2>$null
-    $rc = $LASTEXITCODE
-    if ($VerboseLog) { Write-SetupLog ("Reg ADD {0}\{1} <{2}> = '{3}' (RC={4})" -f $Key,$Name,$Type,$Data,$rc) 'DEBUG' }
-    if ($rc -ne 0) { Write-SetupLog ("Reg ADD failed: {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'WARN' }
+    $parsed = Convert-RegKeyToHiveAndSubKey -Key $Key
+    if (-not $parsed) { return $false }
+    $view = if ([Environment]::Is64BitOperatingSystem) { [Microsoft.Win32.RegistryView]::Registry64 } else { [Microsoft.Win32.RegistryView]::Default }
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey($parsed.Hive, $view)
+    try {
+      $sub = $base.OpenSubKey($parsed.SubKey, $true)
+      if ($null -eq $sub) {
+        $subRO = $base.OpenSubKey($parsed.SubKey, $false)
+        if ($null -ne $subRO) {
+          $subRO.Dispose()
+          return $true
+        }
+        return $false
+      }
+      $sub.Dispose()
+      return $false
+    } finally {
+      $base.Dispose()
+    }
+  } catch [System.UnauthorizedAccessException] {
+    return $true
+  } catch [System.Security.SecurityException] {
+    return $true
   } catch {
-    Write-SetupLog "Reg ADD failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
+    return $false
   }
 }
 
-function Reg-Del([string]$Key, [string]$Name) {
+function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data, [switch]$ReturnCode, [switch]$SuppressWarnOnAccessDenied, [switch]$ReturnResult) {
+  $rc = -1
+  $rcRaw = -1
   try {
-    & reg.exe DELETE $Key /v $Name /f | Out-Null 2>$null
-    $rc = $LASTEXITCODE
-    # Idempotent delete: RC=0 (deleted) or RC=2 (value not found) is OK for our flow
+    $regExe = Get-RegExePath
+    & "$regExe" ADD $Key /v $Name /t $Type /d $Data /f | Out-Null 2>$null
+    $rcRaw = $LASTEXITCODE
+    $rc = $rcRaw
+    if ($rc -ne 0 -and $SuppressWarnOnAccessDenied) {
+      if (Test-RegKeyAccessDenied -Key $Key) {
+        $rc = 5
+        if ($VerboseLog) { Write-SetupLog ("Reg ADD {0}\{1} blocked (RC=5 AccessDenied suppressed)" -f $Key,$Name) 'DEBUG' }
+      }
+    }
+    if ($VerboseLog) { Write-SetupLog ("Reg ADD {0}\{1} <{2}> = '{3}' (RC={4})" -f $Key,$Name,$Type,$Data,$rc) 'DEBUG' }
+    if ($rc -ne 0 -and -not ($SuppressWarnOnAccessDenied -and $rc -eq 5)) { Write-SetupLog ("Reg ADD failed: {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'WARN' }
+  } catch {
+    $rc = 1
+    $rcRaw = $rc
+    Write-SetupLog "Reg ADD failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
+  }
+  if ($ReturnResult) { return [pscustomobject]@{ Raw = $rcRaw; Effective = $rc; Normalized = ($rcRaw -ne $rc) } }
+  if ($ReturnCode) { return $rc }
+}
+
+function Reg-Del([string]$Key, [string]$Name, [switch]$ReturnCode, [switch]$SuppressWarnOnAccessDenied, [switch]$OkIfMissing, [switch]$ReturnResult) {
+  $rc = -1
+  $rcRaw = -1
+  try {
+    $regExe = Get-RegExePath
+    & "$regExe" DELETE $Key /v $Name /f | Out-Null 2>$null
+    $rcRaw = $LASTEXITCODE
+    $rc = $rcRaw
+    if ($rc -ne 0 -and $SuppressWarnOnAccessDenied) {
+      if (Test-RegKeyAccessDenied -Key $Key) {
+        $rc = 5
+        if ($VerboseLog) { Write-SetupLog ("Reg DEL {0}\{1} blocked (RC=5 AccessDenied suppressed)" -f $Key,$Name) 'DEBUG' }
+      }
+    }
+    if ($OkIfMissing -and $rcRaw -ne 5 -and $rc -ne 5) {
+      $psKey = $null
+      if ($Key -match '^(HKLM|HKEY_LOCAL_MACHINE)\\(.+)$') { $psKey = 'HKLM:\' + $Matches[2] }
+      elseif ($Key -match '^(HKCU|HKEY_CURRENT_USER)\\(.+)$') { $psKey = 'HKCU:\' + $Matches[2] }
+      elseif ($Key -match '^(HKCR|HKEY_CLASSES_ROOT)\\(.+)$') { $psKey = 'HKCR:\' + $Matches[2] }
+      elseif ($Key -match '^(HKU|HKEY_USERS)\\(.+)$') { $psKey = 'HKU:\' + $Matches[2] }
+      elseif ($Key -match '^(HKCC|HKEY_CURRENT_CONFIG)\\(.+)$') { $psKey = 'HKCC:\' + $Matches[2] }
+      if ($psKey) {
+        $state = Get-RegValueState -KeyPath $psKey -Name $Name
+        if ($state.State -eq 'absent' -and $rc -ne 0 -and $rc -ne 2) { $rc = 0 }
+      }
+    }
+    # Delete is idempotent in our flow: RC=0 is OK, RC=2 is treated as OK; with -OkIfMissing we may normalize non-5 failures to RC=0 only when read-back confirms the value is absent; AccessDenied (RC=5) is never normalized to success
     if ($rc -eq 0 -or $rc -eq 2) {
       if ($VerboseLog) { Write-SetupLog ("Reg DEL {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'DEBUG' }
+    } elseif ($SuppressWarnOnAccessDenied -and $rc -eq 5) {
+      if ($VerboseLog) { Write-SetupLog ("Reg DEL {0}\{1} blocked (RC=5 AccessDenied suppressed)" -f $Key,$Name) 'DEBUG' }
     } else {
       Write-SetupLog ("Reg DEL failed: {0}\{1} (RC={2})" -f $Key,$Name,$rc) 'WARN'
     }
   } catch {
+    $rc = 1
+    $rcRaw = $rc
     Write-SetupLog "Reg DEL failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
   }
+  if ($ReturnResult) { return [pscustomobject]@{ Raw = $rcRaw; Effective = $rc; Normalized = ($rcRaw -ne $rc) } }
+  if ($ReturnCode) { return $rc }
 }
 
 function Get-RegValueState([string]$KeyPath, [string]$Name) {
@@ -232,81 +334,93 @@ function Test-SystemRebootPending {
 }
 
 function Get-LocalUserExists([string]$User) {
-  & net.exe user "$User" | Out-Null 2>$null
-  return ($LASTEXITCODE -eq 0)
+  try {
+    [void](Get-LocalUser -Name $User -ErrorAction Stop)
+    return $true
+  } catch {
+    if ($_.CategoryInfo -and $_.CategoryInfo.Category -eq 'ObjectNotFound') { return $false }
+    throw
+  }
 }
 function Ensure-InAdministrators([string]$User) {
-  & net.exe localgroup "$script:AdministratorsGroupName" "$User" /add | Out-Null 2>$null
-  $code = $LASTEXITCODE
-  if ($code -eq 0) {
-    Write-SetupLog ("Added {0} to {1}" -f $User,$script:AdministratorsGroupName)
-  } elseif ($code -eq 1378) {
-    Write-SetupLog ("{0} already in {1}" -f $User,$script:AdministratorsGroupName) 'DEBUG'
-  } else {
-    throw ("net localgroup {0} exitcode {1}" -f $script:AdministratorsGroupName,$code)
+  $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+  $localUser = Get-LocalUser -Name $User -ErrorAction Stop
+  $userSid = [string]$localUser.SID
+  $members = @(Get-LocalGroupMember -Group $group.Name -ErrorAction Stop)
+  foreach ($m in $members) {
+    $memberSid = [string]$m.SID
+    if ($memberSid -and ($memberSid -eq $userSid)) {
+      Write-SetupLog ("{0} already in {1}" -f $User,$group.Name) 'DEBUG'
+      return 1378
+    }
   }
-  return $code
+
+  $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
+  try {
+    Add-LocalGroupMember -Group $group.Name -Member $memberName -ErrorAction Stop
+    Write-SetupLog ("Added {0} to {1}" -f $User,$group.Name)
+    return 0
+  } catch {
+    $fqid = $_.FullyQualifiedErrorId
+    $etype = $null; try { $etype = $_.Exception.GetType().FullName } catch {}
+    $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+    if (($fqid -and ($fqid -match 'MemberExists')) -or ($etype -and ($etype -match 'MemberExists')) -or ($msg -match '(?i)\balready\b.*\bmember\b.*\bgroup\b')) {
+      Write-SetupLog ("{0} already in {1} (Add-LocalGroupMember idempotent)" -f $User,$group.Name) 'DEBUG'
+      return 1378
+    }
+    throw
+  }
 }
 function Ensure-InGroup([string]$Group, [string]$User) {
-  & net.exe localgroup "$Group" "$User" /add | Out-Null 2>$null
-  $code = $LASTEXITCODE
-  if ($code -eq 0 -or $code -eq 1378) {
-    Write-SetupLog ("Ensured {0} in {1}" -f $User,$Group)
-  } else {
-    throw "net localgroup '$Group' exitcode $code"
-  }
-}
-function Set-UserAdsi([string]$User, [string]$FullName, [string]$Description, [switch]$NeverExpire) {
   try {
-    $u = [ADSI]("WinNT://$env:COMPUTERNAME/$User,user")
-    if ($FullName)    { $u.FullName    = $FullName }
-    if ($Description) { $u.Description = $Description }
-    try { $u.PasswordExpired = 0 } catch {}
-    if ($NeverExpire) {
-      $UF_DONT_EXPIRE_PASSWD = 0x10000
-      $flags = 0; try { $flags = [int]$u.UserFlags } catch {}
-      $u.UserFlags = ($flags -bor $UF_DONT_EXPIRE_PASSWD)
+    $groupObj = $null
+    if ($Group -match '^S-1-') {
+      $groupObj = Get-LocalGroup -SID $Group -ErrorAction Stop
+    } else {
+      $groupObj = Get-LocalGroup -Name $Group -ErrorAction Stop
     }
-    $u.SetInfo()
-    if ($VerboseLog) { Write-SetupLog "ADSI updated for $User (FullName/Description/Flags)" 'DEBUG' }
+    $localUser = Get-LocalUser -Name $User -ErrorAction Stop
+    $userSid = [string]$localUser.SID
+    $members = @(Get-LocalGroupMember -Group $groupObj.Name -ErrorAction Stop)
+    foreach ($m in $members) {
+      $memberSid = [string]$m.SID
+      if ($memberSid -and ($memberSid -eq $userSid)) {
+        Write-SetupLog ("Ensured {0} in {1}" -f $User,$groupObj.Name)
+        return
+      }
+    }
+
+    $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
+    try {
+      Add-LocalGroupMember -Group $groupObj.Name -Member $memberName -ErrorAction Stop
+      Write-SetupLog ("Ensured {0} in {1}" -f $User,$groupObj.Name)
+    } catch {
+      $fqid = $_.FullyQualifiedErrorId
+      $etype = $null; try { $etype = $_.Exception.GetType().FullName } catch {}
+      $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+      if (($fqid -and ($fqid -match 'MemberExists')) -or ($etype -and ($etype -match 'MemberExists')) -or ($msg -match '(?i)\balready\b.*\bmember\b.*\bgroup\b')) {
+        Write-SetupLog ("{0} already in {1} (Add-LocalGroupMember idempotent)" -f $User,$groupObj.Name) 'DEBUG'
+        return
+      }
+      throw
+    }
   } catch {
-    Write-SetupLog "ADSI update failed for ${User}: $($_.Exception.Message)" 'WARN'
-  }
-}
-
-function Set-L2CLocalUserPasswordAdsi {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string] $UserName,
-    [Parameter(Mandatory = $true)]
-    [string] $Password
-  )
-
-  $userPath = "WinNT://$env:COMPUTERNAME/$UserName,user"
-
-  try {
-    $user = [ADSI] $userPath
-  } catch {
-    throw "Failed to bind ADSI local user '$UserName'. The account does not exist or cannot be opened."
-  }
-
-  try {
-    $user.SetPassword($Password)
-    $user.SetInfo()
-  } catch {
-    throw "Failed to set password for local user '$UserName' via ADSI. $($_.Exception.Message)"
+    throw
   }
 }
 
 function Test-AdministratorsMembership([string]$User) {
   try {
-    $group = [ADSI]("WinNT://$env:COMPUTERNAME/$script:AdministratorsGroupName,group")
-    foreach ($member in @($group.psbase.Invoke('Members'))) {
-      $name = $member.GetType().InvokeMember('Name','GetProperty',$null,$member,$null)
-      if ($name -and ($name -ieq $User)) { return $true }
+    $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+    $localUser = Get-LocalUser -Name $User -ErrorAction Stop
+    $userSid = [string]$localUser.SID
+    $members = @(Get-LocalGroupMember -Group $group.Name -ErrorAction Stop)
+    foreach ($m in $members) {
+      $memberSid = [string]$m.SID
+      if ($memberSid -and ($memberSid -eq $userSid)) { return $true }
     }
   } catch {
-    Write-SetupLog ("ADSI membership check failed for {0}: {1}" -f $script:AdministratorsGroupName,$_.Exception.Message) 'WARN'
+    Write-SetupLog ("LocalAccounts membership check failed for Administrators: {0}" -f $_.Exception.Message) 'WARN'
   }
   return $false
 }
@@ -346,59 +460,107 @@ try {
     $pwd = $passwordText
     Write-SetupLog "Primary admin secret loaded from .primaryadmin.pw" 'INFO' 
 
-    Write-Verbose "Stage A: checking if $PrimaryUser exists"
-    $exists = Get-LocalUserExists $PrimaryUser
-    if (-not $exists) {
-      Write-Verbose "Stage A: creating local user $PrimaryUser"
-      & net.exe user "$PrimaryUser" /add | Out-Null 2>$null
-      if ($LASTEXITCODE -ne 0) { throw "Failed to create user $PrimaryUser (exitcode $LASTEXITCODE)" }
-      try {
-        Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
-      } catch {
-        $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
-        Write-SetupLog ("Failed to set password via ADSI for {0}: {1}" -f $PrimaryUser, $msg) 'ERROR'
-        & net.exe user "$PrimaryUser" /delete | Out-Null 2>$null
-        $delRc = $LASTEXITCODE
-        if ($delRc -eq 0) {
-          Write-SetupLog ("Rolled back user {0} after password failure (delete rc={1})" -f $PrimaryUser,$delRc) 'WARN'
-        } else {
-          Write-SetupLog ("Failed to delete user {0} after password failure (rc={1})" -f $PrimaryUser,$delRc) 'ERROR'
+    if (-not [Environment]::Is64BitProcess) {
+      $StageAAbortReason = 'Stage A requires 64-bit PowerShell process (Is64BitProcess=false)'
+      Write-SetupLog $StageAAbortReason 'ERROR'
+      throw [System.InvalidOperationException]::new($StageAAbortReason)
+    }
+    try {
+      Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop
+    } catch {
+      $StageAAbortReason = "Stage A preflight failed: unable to import Microsoft.PowerShell.LocalAccounts: $($_.Exception.Message)"
+      Write-SetupLog $StageAAbortReason 'ERROR'
+      throw [System.InvalidOperationException]::new($StageAAbortReason)
+    }
+    try {
+      $requiredCmdlets = @(
+        'Get-LocalUser','New-LocalUser','Set-LocalUser','Enable-LocalUser','Remove-LocalUser',
+        'Get-LocalGroup','Get-LocalGroupMember','Add-LocalGroupMember'
+      )
+      foreach ($c in $requiredCmdlets) { [void](Get-Command -Name $c -ErrorAction Stop) }
+      $getLocalGroupCmd = Get-Command -Name 'Get-LocalGroup' -ErrorAction Stop
+      if (-not $getLocalGroupCmd.Parameters.ContainsKey('SID')) { throw "Get-LocalGroup missing required -SID parameter" }
+      if ($PasswordNeverExpires) {
+        $setLocalUserCmd = Get-Command -Name 'Set-LocalUser' -ErrorAction Stop
+        if (-not $setLocalUserCmd.Parameters.ContainsKey('PasswordNeverExpires')) {
+          throw "PasswordNeverExpires requested but Set-LocalUser does not support -PasswordNeverExpires on this system"
         }
-        throw
       }
-      & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
-      if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
-      Write-SetupLog "User $PrimaryUser created and activated"
-    } else {
-      Write-Verbose "Stage A: updating password for $PrimaryUser"
-      try {
-        Set-L2CLocalUserPasswordAdsi -UserName $PrimaryUser -Password $pwd
-      } catch {
-        $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
-        Write-SetupLog ("Failed to set password via ADSI for existing user {0}: {1}" -f $PrimaryUser, $msg) 'ERROR'
-        Write-SetupLog ("Skipping deletion because {0} existed before this run" -f $PrimaryUser) 'WARN'
-        throw
-      }
-      Write-SetupLog "Password updated for $PrimaryUser"
-      & net.exe user "$PrimaryUser" /active:yes | Out-Null 2>$null
-      if ($LASTEXITCODE -ne 0) { throw "Failed to activate user $PrimaryUser (exitcode $LASTEXITCODE)" }
+      [void](Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop)
+      if ($AddToRemoteDesktopUsers) { [void](Get-LocalGroup -SID 'S-1-5-32-555' -ErrorAction Stop) }
+    } catch {
+      $StageAAbortReason = "Stage A preflight failed: $($_.Exception.Message)"
+      Write-SetupLog $StageAAbortReason 'ERROR'
+      throw [System.InvalidOperationException]::new($StageAAbortReason)
     }
 
-    Set-UserAdsi -User $PrimaryUser -FullName $FullName -Description $Description -NeverExpire:$PasswordNeverExpires
+    Write-Verbose "Stage A: checking if $PrimaryUser exists"
+    $createdNow = $false
+    $securePwd = ConvertTo-SecureString -AsPlainText -Force -String $pwd
+    try {
+      $exists = Get-LocalUserExists $PrimaryUser
+      if (-not $exists) {
+        Write-Verbose "Stage A: creating local user $PrimaryUser"
+        $newArgs = @{ Name = $PrimaryUser; Password = $securePwd; ErrorAction = 'Stop' }
+        [void](New-LocalUser @newArgs)
+        $createdNow = $true
+        Write-SetupLog "User $PrimaryUser created"
+      } else {
+        Write-Verbose "Stage A: updating password for $PrimaryUser"
+        Set-LocalUser -Name $PrimaryUser -Password $securePwd -ErrorAction Stop
+        Write-SetupLog "Password updated for $PrimaryUser"
+      }
 
-    Write-Verbose "Stage A: verifying Administrators membership via ADSI"
-    $isAdminMember = Test-AdministratorsMembership $PrimaryUser
-    if ($isAdminMember) {
-      Write-SetupLog "A: SKIP (already member)"
-    } else {
-      Write-Verbose ("Stage A: adding {0} to {1}" -f $PrimaryUser,$script:AdministratorsGroupName)
-      $addCode = Ensure-InAdministrators $PrimaryUser
-      if ($addCode -eq 1378) {
+      Enable-LocalUser -Name $PrimaryUser -ErrorAction Stop
+      if (-not $createdNow) {
+        try {
+          & "$env:SystemRoot\System32\net.exe" user "$PrimaryUser" /logonpasswordchg:no | Out-Null 2>$null
+          $chgRc = $LASTEXITCODE
+          if ($chgRc -eq 0) {
+            Write-SetupLog ("Cleared must-change-password-at-logon for {0} (net.exe /logonpasswordchg:no)" -f $PrimaryUser) 'DEBUG'
+          } else {
+            Write-SetupLog ("Failed to clear must-change-password-at-logon for {0} (net.exe rc={1}); continuing" -f $PrimaryUser,$chgRc) 'WARN'
+          }
+        } catch {
+          Write-SetupLog ("Failed to clear must-change-password-at-logon for {0}: {1}; continuing" -f $PrimaryUser,$_.Exception.Message) 'WARN'
+        }
+      }
+
+      $setArgs = @{ Name = $PrimaryUser; ErrorAction = 'Stop' }
+      $doSet = $false
+      if ($FullName) { $setArgs['FullName'] = $FullName; $doSet = $true }
+      if ($Description) { $setArgs['Description'] = $Description; $doSet = $true }
+      if ($PasswordNeverExpires) { $setArgs['PasswordNeverExpires'] = $true; $doSet = $true }
+      if ($doSet) { Set-LocalUser @setArgs }
+
+      Write-Verbose "Stage A: verifying Administrators membership via LocalAccounts"
+      $isAdminMember = Test-AdministratorsMembership $PrimaryUser
+      if ($isAdminMember) {
         Write-SetupLog "A: SKIP (already member)"
+      } else {
+        Write-Verbose ("Stage A: adding {0} to Administrators" -f $PrimaryUser)
+        $addCode = Ensure-InAdministrators $PrimaryUser
+        if ($addCode -eq 1378) {
+          Write-SetupLog "A: SKIP (already member)"
+        }
       }
-    }
 
-    if ($AddToRemoteDesktopUsers) { Ensure-InGroup $script:RemoteDesktopGroupName $PrimaryUser }
+      if ($AddToRemoteDesktopUsers) { Ensure-InGroup 'S-1-5-32-555' $PrimaryUser }
+    } catch {
+      $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+      Write-SetupLog ("Stage A user provisioning failed for {0}: {1}" -f $PrimaryUser, $msg) 'ERROR'
+      if ($createdNow) {
+        try {
+          Remove-LocalUser -Name $PrimaryUser -ErrorAction Stop
+          Write-SetupLog ("Rolled back user {0} after Stage A failure" -f $PrimaryUser) 'WARN'
+        } catch {
+          Write-SetupLog ("Failed to delete user {0} during rollback: {1}" -f $PrimaryUser, $_.Exception.Message) 'ERROR'
+        }
+      } else {
+        Write-SetupLog ("Skipping deletion because {0} existed before this run" -f $PrimaryUser) 'WARN'
+      }
+      throw
+    }
     $StageA_Succeeded = $true
     $StageA_RC = 0
   }
@@ -428,15 +590,33 @@ try {
   $finalLogEntries += ("[{0}] Stage B finalize begin (mode={1})" -f ([DateTime]::UtcNow.ToString('o')), $modeLabel)
 
   Write-Verbose "Stage B: resetting Winlogon autologon state"
+  $wlMsg = 'Winlogon and logon policy reset: begin'
+  Write-SetupLog $wlMsg
+  $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $wlMsg)
   $wl = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-  Reg-Del $wl 'DefaultUserName'
-  Reg-Del $wl 'DefaultDomainName'
-  Reg-Del $wl 'DefaultPassword'
-  Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0'
-  Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0'
-  Reg-Add $wl 'AutoLogonCount' 'REG_DWORD' '0'
-  Reg-Del $wl 'IgnoreShiftOverride'
-  Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0'
+  $wlRcsRaw = @()
+  $wlRcs = @()
+  $wlAnyNormalized = $false
+  $res = Reg-Del $wl 'DefaultUserName' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Del $wl 'DefaultDomainName' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Del $wl 'DefaultPassword' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Add $wl 'AutoLogonCount' 'REG_DWORD' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Del $wl 'IgnoreShiftOverride' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $res = Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
+  $wlAccessDenied = ($wlRcs -contains 5)
+  $cleanRcOnly = $true
+  foreach ($rc in $wlRcs) { if ($rc -ne 0 -and $rc -ne 2) { $cleanRcOnly = $false; break } }
+  $wlMsg = if ($cleanRcOnly) { 'Winlogon and logon policy reset: attempted' } else { ("Winlogon and logon policy reset: attempted (wlRcs={0})" -f ($wlRcs -join ',')) }
+  Write-SetupLog $wlMsg
+  $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $wlMsg)
+  if ($VerboseLog -and $wlAnyNormalized) {
+    $wlMsg = ("Winlogon reset rc detail: raw={0} effective={1}" -f ($wlRcsRaw -join ','), ($wlRcs -join ','))
+    Write-SetupLog $wlMsg 'DEBUG'
+    $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $wlMsg)
+  }
+  if ($wlAccessDenied) { $isRecovery = $true }  # force recovery early (for recovery-specific steps below)
   Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
   if ($isRecovery) {
     Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '0'
@@ -444,23 +624,37 @@ try {
   } else {
     Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
   }
-  $finalLogEntries += ("[{0}] Winlogon and logon policies reset" -f ([DateTime]::UtcNow.ToString('o')))
 
   $wlPs = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
   $wlTest = Test-WinlogonSanitized -WinlogonKeyPath $wlPs
+  if (-not $isRecovery -and $wlTest.Ok -and -not $wlAccessDenied) {
+    $wlMsg = 'Winlogon cleanup verification passed (reset verified)'
+    Write-SetupLog $wlMsg
+    $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $wlMsg)
+  }
   if (-not $wlTest.Ok) {
     $WinlogonSanitizedOk = $false
     Write-SetupLog 'HARD FAIL: Winlogon cleanup verification failed; refusing to teardown executor/bootstrap.' 'ERROR'
-    foreach ($r in $wlTest.Reasons) { Write-SetupLog ("Winlogon verify: {0}" -f $r) 'ERROR' }
+    foreach ($reason in $wlTest.Reasons) { Write-SetupLog ("Winlogon verify: {0}" -f $reason) 'ERROR' }
     $finalLogEntries += ("[{0}] HARD FAIL: Winlogon cleanup verification failed; executor/bootstrap teardown suppressed" -f ([DateTime]::UtcNow.ToString('o')))
-    foreach ($r in $wlTest.Reasons) { $finalLogEntries += ("[{0}] Winlogon verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $r) }
+    foreach ($reason in $wlTest.Reasons) { $finalLogEntries += ("[{0}] Winlogon verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $reason) }
+    if ($rc -eq 0) { $rc = 4 }
+  }
+  if ($wlAccessDenied) {
+    $WinlogonSanitizedOk = $false
+    $isRecovery = $true
+    Write-SetupLog ("HARD FAIL: Winlogon cleanup blocked by ACL (AccessDenied, rc=5); refusing to teardown executor/bootstrap. wlRcs={0}" -f ($wlRcs -join ',')) 'ERROR'
+    $finalLogEntries += ("[{0}] HARD FAIL: Winlogon cleanup blocked by ACL (AccessDenied, rc=5); executor/bootstrap teardown suppressed" -f ([DateTime]::UtcNow.ToString('o')))
+    $finalLogEntries += ("[{0}] Winlogon cleanup rc summary: {1}" -f ([DateTime]::UtcNow.ToString('o')), ($wlRcs -join ','))
+    $finalLogEntries += ("[{0}] Winlogon verify failure: Winlogon cleanup blocked by ACL (AccessDenied, rc=5)" -f ([DateTime]::UtcNow.ToString('o')))
+    $finalLogEntries += ("[{0}] Stage B mode forced to recovery due to Winlogon AccessDenied" -f ([DateTime]::UtcNow.ToString('o')))
     if ($rc -eq 0) { $rc = 4 }
   }
 
   if (-not $isRecovery) {
     if ($WinlogonSanitizedOk) {
       Write-Verbose "Stage B: deactivating bootstrap account"
-      & net.exe user bootstrap /active:no | Out-Null 2>$null
+      & "$env:SystemRoot\System32\net.exe" user bootstrap /active:no | Out-Null 2>$null
       $bootstrapRC = $LASTEXITCODE
       if ($bootstrapRC -eq 0) {
         Write-SetupLog "bootstrap deactivated"
@@ -472,7 +666,7 @@ try {
       Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
       $taskDeleteRC = -1
       try {
-        & schtasks.exe /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
+        & "$env:SystemRoot\System32\schtasks.exe" /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
         $taskDeleteRC = $LASTEXITCODE
         if ($taskDeleteRC -eq 0) {
           Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"

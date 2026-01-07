@@ -67,7 +67,8 @@ S
 * [ ] In `CreatePrimaryAdmin.ps1`:
 
   * [ ] Stage A reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` under SYSTEM as its only password source (no `.bootstrap.pw`, no command-line password arguments).
-  * [ ] Password application uses the WinNT ADSI provider (`SetPassword` + `SetInfo`); any `net.exe user` calls for `primaryadmin` are limited to `/add` or `/active:yes` with no password arguments.
+  * [ ] Password application uses `Microsoft.PowerShell.LocalAccounts` (`New-LocalUser`/`Set-LocalUser` with a `SecureString`); no plaintext password is ever passed to external processes.
+  * [ ] Stage A fails closed if running under a 32-bit PowerShell process (`Is64BitProcess=false`) or if `Microsoft.PowerShell.LocalAccounts` cannot be imported / required cmdlets are missing.
   * [ ] Behavior is defined for:
 
     * [ ] Missing, unreadable, or empty `.primaryadmin.pw`.
@@ -238,14 +239,14 @@ S
   * [ ] `Get-LocalUserExists` is logically correct and handles all errors.
 * [ ] If the user does not exist:
 
-  * [ ] `net user ... /add` and `/active:yes` run in sequence.
-  * [ ] `net.exe` errors are checked via `$LASTEXITCODE`.
-  * [ ] Logs record success or failure of creation and activation.
+  * [ ] The user is created via `New-LocalUser` with the password `SecureString`.
+  * [ ] Logs record success or failure of creation.
 * [ ] If the user exists:
 
-  * [ ] The password is updated using the secret from `.primaryadmin.pw`, errors are logged, and RCs are checked.
-  * [ ] Finally the user is activated (`/active:yes`) with RC checking.
-* [ ] Property updates via `Set-UserAdsi`:
+  * [ ] The password is updated using the secret from `.primaryadmin.pw` via `Set-LocalUser -Password` (SecureString).
+  * [ ] The user is enabled via `Enable-LocalUser`.
+  * [ ] Best-effort: “must change password at next logon” is cleared for pre-existing users via `net.exe user <user> /logonpasswordchg:no` (WARN-only on failure).
+* [ ] Property updates via `New-LocalUser` / `Set-LocalUser`:
 
   * [ ] Correctly handle `FullName`, `Description`, `PasswordNeverExpires`.
 * [ ] Membership in `Administrators`:
@@ -269,24 +270,21 @@ S
   * [ ] `$StageA_Succeeded = $false`.
   * [ ] `$rc = 1`.
 
-#### 5.5. Primary admin ADSI failure (negative test)
+#### 5.5. Primary admin LocalAccounts preflight failure (negative test)
 
-* [ ] Build a test ISO that forces `Set-L2CLocalUserPasswordAdsi` to throw (for example by injecting a deliberate exception) and install on a clean VM so CreatePrimaryAdmin runs once.
+* [ ] On a test VM, run `CreatePrimaryAdmin.ps1` under 32-bit PowerShell (for example `C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe`) so Stage A preflight fails.
 * [ ] `SetupComplete.log` shows:
 
   * [ ] Stage A loading `.primaryadmin.pw` (`Primary admin secret loaded from .primaryadmin.pw`).
-  * [ ] An error `Failed to set password via ADSI for primaryadmin: ...` including the simulated ADSI failure text.
-  * [ ] For a newly created account: a rollback entry `Rolled back user primaryadmin after password failure (delete rc=...)` (or the delete failure variant).
-  * [ ] For a pre-existing account: a log entry `Skipping deletion because primaryadmin existed before this run`.
-  * [ ] `Stage A failed: ...` followed by `Stage B running in recovery mode (StageA RC=1)` and recovery logs noting secrets/`bootstrap` preserved and outcome `ABORTED` with the ADSI failure reason.
+  * [ ] An error `Stage A requires 64-bit PowerShell process (Is64BitProcess=false)`.
+  * [ ] `Stage A failed: ...` followed by `Stage B running in recovery mode (StageA RC=1)` and recovery logs noting secrets/`bootstrap` preserved and outcome `ABORTED` with the preflight failure reason.
 * [ ] `C:\ProgramData\l2c_master_*.log` shows:
 
   * [ ] `mode=recovery`.
   * [ ] `.primaryadmin.pw` and `.bootstrap.pw` cleanup states recorded as preserved.
-  * [ ] OUTCOME stating the run was aborted because ADSI password setting for `primaryadmin` failed.
+  * [ ] OUTCOME stating the run was aborted because Stage A preflight failed.
 * [ ] VM state after the failed run:
 
-  * [ ] The local Administrators group does not contain `primaryadmin` (the new account was rolled back).
   * [ ] `bootstrap` remains enabled for operator investigation.
 
 ---
@@ -305,6 +303,11 @@ S
 
 * [ ] Always (in both normal and recovery):
 
+  * [ ] Logging for Winlogon reset is two-phase and truthful:
+    * [ ] `Winlogon and logon policy reset: begin`
+    * [ ] `Winlogon and logon policy reset: attempted` (may include an `(wlRcs=...)` suffix only when any effective RC is outside `{0,2}`)
+    * [ ] `Winlogon cleanup verification passed (reset verified)` is emitted only when verification genuinely succeeded (never on failure/recovery paths).
+  * [ ] `wlRcs` is based on effective RCs (the script’s interpreted return codes after idempotence and AccessDenied handling), not raw `reg.exe` return codes; when `$VerboseLog` is enabled and any operation has `Raw` ≠ `Effective`, the script emits a DEBUG `Winlogon reset rc detail: raw=... effective=...` line to aid diagnosis.
   * [ ] `DefaultUserName` and `DefaultDomainName` are cleared; `DefaultPassword` is removed (absent).
   * [ ] `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`.
   * [ ] A post-action verification reads `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` and treats read errors as failures; if `DefaultPassword` is present or any autologon value is present and not `0`, Stage B hard-fails and refuses to disable `bootstrap` or delete `\L2C\CreatePrimaryAdmin` (and suppresses any automatic reboot).
@@ -479,7 +482,7 @@ For each document:
   * [ ] Stage B is not registered (`schtasks /Query /TN "\L2C\CreatePrimaryAdmin"` fails) and `primaryadmin` is not created.
   * [ ] The state clearly indicates that manual intervention is required.
   * [ ] `SetupComplete.log` ends with a non-zero `[RC] returning ...` when the failure is only the closed gate (`FAILED==1` with no captured fatal servicing RC) (observed: `returning 1`).
-* [ ] When `.bootstrap.pw` is valid, but Stage A fails (for example `net.exe` error, ACL issue, and so on):
+* [ ] When `.bootstrap.pw` is valid, but Stage A fails (for example LocalAccounts preflight failure, user provisioning failure, and so on):
 
   * [ ] Stage B runs in recovery mode.
   * [ ] Autologon and logon policies are reset.
