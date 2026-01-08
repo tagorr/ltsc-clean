@@ -4,7 +4,7 @@
 
 ## Allowed to edit
 
-`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`.
+`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`.
 
 **Forbidden:**
 
@@ -18,7 +18,7 @@
 * **No immediate reboots** inside `SetupComplete.cmd`. Reboot requirements are signaled only via `%WINDIR%\Panther\_needs_reboot.flag` (`Panther flag`) when `RC ∈ {3010, 1641}` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`. `SetupComplete.cmd` never calls `shutdown.exe`.
 * **EOL:** scripts (`.cmd/.ps1`) use CRLF; documentation (`.md`) uses LF.
 * Documentation must match actual behavior (paths, logs, steps). Details live in `README.md` and `DECISIONS.md`.
-* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; avoid `cmd /c` unless required; `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Project PowerShell/CLI rules**.
+* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; avoid nesting `cmd.exe /c` inside PowerShell steps unless required (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Project PowerShell/CLI rules**.
 * Use `reg.exe` directly. Always inspect `$LASTEXITCODE` after each call. For `DELETE`, return codes `{0,2}` are treated as success.
 * In `.cmd/.bat` files, direct PowerShell syntax is **not allowed**. Use it only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
 * In `.cmd/.bat` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
@@ -26,6 +26,7 @@
 ## Codex CLI Contract
 
 Codex CLI runs locally against this repository’s working copy. Follow these rules.
+`docs/INTERACTION_CONTRACT.md` is the canonical command-execution contract for shell selection, quoting, probes, and exit-code handling. If there is a conflict, follow `docs/INTERACTION_CONTRACT.md`.
 
 ### Scope
 
@@ -35,15 +36,15 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 ### Command contract
 
-* Run cmd commands only as:
+* CMD steps: run as:
 
   ```cmd
   cmd.exe /c "…"
   ```
 
-* Use double quotes only in cmd. Never wrap cmd lines in single quotes.
+* Use double quotes only in CMD steps. Never wrap CMD lines in single quotes.
 
-* Call Windows PowerShell 5.1 explicitly:
+* PowerShell steps: call Windows PowerShell 5.1 explicitly (full path):
 
   ```cmd
   %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive …
@@ -53,12 +54,13 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 * Never run Git from inside `.git` subfolders.
 
-* Before a risky step, print `cd` and the exact command, then execute it and show output. Abort on non-zero exit codes.
+* Before a risky step, print `cd` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Abort on non-zero exit codes (with the explicit search `RC=1` exception defined in `docs/INTERACTION_CONTRACT.md`).
 
 ### Shell roles
 
-* `cmd.exe` is the primary shell for hooks and Git plumbing.
-* Windows PowerShell 5.1 is a tool to run validators, not the outer shell for pipelines.
+* Use CMD for `.cmd/.bat` semantics and simple commands where CMD parsing is safe.
+* Use Windows PowerShell 5.1 (full path) as the outer shell for brittle tasks (search, regex, quoting-heavy commands, structured parsing, pipelines/metacharacters), per `docs/INTERACTION_CONTRACT.md`.
+* Search defaults: use `git grep` scoped to explicit paths (tracked files by default); `rg` is optional only and must be constrained; for untracked files and search exit-code handling see `docs/INTERACTION_CONTRACT.md` → “Diagnostics and probes”.
 
 ### EOL/BOM policy
 
