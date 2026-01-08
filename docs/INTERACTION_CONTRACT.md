@@ -5,13 +5,14 @@ This repository uses Codex CLI as the sole automation agent. Follow these rules 
 ## Scope and shells
 1. Work from the repository root, never inside `.git`.
 2. Choose the shell per step (shell-by-task policy; one step = one process):
-   - CMD step: use for `.cmd/.bat` semantics, CMD built-ins, and simple commands where CMD parsing is safe. Run as `cmd.exe /c "..."` with exactly one outer pair of ASCII double quotes (no extra outer layers). Avoid CMD pipes and command chaining (`|`, `&`, `&&`, `||`) and nested quoting; redirections like `>`, `2>`, and `2>&1` are OK for diagnostics/probes and `.git_...` temp files. If escaping/complex parsing would be required (for example heavy `%` expansion or caret escaping), prefer a PowerShell step.
+   - CMD step: use for `.cmd/.bat` semantics, CMD built-ins, and simple commands where CMD parsing is safe. Run as `cmd.exe /c "..."` with exactly one outer pair of ASCII double quotes (no extra outer layers). Avoid CMD pipes and command separators (`|`, `&&`, `||`, and standalone `&`) and nested quoting; redirections like `>`, `2>`, and `2>&1` are OK for diagnostics/probes and `.git_...` temp files. Do not use backslash-quote (a backslash followed by a double quote) expecting CMD to treat it as escaping. If you must pass inner double quotes inside a `cmd.exe /c "..."` command, escape them by doubling (`""`) and keep it minimal; otherwise prefer a PowerShell step or a file-based approach. If escaping/complex parsing would be required (for example heavy `%` expansion or caret escaping), prefer a PowerShell step. **Do not embed PowerShell `-Command` inside a `cmd.exe /c "..."` step for non-trivial logic; use a PowerShell step instead, or write a tiny `.git_...` temporary script and invoke it as a PowerShell step.**
    - PowerShell step: use Windows PowerShell 5.1 as the outer shell when CMD parsing is brittle (search, regex, quoting-heavy commands, structured parsing, pipelines/metacharacters). Keep steps short and reproducible; avoid long inline `-Command` blobs. If logic is non-trivial or `-Command` becomes too long/fragile, prefer a tiny temporary script named `.git_...` in the repository root and invoke it.
-3. PowerShell steps MUST invoke Windows PowerShell 5.1 by full path:  
-   `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive ...`
+3. PowerShell steps MUST invoke Windows PowerShell 5.1 by full path:
+   `& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive ...`
+   Clarification: in PowerShell steps, invoke it via `& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"`; in CMD steps, `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` is acceptable.
 
 ## Invariants
-1. In command lines/code blocks: ASCII double quotes only. No typographic quotes. No single quotes in the CMD layer (`cmd.exe /c "..."`).
+1. In command lines/code blocks: use ASCII punctuation (no typographic quotes). In the CMD layer (`cmd.exe /c "..."`): ASCII double quotes only, no single quotes.
    Clarification: this ban applies to the CMD portion only; inside PowerShell `-Command` the script may use `'...'`.
 2. No `EnableDelayedExpansion` in `.cmd`.
 3. Minimal diffs. Do not change text outside edited hunks.
@@ -62,12 +63,12 @@ Temporary files named `.git_...` in the repository root are allowed, but never e
 2. Work on a feature branch. Use forward slashes `/` in Git path arguments. Always separate paths with `--` in Git commands.
 3. Before Git operations, verify you are in a working tree and at the repo root:  
    - `cmd.exe /c "git rev-parse --is-inside-work-tree"` must print `true`.  
-   - `cmd.exe /c "git rev-parse --show-toplevel"` must equal `%CD%`; otherwise stop.
+   - `cmd.exe /c "git rev-parse --show-toplevel"` must print the repository root path. If you are not operating from that root, stop and fix the working directory (use an explicit `cd` step or explicit paths).
 4. Stage only intended paths:  
    `cmd.exe /c "git add -- docs/INTERACTION_CONTRACT.md"`
 5. Before committing, show staged changes with pager disabled:  
    `cmd.exe /c "git --no-pager diff --cached --name-status --"`
-6. Commit without env vars. Use `-m "..."` or `-F <file>`. Always double quotes for `-m`. If you need quotes inside the message, escape them as `\"`.
+6. Commit without env vars. Use `-m "..."` or `-F <file>`. Always double quotes for `-m`. Avoid quotes in `-m` messages. If you must include quotes, prefer `-F <file>` with a prepared message file.
 
 ## EOL and encoding policy
 1. For Markdown, verify LF both in index and working tree:  
@@ -102,12 +103,13 @@ _Expect: `eol: lf`._
 1. For search/probe tools, `RC=1` on “no matches” is acceptable. Print `(no matches)` and continue, without masking other errors.
    - Search exit codes: `git grep` (and optional `rg`) `RC=0` = matches, `RC=1` = no matches (OK), `RC>=2` = error.
    - Default repo search: prefer `git grep` scoped to explicit paths; prefer fixed strings (`-F`) unless regex is required; avoid whole-tree filesystem scans unless paths are explicitly narrowed.
+   - Avoid `findstr` unless explicitly requested; prefer `git grep` (tracked) or `Select-String` (single explicit file) to avoid CMD quoting issues.
    - Tracked vs untracked: `git grep` searches tracked files by default. If you need to search an untracked file (for example a draft/copy), do not assume empty output means `git grep` is broken.
    - Untracked fallback (repo-local, explicit file paths only): prefer `git grep --no-index` with explicit file paths only (not directories), or a PowerShell step using `Select-String` scoped to a single explicit file (no recursive scans).
 2. Check tool presence before use where applicable. Example for ripgrep (informational probe; exits 0 either way):
 
 ```powershell
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "$c=Get-Command rg -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if($c){'rg found: ' + $c.Source}else{'rg not found'}; exit 0"
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$c=Get-Command rg -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if($c){'rg found: ' + $c.Source}else{'rg not found'}; exit 0"
 ```
 
 3. Do not print or echo complex command lines. Always print a short marker; print the full command only when it is short and safe.
@@ -148,7 +150,7 @@ cmd.exe /c "echo COMMIT contract update"
 ```
 Run:  
 ```cmd
-cmd.exe /c "git commit -m \"docs(contract): update interaction contract\""
+cmd.exe /c "git commit -m ""docs(contract): update interaction contract"""
 ```
 
 
@@ -159,13 +161,13 @@ cmd.exe /c "echo PROBE heading in AGENTS.md"
 ```
 Preferred (PowerShell step; normalizes `RC=1` to success):
 ```powershell
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "$text='<TEXT>'; $paths=@('<PATH>'); git grep -n -F -- $text -- $paths; $rc=$LASTEXITCODE; if($rc -eq 1){'(no matches)'; exit 0}; if($rc -ge 2){exit $rc}; exit 0"
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$text='<TEXT>'; $paths=@('<PATH>'); git grep -n -F -- $text -- $paths; $rc=$LASTEXITCODE; if($rc -eq 1){'(no matches)'; exit 0}; if($rc -ge 2){exit $rc}; exit 0"
 ```
 If the PowerShell `-Command` becomes too long/fragile, write a tiny temporary script named `.git_...` in the repository root (use simple PowerShell file-write methods; avoid CMD metacharacter escaping), invoke it as a PowerShell step, then delete it.
 Avoid `Out-File` / `Set-Content -Encoding utf8` defaults (BOM). Prefer `git grep` over recursive filesystem scans.
 Simple (CMD step; if `<TEXT>` contains quotes/regex/backslashes, prefer the PowerShell step):
 ```cmd
-cmd.exe /c "git grep -n -F -- \"<TEXT>\" -- <PATHS>"
+cmd.exe /c "git grep -n -F -- ""<TEXT>"" -- <PATHS>"
 ```
 Optional: `rg` is not required. Use it only when explicitly requested and always constrained to specific files/dirs.
 
@@ -178,7 +180,7 @@ cmd.exe /c "echo VALIDATE BOM/NUL docs/INTERACTION_CONTRACT.md"
 ```
 Run:  
 ```powershell
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "$p='docs\INTERACTION_CONTRACT.md'; $b=[IO.File]::ReadAllBytes($p); if($b.Length -ge 3 -and $b[0]-eq 0xEF -and $b[1]-eq 0xBB -and $b[2]-eq 0xBF){Write-Error 'BOM'; exit 1}; if($b -contains 0){Write-Error 'NUL'; exit 1}; 'OK: no BOM, no NUL'"
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$p='docs\INTERACTION_CONTRACT.md'; $b=[IO.File]::ReadAllBytes($p); if($b.Length -ge 3 -and $b[0]-eq 0xEF -and $b[1]-eq 0xBB -and $b[2]-eq 0xBF){Write-Error 'BOM'; exit 1}; if($b -contains 0){Write-Error 'NUL'; exit 1}; 'OK: no BOM, no NUL'"
 ```
 
 ### 5) Verify LF in index and working tree
