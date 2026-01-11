@@ -12,13 +12,14 @@
 - Introducing new files for agents to touch without, in the same PR:
   - adding them to the “Allowed to edit” list in `AGENTS.md`, and
   - (recommended) backing the change with an ADR that explains why the new file exists.
+- Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated under `<workspace>\.codex_tmp\` only. This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
 
 ## Invariants
 
 * **No immediate reboots** inside `SetupComplete.cmd`. Reboot requirements are signaled only via `%WINDIR%\Panther\_needs_reboot.flag` (`Panther flag`) when `RC ∈ {3010, 1641}` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`. `SetupComplete.cmd` never calls `shutdown.exe`.
 * **EOL:** scripts (`.cmd/.ps1`) use CRLF; documentation (`.md`) uses LF.
 * Documentation must match actual behavior (paths, logs, steps). Details live in `README.md` and `DECISIONS.md`.
-* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; avoid nesting `cmd.exe /c` inside PowerShell steps unless required (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Project PowerShell/CLI rules**.
+* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; do not add an extra `cmd.exe /c` wrapper inside emitted step commands (the harness already runs every step via `cmd.exe /c "<line>"`) (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Project PowerShell/CLI rules**.
 * Use `reg.exe` directly. Always inspect `$LASTEXITCODE` after each call. For `DELETE`, return codes `{0,2}` are treated as success.
 * In `.cmd/.bat` files, direct PowerShell syntax is **not allowed**. Use it only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
 * In `.cmd/.bat` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
@@ -32,35 +33,47 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 * Single source of truth: `main`.
 * Environment: Windows 10/11, PowerShell 5.1, `cmd.exe`, Git for Windows.
+* All work MUST be performed from the repository root (workspace root).
+* Do not rely on persistent environment variables across runner steps. Within a single Scripted-mode `.ps1`, setting `$env:` is allowed for that script’s process tree.
 * Allowed files: only those explicitly requested in the prompt or listed in this contract. Minimal diffs only.
 
 ### Command contract
 
-* CMD steps: run as:
+* CMD steps: the harness executes each step as:
+
+  `cmd.exe /c "<line>"`
+
+  The agent MUST emit only `<line>` (the inner command line) and MUST NOT include `cmd.exe /c` inside emitted steps.
+
+* In emitted CMD `<line>`, use ASCII punctuation only (no smart quotes) and ASCII double quotes only (no single quotes). This rule applies to the emitted `<line>` only, not to PowerShell script contents.
+
+* Do not use command chaining operators (`&&`, `||`, command-separator `&`) in emitted CMD `<line>`.
+* Do not use pipes `|` in emitted CMD `<line>`.
+* CMD redirection is forbidden (even when writing under `.codex_tmp`).
+* Scripted mode: run temporary execution scripts via Windows PowerShell 5.1 explicitly (full pinned path) and `-File` (NOT `-Command`):
+
+  Forbidden:
+  - `pwsh`
+  - PowerShell 7+
+  - `powershell` without the pinned full path
 
   ```cmd
-  cmd.exe /c "…"
+  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".codex_tmp\step.ps1"
   ```
 
-* Use double quotes only in CMD steps. Never wrap CMD lines in single quotes.
+  Run from repo root so the relative path resolves. Do not hardcode drive letters for system paths.
 
-* PowerShell steps: call Windows PowerShell 5.1 explicitly (full path):
-
-  ```cmd
-  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive …
-  ```
-
-  Do not hardcode drive letters for system paths.
+* If a command needs pipes, redirections, chaining, conditional logic, output parsing, or “quoting gymnastics”, it MUST be done in Scripted mode via a temporary `.ps1` under `.codex_tmp` executed with `-File`.
 
 * Never run Git from inside `.git` subfolders.
 
-* Before a risky step, print `cd` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Abort on non-zero exit codes (with the explicit search `RC=1` exception defined in `docs/INTERACTION_CONTRACT.md`).
+* Before a risky step, print `cd` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Rely on the step’s exit code, do NOT add extra “check the previous step” steps (for example `if errorlevel`). For searches, the explicit `RC=1` normalization rule is defined in `docs/INTERACTION_CONTRACT.md`.
 
 ### Shell roles
 
 * Use CMD for `.cmd/.bat` semantics and simple commands where CMD parsing is safe.
 * Use Windows PowerShell 5.1 (full path) as the outer shell for brittle tasks (search, regex, quoting-heavy commands, structured parsing, pipelines/metacharacters), per `docs/INTERACTION_CONTRACT.md`.
-* Search defaults: use `git grep` scoped to explicit paths (tracked files by default); `rg` is optional only and must be constrained; for untracked files and search exit-code handling see `docs/INTERACTION_CONTRACT.md` → “Diagnostics and probes”.
+* Search defaults: use `git grep` scoped to explicit paths (tracked files by default); `rg` is optional only and must be constrained. Do not use `findstr` as a default search tool. If any probe needs branching on grep output, do it in Scripted mode and normalize `git grep` RC=1 explicitly (per `docs/INTERACTION_CONTRACT.md` → “Diagnostics and probes”).
 
 ### EOL/BOM policy
 

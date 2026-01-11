@@ -1,223 +1,256 @@
 # Codex CLI Interaction Contract
-
 This repository uses Codex CLI as the sole automation agent. Follow these rules precisely.
 
-## Scope and shells
-1. Work from the repository root, never inside `.git`.
-2. Choose the shell per step (shell-by-task policy; one step = one process):
-   - CMD step: use for `.cmd/.bat` semantics, CMD built-ins, and simple commands where CMD parsing is safe. Run as `cmd.exe /c "..."` with exactly one outer pair of ASCII double quotes (no extra outer layers). Avoid CMD pipes and command separators (`|`, `&&`, `||`, and standalone `&`) and nested quoting; redirections like `>`, `2>`, and `2>&1` are OK for diagnostics/probes and `.git_...` temp files. Do not use backslash-quote (a backslash followed by a double quote) expecting CMD to treat it as escaping. If you must pass inner double quotes inside a `cmd.exe /c "..."` command, escape them by doubling (`""`) and keep it minimal; otherwise prefer a PowerShell step or a file-based approach. If escaping/complex parsing would be required (for example heavy `%` expansion or caret escaping), prefer a PowerShell step. **Do not embed PowerShell `-Command` inside a `cmd.exe /c "..."` step for non-trivial logic; use a PowerShell step instead, or write a tiny `.git_...` temporary script and invoke it as a PowerShell step.**
-   - PowerShell step: use Windows PowerShell 5.1 as the outer shell when CMD parsing is brittle (search, regex, quoting-heavy commands, structured parsing, pipelines/metacharacters). Keep steps short and reproducible; avoid long inline `-Command` blobs. If logic is non-trivial or `-Command` becomes too long/fragile, prefer a tiny temporary script named `.git_...` in the repository root and invoke it.
-3. PowerShell steps MUST invoke Windows PowerShell 5.1 by full path:
-   `& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive ...`
-   Clarification: in PowerShell steps, invoke it via `& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"`; in CMD steps, `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` is acceptable.
+Primary goal: deterministic Windows-native execution without multi-layer quoting failures.
 
-## Invariants
-1. In command lines/code blocks: use ASCII punctuation (no typographic quotes). In the CMD layer (`cmd.exe /c "..."`): ASCII double quotes only, no single quotes.
-   Clarification: this ban applies to the CMD portion only; inside PowerShell `-Command` the script may use `'...'`.
-2. No `EnableDelayedExpansion` in `.cmd`.
-3. Minimal diffs. Do not change text outside edited hunks.
-4. File formats:  
-   - Markdown `*.md`: LF line endings.  
-   - Scripts `.cmd/.bat/.ps1`: CRLF.  
-   - UTF-8 without BOM everywhere.
-5. Command length must fit the Windows command-line limit, roughly 8191 characters for `cmd.exe`.
-6. Do not use `echo` or output redirection (`>`, `>>`, `2>`, `2>&1`) to generate or modify repository source files (especially tracked files). Output redirection to temporary diagnostic/probe files named `.git_...` in the repository root is allowed.
-7. One command per fenced code block. No shell prompt prefixes inside code blocks.
-8. Fenced code blocks MUST declare language identifiers: use `cmd` for CMD, `powershell` for PowerShell, `diff` for patches.
-9. Placeholders use `<PLACEHOLDER>` in UPPERCASE. Do not use `{}` or non-ASCII symbols for placeholders.
-10. Prefer single-line commands ≤ 120 characters; if longer, split into sequential steps or (for PowerShell) use a tiny temporary script named `.git_...` in the repository root.
+## Scope and working directory
+1. All work MUST be performed from the repository root (workspace root).
+2. Do not operate inside `.git` and do not write anything into `.git`.
+3. All temporary execution scripts MUST be created under `<workspace>\.codex_tmp\` only.
+4. Do not rely on persistent environment variables across runner steps. Within a single Scripted-mode `.ps1`, setting `$env:` is allowed for that script’s process tree.
 
-## Execution model
-1. Print a short step marker, then run the command as a separate step. Markers are short and never contain meta characters. Example marker:  
-   `cmd.exe /c "echo WRITE docs/INTERACTION_CONTRACT.md"`
-   Print the full command only when it is short and safe (no secrets; no quoting soup); otherwise print only the marker.
-2. Abort on any non-zero exit code by default.
-   - Exception (search/probes): `git grep` (and optional `rg`) return `1` for “no matches”; treat `RC=1` as OK and `RC>=2` as an error. Empty output is a valid outcome; do not retry/debug-loop solely because output is empty or `RC=1`.
-   - Do not add a separate `cmd.exe /c "if errorlevel ..."` step to “check the previous step”; rely on the step’s process exit code (the harness reports it).
-   - In PowerShell steps, check `$LASTEXITCODE` after external tools and `if(-not $?) { exit 1 }` after internal operations.
-3. Do not rely on environment variables across steps. Each step is a new process. If you need data across steps, use files. If a step depends on a specific directory, make `cd` an explicit separate step or use explicit paths.
-4. Markers and commit messages SHOULD be ASCII-only (to avoid console encoding issues).
-5. Do not chain commands with `&&`, `&`, or `||` (command separators). Redirections like `2>&1` are OK. Split actions into separate steps. Use the multi-step patterns from Diagnostics.
+## Execution model (Windows-native)
+Each step is one harness invocation executed as `cmd.exe /c "<line>"`. Scripted mode may require a prior file-edit operation to create a temporary execution script under `.codex_tmp`. 
+In Scripted mode, the emitted `<line>` MUST invoke pinned Windows PowerShell 5.1 via `-File` and MUST NOT add any additional shell wrappers.
+The emitted `<line>` MUST use ASCII punctuation only (no smart quotes).
+In the CMD layer (`cmd.exe /c "<line>"`), use ASCII double quotes only (no single quotes). This rule applies to the emitted `<line>` only, not to PowerShell script contents.
 
-## Git safety
-### Preflight: clean working copy
+- Do not use command chaining operators (`&&`, `||`, command-separator `&`) in inline steps.
+- Do not use pipes `|` in inline steps. If piping is required, use Scripted mode (pipelines inside `.ps1` are allowed).
+- Do not add an extra `cmd.exe /c` wrapper inside emitted step commands. The harness already runs every step via `cmd.exe /c "<line>"`.
+- For any file writes, redirections, and encoding rules, follow the section: "File writes, encoding, and redirections".
 
-Before any changes, ensure the working copy is clean (or only contains intended paths for this step):
+Inside `.ps1`, invoke executables directly (for example: `git status`). Use the call operator `&` only when invoking an executable via an explicit path (especially if the path is stored in a variable or contains spaces).
 
+If there is any doubt whether a command is “simple enough” to inline, use Scripted mode.
+Keep emitted CMD lines within the Windows command-line length limit (roughly 8191 characters); otherwise use Scripted mode.
+
+## Inline vs Scripted (mandatory decision)
+Use exactly one of these modes:
+
+### 1) Inline mode (allowed only for simple single-tool invocations)
+Inline mode is allowed only when all of the following are true:
+- A single executable invocation with straightforward arguments.
+- No pipes, no redirections, no chaining, no nested shells.
+- No complex quoting beyond normal path quoting.
+- No conditional logic (“if”, parsing output, branching, loops).
+
+Examples (allowed):
+- `git status -sb`
+- `git diff --name-status --`
+- `git rev-parse --show-toplevel`
+
+### 2) Scripted mode (required for anything non-trivial)
+Scripted mode is REQUIRED if the task involves any of the following:
+- Conditional logic, branching, parsing output, loops.
+- Any quoting that could become multi-layer quoting.
+- Any meta characters that commonly break Windows shells.
+- Multi-step workflows that must be fail-fast and deterministic.
+- Preflight checks that must not self-dirty the working copy.
+
+Scripted mode workflow:
+1) Write a temporary PowerShell script file under:
+   `<workspace>\.codex_tmp\`
+2) Execute it via Windows PowerShell 5.1 using `-File` (do not run temporary execution scripts via `-Command`).
+3) Cleanup according to the Cleanup policy.
+
+Inline mode follows runner shell constraints (CMD). Scripted mode runs PowerShell 5.1 as a separate process via `-File`. Do not try to mix them.
+Remember: regardless of mode, the harness executes each emitted step as `cmd.exe /c "<line>"`; Scripted mode means the emitted `<line>` invokes pinned PowerShell via `-File`.
+
+## Temporary execution scripts directory: .codex_tmp
+Location:
+- `<workspace>\.codex_tmp\`
+
+The repository is expected to ignore `.codex_tmp/` via `.gitignore`.
+
+Definitions:
+- Temporary execution scripts are `.ps1` files created by the agent under `.codex_tmp` solely to implement Scripted mode for the task at hand. They must not be committed and must be cleaned up per policy.
+- Repository scripts are tracked scripts in the repository (for example, `*.ps1` outside `.codex_tmp`) and must never be treated as temporary execution scripts.
+
+Rules:
+- Temporary execution scripts MUST be created only under `.codex_tmp\`.
+- Temporary execution scripts MUST NOT be created anywhere else in the workspace (including the repository root).
+- Temporary execution `.ps1` scripts MUST be created via Codex file editing operations (not via redirection, `Out-File`, or `Set-Content`).
+- Repository scripts (tracked `.ps1` files) are not temporary execution scripts and must not be treated as such.
+
+## PowerShell pinning (Windows PowerShell 5.1 only)
+All scripted execution MUST use Windows PowerShell 5.1 by full pinned path:
+
+`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`
+
+Forbidden:
+- `pwsh`
+- PowerShell 7+
+- `powershell` without the pinned full path
+- Any use of `-Command` for running temporary execution scripts
+
+## How to run temporary execution scripts (mandatory flags)
+When running a temporary execution `.ps1` script, ALWAYS use:
+- `-NoProfile`
+- `-NonInteractive`
+- `-ExecutionPolicy Bypass`
+- `-File <path-to-script.ps1>`
+
+Run this command from the repository root so the relative path ".codex_tmp\step.ps1" resolves correctly.
+
+Example:
 ```cmd
-cmd.exe /c "git status --porcelain=v1 > .git_stat"
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".codex_tmp\step.ps1"
 ```
 
-```cmd
-cmd.exe /c "for %G in (.git_stat) do if %~zG NEQ 0 exit /b 1"
-```
+Notes:
+* Do not embed script logic into command strings.
+* Do not pass a single “mega string” as arguments. Prefer explicit script parameters.
 
-```cmd
-cmd.exe /c "del /q .git_stat"
-```
+## Cleanup policy
+- On success (PowerShell exits with code 0 after running the script): delete the temporary execution script.
+- On failure (non-zero exit code): keep the script and print its full path for inspection.
+- Temporary outputs under `.codex_tmp` may be kept on failure for diagnostics, but should be removed on success.
 
-1. Never call Git from inside `.git` or its subfolders.
+## Script content requirements (deterministic and fail-fast)
+Every temporary execution `.ps1` MUST start with:
 
-Temporary files named `.git_...` in the repository root are allowed, but never execute Git from inside `.git` or its subfolders.
+1. Strict/fail-fast defaults:
 
-2. Work on a feature branch. Use forward slashes `/` in Git path arguments. Always separate paths with `--` in Git commands.
-3. Before Git operations, verify you are in a working tree and at the repo root:  
-   - `cmd.exe /c "git rev-parse --is-inside-work-tree"` must print `true`.  
-   - `cmd.exe /c "git rev-parse --show-toplevel"` must print the repository root path. If you are not operating from that root, stop and fix the working directory (use an explicit `cd` step or explicit paths).
-4. Stage only intended paths:  
-   `cmd.exe /c "git add -- docs/INTERACTION_CONTRACT.md"`
-5. Before committing, show staged changes with pager disabled:  
-   `cmd.exe /c "git --no-pager diff --cached --name-status --"`
-6. Commit without env vars. Use `-m "..."` or `-F <file>`. Always double quotes for `-m`. Avoid quotes in `-m` messages. If you must include quotes, prefer `-F <file>` with a prepared message file.
+* `Set-StrictMode -Version Latest`
+* `$ErrorActionPreference = 'Stop'`
 
-## EOL and encoding policy
-1. For Markdown, verify LF both in index and working tree:  
-   `cmd.exe /c "git ls-files --eol -- docs/INTERACTION_CONTRACT.md"`  
-   Expect `i/lf w/lf`.
-2. Do not use `Out-File` or `Set-Content -Encoding utf8` on PowerShell 5.1, they emit BOM. To write text files use .NET APIs:  
-   `[System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))`
-3. Validation order for newly written text files:  
-   1) Write the file.  
-   2) Validate BOM and NUL.  
-   3) Stage the file.  
-   4) Verify EOL via `git ls-files --eol`.
-4. BOM and NUL validation is mandatory:  
-   - First three bytes are not `EF BB BF`.  
-   - No `0x00` bytes present.
+2. A short comment header describing purpose and scope.
 
-Additionally, confirm `.gitattributes` applies the expected rule:
+3. Exit behavior:
 
-```cmd
-cmd.exe /c "git check-attr eol -- docs/INTERACTION_CONTRACT.md"
-```
-_Expect: `eol: lf`._
+* On success: exit code MUST be 0.
+* On failure: exit code MUST be non-zero.
 
-## Command block formatting
-1. Use fenced code blocks with language identifiers for every command.
-2. Do not include shell prompts like `PS C:\>` or `C:\>`.
-3. Keep commands ASCII-only; avoid curly quotes and non-ASCII punctuation.
-4. Use forward slashes `/` in Git paths; backslashes `\` are allowed in PowerShell strings.
-5. Marker and Run remain separate blocks.
+### External executables inside scripts
+
+When calling an external executable, the script MUST:
+
+* Invoke the executable directly (no nested shells).
+* Check `$LASTEXITCODE` and treat non-zero as failure unless explicitly normalized.
+
+If a tool uses a non-zero code for “not an error” semantics (example: “no matches”), the script MUST:
+
+* Normalize that code explicitly.
+* Document the normalization in a comment.
+
+## Forbidden patterns
+The following are forbidden in this repository’s execution workflow:
+
+* Running temporary execution scripts via `-Command` instead of `-File`
+* Embedding non-trivial PowerShell inside `cmd.exe` quoting layers for logic
+* Adding extra steps to “check the previous step” (for example via `if errorlevel`) instead of relying on the step’s exit code
+* Any “double wrapping” such as `cmd.exe /c "cmd.exe /c ..."`
+* Including `cmd.exe /c` in an emitted step command (the harness already supplies it)
+* Building a single command string to execute via a shell inside `.ps1` instead of invoking tools directly
+* Introducing `EnableDelayedExpansion` in tracked `.cmd` / `.bat` scripts
+
+
+## File writes, encoding, and redirections
+
+
+### Repository files (tracked content)
+
+Rule: Do not create or modify tracked repository files using redirection or implicit-encoding write commands.  
+If output must be captured, do it only in Scripted mode and write only under `.codex_tmp\...` (never into tracked paths).
+
+Forbidden when the destination is a tracked repository path:
+- Any redirection (CMD or PowerShell), including `>`, `>>`, `2>`, `2>&1`, `*>` (including `echo ... > file`)
+- Any implicit-encoding writes (PowerShell), including `Out-File` and `Set-Content`
+
+Preferred:
+- Use Codex file editing operations for tracked repository files.
+- If you must capture tool output, write only under `.codex_tmp\...` (for example: `.codex_tmp\tool.log`).
+
+Capturing output (diagnostic logs):
+- If output must be captured, do it only in Scripted mode and write only under `.codex_tmp\...`.
+- CMD redirection is forbidden (even when writing under `.codex_tmp`).
+- Writing logs under `.codex_tmp` is allowed using `Out-File` / `Set-Content` only when the destination is under `.codex_tmp` and encoding is explicitly specified. (BOM is acceptable for diagnostic logs.)
+- Prefer `Out-File -Encoding UTF8` (or an explicitly specified encoding) when writing diagnostic logs under `.codex_tmp`.
+
+### Encoding and EOL
+
+- Tracked Markdown (.md): UTF-8 without BOM, LF line endings.
+- Tracked scripts (.ps1, .cmd, .bat): UTF-8 without BOM, CRLF line endings.
+- Tracked scripts must be ASCII-only (no non-ASCII characters in file contents).
+- Temporary execution `.ps1` files under `.codex_tmp`: UTF-8 without BOM.
+- Temporary execution scripts under `.codex_tmp` do not require a specific line ending style (LF or CRLF is acceptable). Do not spend effort normalizing EOL for temporary scripts.
 
 ## Diagnostics and probes
-1. For search/probe tools, `RC=1` on “no matches” is acceptable. Print `(no matches)` and continue, without masking other errors.
-   - Search exit codes: `git grep` (and optional `rg`) `RC=0` = matches, `RC=1` = no matches (OK), `RC>=2` = error.
-   - Default repo search: prefer `git grep` scoped to explicit paths; prefer fixed strings (`-F`) unless regex is required; avoid whole-tree filesystem scans unless paths are explicitly narrowed.
-   - Avoid `findstr` unless explicitly requested; prefer `git grep` (tracked) or `Select-String` (single explicit file) to avoid CMD quoting issues.
-   - Tracked vs untracked: `git grep` searches tracked files by default. If you need to search an untracked file (for example a draft/copy), do not assume empty output means `git grep` is broken.
-   - Untracked fallback (repo-local, explicit file paths only): prefer `git grep --no-index` with explicit file paths only (not directories), or a PowerShell step using `Select-String` scoped to a single explicit file (no recursive scans).
-2. Check tool presence before use where applicable. Example for ripgrep (informational probe; exits 0 either way):
+Principles:
 
-```powershell
-& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$c=Get-Command rg -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if($c){'rg found: ' + $c.Source}else{'rg not found'}; exit 0"
-```
+1. Prefer tools that operate on tracked files and repo metadata.
+2. Prefer deterministic scopes: explicit paths, no recursive filesystem scans unless required.
+3. Avoid fragile shell constructs in probes. If a probe needs logic, use Scripted mode.
 
-3. Do not print or echo complex command lines. Always print a short marker; print the full command only when it is short and safe.
+### Search
 
-## Logging and secrecy
-1. Before every step print the working directory and a short marker. Do not print secrets, tokens or passwords. For sensitive actions, print only the marker.
-2. If any step fails, stop immediately. Do not “fix” by inventing unprinted commands.
+Preferred:
 
-## Forbidden actions
-1. No Git calls in `.git`.  
-2. No single quotes in any `cmd.exe /c` line.  
-3. No extra quote layers around whole commands.  
-4. No delayed expansion.  
-5. Do not touch files not listed in the plan.  
-6. Do not mask non-zero exit codes (except the explicit search/probe “no matches” (`RC=1`) normalization pattern).  
-7. Do not change EOL or encoding against policy.  
-8. Do not execute commands that were not preceded by a marker.
+* `git grep` for tracked files.
 
-## Safe patterns (examples)
+When interpreting results:
 
+* `git grep` exit code 0 means matches found.
+* `git grep` exit code 1 means no matches (NOT an error for search).
+* `git grep` exit code >= 2 means an error.
 
-### 1) Print marker, then run a simple command
-Marker:  
-```cmd
-cmd.exe /c "echo STATUS short"
-```
+If a probe must branch on grep output, implement it in a temporary execution `.ps1` script and normalize `RC=1` explicitly.
 
-Run:  
-```cmd
-cmd.exe /c "git status -s"
-```
+### Avoid
 
+* Do not use `findstr` as a default search tool.
+* Do not use file-size heuristics to detect success/failure of a probe.
 
-### 2) Commit without env vars
-Marker:  
-```cmd
-cmd.exe /c "echo COMMIT contract update"
-```
-Run:  
-```cmd
-cmd.exe /c "git commit -m ""docs(contract): update interaction contract"""
-```
+## Git safety
+1. Run all git operations from repository root.
+2. Do not run git from inside `.git`.
+3. Preflight MUST NOT self-dirty the working copy.
+4. Do not modify `.gitignore` unless the user prompt explicitly instructs you to change `.gitignore`.
+5. In Git commands that specify paths, always separate paths with `--`.
+6. Before committing, review staged changes.
 
+### Preflight (clean working copy without self-dirtying)
 
-### 3) Diagnostic probe with git grep (preferred)
-Marker:  
-```cmd
-cmd.exe /c "echo PROBE heading in AGENTS.md"
-```
-Preferred (PowerShell step; normalizes `RC=1` to success):
-```powershell
-& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$text='<TEXT>'; $paths=@('<PATH>'); git grep -n -F -- $text -- $paths; $rc=$LASTEXITCODE; if($rc -eq 1){'(no matches)'; exit 0}; if($rc -ge 2){exit $rc}; exit 0"
-```
-If the PowerShell `-Command` becomes too long/fragile, write a tiny temporary script named `.git_...` in the repository root (use simple PowerShell file-write methods; avoid CMD metacharacter escaping), invoke it as a PowerShell step, then delete it.
-Avoid `Out-File` / `Set-Content -Encoding utf8` defaults (BOM). Prefer `git grep` over recursive filesystem scans.
-Simple (CMD step; if `<TEXT>` contains quotes/regex/backslashes, prefer the PowerShell step):
-```cmd
-cmd.exe /c "git grep -n -F -- ""<TEXT>"" -- <PATHS>"
-```
-Optional: `rg` is not required. Use it only when explicitly requested and always constrained to specific files/dirs.
+Preflight SHOULD be implemented in Scripted mode (temporary execution `.ps1`) to avoid creating artifacts in repo root.
 
+Preflight must:
 
-### 4) Validate BOM and NUL bytes (PowerShell one-liner)
-*Note: single quotes are allowed inside PowerShell `-Command` text. Single quotes remain forbidden in the CMD layer.*
-Marker:  
-```cmd
-cmd.exe /c "echo VALIDATE BOM/NUL docs/INTERACTION_CONTRACT.md"
-```
-Run:  
-```powershell
-& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$p='docs\INTERACTION_CONTRACT.md'; $b=[IO.File]::ReadAllBytes($p); if($b.Length -ge 3 -and $b[0]-eq 0xEF -and $b[1]-eq 0xBB -and $b[2]-eq 0xBF){Write-Error 'BOM'; exit 1}; if($b -contains 0){Write-Error 'NUL'; exit 1}; 'OK: no BOM, no NUL'"
-```
+* Confirm repository root (`git rev-parse --show-toplevel`) matches the current working directory expectations.
+* Ensure `.codex_tmp` exists (create it if missing).
+* Check the working copy is clean using `git status --porcelain=v1` (read in-memory, no output redirection to repo-root files). If `.codex_tmp` appears, stop and report that `.gitignore` must include `.codex_tmp/`. Do not attempt to modify `.gitignore` unless explicitly instructed.
+* `.codex_tmp` is expected to be ignored by `.gitignore` and must not affect preflight cleanliness.
+* Fail if the working copy is not clean, unless the task explicitly requires changes.
 
-### 5) Verify LF in index and working tree
-Marker:  
-```cmd
-cmd.exe /c "echo VERIFY EOL docs/INTERACTION_CONTRACT.md"
-```
-Run:  
-```cmd
-cmd.exe /c "git ls-files --eol -- docs/INTERACTION_CONTRACT.md"
-```
+## Output discipline
+1. Print short, stable markers (one line) before major actions.
+2. Print full commands only if short and safe (no secrets, no complex quoting).
+3. Never print secrets, tokens, or sensitive data.
+4. Prefer ASCII-only markers to reduce console encoding ambiguity.
 
-
-### 6) Stage specific paths and show staged list
-Marker:  
-```cmd
-cmd.exe /c "echo ADD contract file"
-```
-Run:  
-```cmd
-cmd.exe /c "git add -- docs/INTERACTION_CONTRACT.md"
-```
-
-Marker:  
-```cmd
-cmd.exe /c "echo SHOW staged"
-```
-Run:  
-```cmd
-cmd.exe /c "git --no-pager diff --cached --name-status --"
-```
-
+## Formatting rules for commands in responses
+1. One command per fenced code block.
+2. Use language identifiers for fenced blocks:
+   * `cmd` for CMD invocations
+   * `powershell` for PowerShell snippets (script contents)
+   * `diff` for patches
+3. Do not include shell prompts (no `PS C:\...>` or `C:\...>` inside blocks).
+4. Using `cmd` in fenced code blocks is only a formatting hint, not an instruction to wrap with `cmd.exe /c`.
 
 ## Acceptance checklist
-1. CMD steps used `cmd.exe /c "..."` with exactly one outer pair of ASCII double quotes (no extra outer layers). PowerShell steps invoked Windows PowerShell 5.1 by full path.
-2. No single quotes in the **CMD layer**. Single quotes **are allowed** inside PowerShell `-Command` text. No smart quotes in code blocks/commands.
-3. New or modified Markdown files are UTF-8 without BOM and LF, validated by the BOM/NUL one-liner and `git ls-files --eol`.  
-4. Git operations executed from repo root, not from `.git`. Work-tree and repo root checks passed.  
-5. Staged list shown before commit. Commit done with `-m` or `-F`, no env vars.  
-6. Any non-zero exit code stopped the run.
+Before declaring success, verify:
+
+1. No emitted `<line>` contained `cmd.exe /c` (the harness already supplies it).
+2. No nested wrapping such as `cmd.exe /c "cmd.exe /c ..."` occurred.
+3. Temporary execution script used only Windows PowerShell 5.1 pinned path and `-File` with:
+   `-NoProfile -NonInteractive -ExecutionPolicy Bypass`
+4. No temporary execution script used `-Command` to execute logic.
+5. Temporary artifacts were created only under `.codex_tmp`, and cleanup rules were followed:
+   * scripts removed on success
+   * scripts preserved on failure with the path printed
+6. Markdown encoding/EOL constraints are met (UTF-8 without BOM, LF).
+7. Tracked scripts (.ps1, .cmd) encoding/EOL constraints are met (UTF-8 without BOM, CRLF).
+8. For modified tracked text files, verify no BOM and no NUL bytes (per repo policy).
+9. Any probe/search logic normalized non-error exit codes explicitly (example: `git grep RC=1`).
+10. No repository files were created/modified via redirection or implicit-encoding output commands.
+11. `.codex_tmp/` is ignored via `.gitignore` and does not affect preflight cleanliness.
