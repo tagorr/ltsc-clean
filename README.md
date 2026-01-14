@@ -209,7 +209,7 @@ Operator follow-up:
 
 ### Group resolution and localization
 
-* Stage A enforces local group membership via SID-based resolution using `Microsoft.PowerShell.LocalAccounts` (`Get-LocalGroup -SID` + `Add-LocalGroupMember`), so membership operations do not depend on localized group names.
+* Stage A enforces local group membership via SID-based resolution using `Microsoft.PowerShell.LocalAccounts` (`Get-LocalGroup -SID` + `Add-LocalGroupMember`), so membership operations do not depend on localized group names. Membership verification does not enumerate group members; it uses bounded repeat `Add-LocalGroupMember` idempotency (already-member / MemberExists condition, Win32 1378). Ensure-step code semantics: the Administrators ensure returns 1378 for already-member/no-change (used for `A: SKIP (already member)` logging) while ensured/verified returns 0; Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 
   * `S-1-5-32-544` for the Administrators group
   * `S-1-5-32-555` for the Remote Desktop Users group
@@ -229,7 +229,7 @@ Operator follow-up:
   * adds the account to the Administrators group using SID based resolution;
   * optionally adds the account to Remote Desktop Users if configured;
   * logs a clear result for Stage A, including return codes and whether membership changes were actually needed.
-* Stage A is idempotent. Already-a-member outcomes are treated as success and logged as `A: SKIP (already member)`.
+* Stage A is idempotent. Already-a-member outcomes are normal and logged as `A: SKIP (already member)` when the Administrators ensure returns 1378 (a distinct ensure-step "no-change" code, not Stage A's overall RC); Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 
 ### Stage B - cleanup, Panther flag, normal vs recovery
 
@@ -409,7 +409,7 @@ For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST
 
 4. Stage A idempotence
 
-   Already-a-member outcomes are normal and should not block the run. The script logs them as a skip (`A: SKIP (already member)`).
+   Already-a-member outcomes are normal and should not block the run. The script logs them as a skip (`A: SKIP (already member)`) when the Administrators ensure returns 1378 (a distinct ensure-step "no-change" code, not Stage A's overall RC); Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 
 5. Interpolation bug
 

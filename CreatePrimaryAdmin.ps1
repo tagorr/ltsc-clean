@@ -342,89 +342,137 @@ function Get-LocalUserExists([string]$User) {
     throw
   }
 }
-function Ensure-InAdministrators([string]$User) {
-  $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
-  $localUser = Get-LocalUser -Name $User -ErrorAction Stop
-  $userSid = [string]$localUser.SID
-  $members = @(Get-LocalGroupMember -Group $group.Name -ErrorAction Stop)
-  foreach ($m in $members) {
-    $memberSid = [string]$m.SID
-    if ($memberSid -and ($memberSid -eq $userSid)) {
-      Write-SetupLog ("{0} already in {1}" -f $User,$group.Name) 'DEBUG'
-      return 1378
+function Test-IsAlreadyMemberError([System.Management.Automation.ErrorRecord]$Err) {
+  if (-not $Err) { return $false }
+
+  $fqid = $null
+  try { $fqid = $Err.FullyQualifiedErrorId } catch {}
+  if ($fqid -and ($fqid -match 'MemberExists')) { return $true }
+
+  $reason = $null
+  $category = $null
+  try { $reason = $Err.CategoryInfo.Reason } catch {}
+  try { $category = $Err.CategoryInfo.ToString() } catch {}
+  if ($reason -and ($reason -match 'MemberExists')) { return $true }
+
+  $ex = $Err.Exception
+  $etype = $null
+  $hresult = $null
+  try { if ($ex) { $etype = $ex.GetType().FullName } } catch {}
+  try { if ($ex) { $hresult = $ex.HResult } } catch {}
+  if ($etype -and ($etype -match 'MemberExists')) { return $true }
+
+  # Win32 ERROR_MEMBER_IN_ALIAS (1378) => HRESULT 0x80070562 => -2147023518
+  if ($hresult -eq -2147023518) { return $true }
+
+  # Prefer Win32Exception.NativeErrorCode if present anywhere in the chain.
+  try {
+    $w32 = $ex
+    while ($w32 -and -not ($w32 -is [System.ComponentModel.Win32Exception])) { $w32 = $w32.InnerException }
+    if ($w32 -and $w32.NativeErrorCode -eq 1378) { return $true }
+  } catch {}
+
+  # LAST RESORT (string-based): code-cue only. Not locale-agnostic; only helps if the text contains numeric codes.
+  $msg = $null
+  try { if ($ex -and $ex.Message) { $msg = $ex.Message } } catch {}
+  if (-not $msg) { try { $msg = $Err.ToString() } catch {} }
+
+  if ($msg -and ($msg -match '(?i)(?:\b1378\b|0x80070562)')) {
+    if ($VerboseLog) {
+      $msgOneLine = ($msg -replace '\s+', ' ').Trim()
+      if ($msgOneLine.Length -gt 180) { $msgOneLine = $msgOneLine.Substring(0,180) + '…' }
+
+      $fqidText = if ($fqid) { $fqid } else { '' }
+      $etypeText = if ($etype) { $etype } else { '' }
+      $hresultText = if ($null -ne $hresult) { [string]$hresult } else { '' }
+      $categoryText = if ($category) { $category } else { '' }
+
+      Write-SetupLog (
+        "MemberExists detection used STRING fallback (code cue): fqid='{0}' etype='{1}' hresult='{2}' category='{3}' msg='{4}'" -f
+          $fqidText, $etypeText, $hresultText, $categoryText, $msgOneLine
+      ) 'DEBUG'
     }
+
+    return $true
   }
 
-  $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
-  try {
-    Add-LocalGroupMember -Group $group.Name -Member $memberName -ErrorAction Stop
-    Write-SetupLog ("Added {0} to {1}" -f $User,$group.Name)
-    return 0
-  } catch {
-    $fqid = $_.FullyQualifiedErrorId
-    $etype = $null; try { $etype = $_.Exception.GetType().FullName } catch {}
-    $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
-    if (($fqid -and ($fqid -match 'MemberExists')) -or ($etype -and ($etype -match 'MemberExists')) -or ($msg -match '(?i)\balready\b.*\bmember\b.*\bgroup\b')) {
-      Write-SetupLog ("{0} already in {1} (Add-LocalGroupMember idempotent)" -f $User,$group.Name) 'DEBUG'
-      return 1378
-    }
-    throw
-  }
-}
-function Ensure-InGroup([string]$Group, [string]$User) {
-  try {
-    $groupObj = $null
-    if ($Group -match '^S-1-') {
-      $groupObj = Get-LocalGroup -SID $Group -ErrorAction Stop
-    } else {
-      $groupObj = Get-LocalGroup -Name $Group -ErrorAction Stop
-    }
-    $localUser = Get-LocalUser -Name $User -ErrorAction Stop
-    $userSid = [string]$localUser.SID
-    $members = @(Get-LocalGroupMember -Group $groupObj.Name -ErrorAction Stop)
-    foreach ($m in $members) {
-      $memberSid = [string]$m.SID
-      if ($memberSid -and ($memberSid -eq $userSid)) {
-        Write-SetupLog ("Ensured {0} in {1}" -f $User,$groupObj.Name)
-        return
-      }
-    }
-
-    $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
-    try {
-      Add-LocalGroupMember -Group $groupObj.Name -Member $memberName -ErrorAction Stop
-      Write-SetupLog ("Ensured {0} in {1}" -f $User,$groupObj.Name)
-    } catch {
-      $fqid = $_.FullyQualifiedErrorId
-      $etype = $null; try { $etype = $_.Exception.GetType().FullName } catch {}
-      $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
-      if (($fqid -and ($fqid -match 'MemberExists')) -or ($etype -and ($etype -match 'MemberExists')) -or ($msg -match '(?i)\balready\b.*\bmember\b.*\bgroup\b')) {
-        Write-SetupLog ("{0} already in {1} (Add-LocalGroupMember idempotent)" -f $User,$groupObj.Name) 'DEBUG'
-        return
-      }
-      throw
-    }
-  } catch {
-    throw
-  }
-}
-
-function Test-AdministratorsMembership([string]$User) {
-  try {
-    $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
-    $localUser = Get-LocalUser -Name $User -ErrorAction Stop
-    $userSid = [string]$localUser.SID
-    $members = @(Get-LocalGroupMember -Group $group.Name -ErrorAction Stop)
-    foreach ($m in $members) {
-      $memberSid = [string]$m.SID
-      if ($memberSid -and ($memberSid -eq $userSid)) { return $true }
-    }
-  } catch {
-    Write-SetupLog ("LocalAccounts membership check failed for Administrators: {0}" -f $_.Exception.Message) 'WARN'
-  }
   return $false
 }
 
+function Ensure-LocalGroupMemberBounded(
+  [string]$GroupName,
+  [string]$MemberName,
+  [string]$UserForLog,
+  [int]$SleepMs = 75
+) {
+  # Attempt 1: add
+  try {
+    Add-LocalGroupMember -Group $GroupName -Member $MemberName -ErrorAction Stop
+  } catch {
+    if (Test-IsAlreadyMemberError $_) {
+      if ($VerboseLog) {
+        Write-SetupLog ("{0} already in {1} (Add-LocalGroupMember idempotent)" -f $UserForLog,$GroupName) 'DEBUG'
+      }
+      return 1378
+    }
+    throw
+  }
+
+  Start-Sleep -Milliseconds $SleepMs
+
+  # Attempt 2: verify (expect already-member)
+  try {
+    Add-LocalGroupMember -Group $GroupName -Member $MemberName -ErrorAction Stop
+    Write-SetupLog ("Add-LocalGroupMember verify unexpectedly succeeded for {0} in {1}; retrying once" -f $UserForLog,$GroupName) 'WARN'
+  } catch {
+    if (Test-IsAlreadyMemberError $_) { return 0 }
+    throw
+  }
+
+  Start-Sleep -Milliseconds $SleepMs
+
+  # Attempt 3: final control
+  try {
+    Add-LocalGroupMember -Group $GroupName -Member $MemberName -ErrorAction Stop
+
+    $msg = ("HARD FAIL: Add-LocalGroupMember idempotency invariant violated (attempt 3 succeeded): {0} -> {1}" -f $UserForLog,$GroupName)
+    Write-SetupLog $msg 'ERROR'
+    throw [System.InvalidOperationException]::new($msg)
+  } catch {
+    if (Test-IsAlreadyMemberError $_) {
+      Write-SetupLog ("Verified {0} in {1} after 3rd try (Add-LocalGroupMember idempotency)" -f $UserForLog,$GroupName) 'WARN'
+      return 0
+    }
+    throw
+  }
+}
+function Ensure-InAdministrators([string]$User) {
+  $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+  [void](Get-LocalUser -Name $User -ErrorAction Stop)
+
+  $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
+
+  $rc = Ensure-LocalGroupMemberBounded -GroupName $group.Name -MemberName $memberName -UserForLog $User
+  if ($rc -eq 0) {
+    Write-SetupLog ("Ensured {0} in {1}" -f $User,$group.Name)
+  }
+  return $rc
+}
+function Ensure-InGroup([string]$Group, [string]$User) {
+  $groupObj = $null
+  if ($Group -match '^S-1-') {
+    $groupObj = Get-LocalGroup -SID $Group -ErrorAction Stop
+  } else {
+    $groupObj = Get-LocalGroup -Name $Group -ErrorAction Stop
+  }
+
+  [void](Get-LocalUser -Name $User -ErrorAction Stop)
+
+  $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
+
+  [void](Ensure-LocalGroupMemberBounded -GroupName $groupObj.Name -MemberName $memberName -UserForLog $User)
+  Write-SetupLog ("Ensured {0} in {1}" -f $User,$groupObj.Name)
+}
 $rc = 0
 $StageA_Succeeded = $false
 $StageA_RC = 0
@@ -475,7 +523,7 @@ try {
     try {
       $requiredCmdlets = @(
         'Get-LocalUser','New-LocalUser','Set-LocalUser','Enable-LocalUser','Remove-LocalUser',
-        'Get-LocalGroup','Get-LocalGroupMember','Add-LocalGroupMember'
+        'Get-LocalGroup','Add-LocalGroupMember'
       )
       foreach ($c in $requiredCmdlets) { [void](Get-Command -Name $c -ErrorAction Stop) }
       $getLocalGroupCmd = Get-Command -Name 'Get-LocalGroup' -ErrorAction Stop
@@ -533,16 +581,10 @@ try {
       if ($PasswordNeverExpires) { $setArgs['PasswordNeverExpires'] = $true; $doSet = $true }
       if ($doSet) { Set-LocalUser @setArgs }
 
-      Write-Verbose "Stage A: verifying Administrators membership via LocalAccounts"
-      $isAdminMember = Test-AdministratorsMembership $PrimaryUser
-      if ($isAdminMember) {
+      Write-Verbose "Stage A: ensuring Administrators membership (bounded Add-LocalGroupMember)"
+      $addCode = Ensure-InAdministrators $PrimaryUser
+      if ($addCode -eq 1378) {
         Write-SetupLog "A: SKIP (already member)"
-      } else {
-        Write-Verbose ("Stage A: adding {0} to Administrators" -f $PrimaryUser)
-        $addCode = Ensure-InAdministrators $PrimaryUser
-        if ($addCode -eq 1378) {
-          Write-SetupLog "A: SKIP (already member)"
-        }
       }
 
       if ($AddToRemoteDesktopUsers) { Ensure-InGroup 'S-1-5-32-555' $PrimaryUser }
