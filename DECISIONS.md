@@ -824,7 +824,7 @@ The temporary `bootstrap` account is provisioned in PreOOBE via `Microsoft.Power
 
 - Stage A requires a 64-bit PowerShell process and `Microsoft.PowerShell.LocalAccounts` availability; missing prerequisites are treated as a hard preflight failure.
 - The password is applied via `New-LocalUser`/`Set-LocalUser` with a `SecureString`; the password is never passed as plaintext on an external process command line.
-- Stage A creates or updates the local user, enables it, and enforces required local group membership via SID-based group resolution (`Get-LocalGroup -SID` + `Add-LocalGroupMember`).
+- Stage A creates or updates the local user, enables it, and enforces required local group membership via SID-based group resolution (`Get-LocalGroup -SID` + `Add-LocalGroupMember`). Membership verification does not enumerate group members; it uses bounded repeat `Add-LocalGroupMember` idempotency (already-member / MemberExists condition, Win32 1378). Ensure-step code semantics: the Administrators ensure returns 1378 for already-member/no-change (used for `A: SKIP (already member)` logging) while ensured/verified returns 0; Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 - Rollback remains fail-closed and observable: when Stage A created `primaryadmin` during this run and a later Stage A step fails, it attempts best-effort rollback via `Remove-LocalUser` and forces recovery; when the user existed before this run, Stage A does not delete it on failure.
 - For pre-existing users only, Stage A makes a best-effort attempt to clear “must change password at next logon” via `net.exe user <user> /logonpasswordchg:no` (no secrets on CLI).
 

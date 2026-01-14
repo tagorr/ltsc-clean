@@ -251,8 +251,9 @@ S
   * [ ] Correctly handle `FullName`, `Description`, `PasswordNeverExpires`.
 * [ ] Membership in `Administrators`:
 
-  * [ ] Checked by `Test-AdministratorsMembership`.
-  * [ ] Added via `Ensure-InAdministrators`, with meaningful RC handling (including "already a member").
+  * [ ] Ensured via `Ensure-InAdministrators` (no `Get-LocalGroupMember` enumeration).
+  * [ ] Verification uses bounded repeat `Add-LocalGroupMember` idempotency (already-member / MemberExists condition, Win32 1378).
+  * [ ] Ensure-step code semantics: `Ensure-InAdministrators` returns 1378 for already-member/no-change (Stage A logs `A: SKIP (already member)`), returns 0 when ensured/verified; Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 * [ ] Membership in `Remote Desktop Users`:
 
   * [ ] Controlled by `-AddToRemoteDesktopUsers`.
