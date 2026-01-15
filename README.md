@@ -505,6 +505,7 @@ Enforcement:
 What happens on PRs:
 
 * If a change introduces LF only lines in `*.ps1`, `*.cmd`, or `*.bat`, the workflow fails and merge is blocked until line endings are fixed.
+* CI also enforces: no UTF-8 BOM, no NUL bytes (for covered text-like tracked files), and Markdown `*.md` must be LF-only (no CR).
 
 See also `CONTRIBUTING.md` for editor tips and local checks, and the rationale in `DECISIONS.md`.
 

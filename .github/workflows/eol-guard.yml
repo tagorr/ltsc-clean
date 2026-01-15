@@ -26,3 +26,97 @@ jobs:
             echo "$offenders"
             exit 1
           fi
+
+      - name: Fail if tracked text files contain BOM/NUL, or Markdown contains CR
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import sys
+          
+          TEXT_EXTS = {
+              ".ps1",
+              ".psm1",
+              ".psd1",
+              ".cmd",
+              ".bat",
+              ".md",
+              ".xml",
+              ".yml",
+              ".yaml",
+              ".json",
+              ".txt",
+          }
+          SPECIAL_BASENAMES = {".gitattributes", ".gitignore"}
+          
+          paths_raw = subprocess.check_output(["git", "ls-files", "-z"])
+          tracked_paths = [p.decode("utf-8", errors="surrogateescape") for p in paths_raw.split(b"\0") if p]
+          
+          included = []
+          for path in tracked_paths:
+              base = os.path.basename(path)
+              _, ext = os.path.splitext(path)
+              if ext.lower() in TEXT_EXTS or base in SPECIAL_BASENAMES:
+                  included.append(path)
+          
+          bom_files = []
+          nul_files = []
+          md_cr_files = []
+          read_errors = []
+          
+          for path in included:
+              is_md = path.lower().endswith(".md")
+              try:
+                  with open(path, "rb") as f:
+                      head = f.read(3)
+                      if head == b"\xef\xbb\xbf":
+                          bom_files.append(path)
+          
+                      found_nul = b"\x00" in head
+                      found_md_cr = is_md and (b"\r" in head)
+          
+                      while True:
+                          chunk = f.read(1024 * 1024)
+                          if not chunk:
+                              break
+                          if not found_nul and b"\x00" in chunk:
+                              found_nul = True
+                          if is_md and not found_md_cr and b"\r" in chunk:
+                              found_md_cr = True
+                          if found_nul and (not is_md or found_md_cr):
+                              break
+          
+                      if found_nul:
+                          nul_files.append(path)
+                      if found_md_cr:
+                          md_cr_files.append(path)
+              except Exception as e:
+                  read_errors.append(f"{path}: {e}")
+          
+          if bom_files or nul_files or md_cr_files or read_errors:
+              print("::error::CI text file hygiene checks failed.")
+              if bom_files:
+                  print("")
+                  print("UTF-8 BOM detected (EF BB BF). Remove the BOM from:")
+                  for p in sorted(bom_files):
+                      print(f"  - {p}")
+              if nul_files:
+                  print("")
+                  print("NUL byte detected (00). Remove NUL bytes (or fix mistaken binary-as-text) in:")
+                  for p in sorted(nul_files):
+                      print(f"  - {p}")
+              if md_cr_files:
+                  print("")
+                  print("Markdown contains CR (0D). Convert Markdown to LF-only line endings in:")
+                  for p in sorted(md_cr_files):
+                      print(f"  - {p}")
+              if read_errors:
+                  print("")
+                  print("Read errors while scanning tracked files:")
+                  for p in sorted(read_errors):
+                      print(f"  - {p}")
+              sys.exit(1)
+          
+          print("OK: no UTF-8 BOM, no NUL bytes, and Markdown is LF-only (in covered tracked files).")
+          PY
