@@ -17,6 +17,8 @@ In the CMD layer (`cmd.exe /c "<line>"`), use ASCII double quotes only (no singl
 
 - Do not use command chaining operators (`&&`, `||`, command-separator `&`) in inline steps.
 - Do not use pipes `|` in inline steps. If piping is required, use Scripted mode (pipelines inside `.ps1` are allowed).
+- Inline mode MUST NOT invoke `powershell.exe` with `-Command` (or `-c`).
+- Any PowerShell usage in emitted `<line>` is allowed ONLY as the Scripted-mode launcher invoking pinned Windows PowerShell 5.1 via `-File` with required flags. Do not attempt to "carefully quote" `-Command` inside `cmd.exe /c "<line>"`: it is forbidden by policy.
 - Do not add an extra `cmd.exe /c` wrapper inside emitted step commands. The harness already runs every step via `cmd.exe /c "<line>"`.
 - For any file writes, redirections, and encoding rules, follow the section: "File writes, encoding, and redirections".
 
@@ -57,6 +59,31 @@ Scripted mode workflow:
 Inline mode follows runner shell constraints (CMD). Scripted mode runs PowerShell 5.1 as a separate process via `-File`. Do not try to mix them.
 Remember: regardless of mode, the harness executes each emitted step as `cmd.exe /c "<line>"`; Scripted mode means the emitted `<line>` invokes pinned PowerShell via `-File`.
 
+## Windows quoting failure triggers (force Scripted mode)
+
+Hard triggers (do NOT inline; use Scripted mode):
+- Any grep/search pattern that begins with `-` MUST use Scripted mode unless it is a simple inline `git grep -n -F -e "<pattern>" -- <paths...>` invocation (example: `-SID`).
+- Patterns containing spaces or `:` MUST ALWAYS be treated as hard triggers and run in Scripted mode (examples: `Get-LocalGroup -SID`, `A: SKIP`).
+- Any use of `powershell.exe ... -Command ...` in emitted `<line>` is a hard trigger and is forbidden in inline mode. Use Scripted mode (`-File`) instead.
+- Any command requiring pipes, output formatting, output parsing, or branching on output.
+- Any PowerShell in inline mode is forbidden, except the Scripted-mode launcher using pinned Windows PowerShell 5.1 via `-File`.
+- Any command that previously produced errors like `fatal: unable to resolve revision: ...` due to broken quoting/argv splitting: treat as a quoting failure and move it into Scripted mode with argv-safe invocation.
+
+Bad (forbidden) vs Good (required):
+
+Bad (forbidden by policy: patterns contain spaces or `:` hard triggers):
+```cmd
+git grep -n -F -e "Get-LocalGroup -SID" -- BootstrapLocalAdmin.ps1
+git grep -SID -- BootstrapLocalAdmin.ps1
+git grep -n -F -e "A: SKIP" -- docs/INTERACTION_CONTRACT.md
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command Select-String -Path docs\INTERACTION_CONTRACT.md -Pattern A: SKIP
+```
+
+Good (Scripted mode; argv-safe):
+```cmd
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .codex_tmp\probe.ps1
+```
+
 ## Temporary execution scripts directory: .codex_tmp
 Location:
 - `<workspace>\.codex_tmp\`
@@ -91,11 +118,13 @@ When running a temporary execution `.ps1` script, ALWAYS use:
 - `-ExecutionPolicy Bypass`
 - `-File <path-to-script.ps1>`
 
+Temporary `.codex_tmp\*.ps1` script paths MUST NOT be quoted in emitted `<line>`.
+
 Run this command from the repository root so the relative path ".codex_tmp\step.ps1" resolves correctly.
 
 Example:
 ```cmd
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".codex_tmp\step.ps1"
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .codex_tmp\step.ps1
 ```
 
 Notes:
@@ -103,9 +132,17 @@ Notes:
 * Do not pass a single “mega string” as arguments. Prefer explicit script parameters.
 
 ## Cleanup policy
-- On success (PowerShell exits with code 0 after running the script): delete the temporary execution script.
-- On failure (non-zero exit code): keep the script and print its full path for inspection.
-- Temporary outputs under `.codex_tmp` may be kept on failure for diagnostics, but should be removed on success.
+* **Success (exit code 0):** the agent MUST delete the **single** just-executed temporary script file under `.codex_tmp\` **as the next separate step** (do not combine deletion with the launcher step).
+* The delete step MUST use the **exact script file path** and MUST delete **only that one file** (no wildcards like `*` or `?`, no directory deletes, no recursive deletes).
+* **Failure (non-zero exit code):** the agent MUST keep the script and print its full path for inspection (do not delete).
+* After the cleanup decision (deleted on success, kept on failure), the agent MUST run `git status --porcelain=v1` and confirm **no new tracked changes beyond task scope** and **no new untracked files outside `.codex_tmp`**.
+
+Allowed:
+* `del /q .codex_tmp\probe.ps1`
+
+Forbidden:
+* `del .codex_tmp\*.ps1`
+* `rmdir /s /q .codex_tmp`
 
 ## Script content requirements (deterministic and fail-fast)
 Every temporary execution `.ps1` MUST start with:
@@ -134,10 +171,32 @@ If a tool uses a non-zero code for “not an error” semantics (example: “no 
 * Normalize that code explicitly.
 * Document the normalization in a comment.
 
+#### Argument-safe patterns
+
+Use argv-safe invocation for external tools (no single mega-string), especially for `git grep` patterns that contain spaces, begin with `-`, or contain `:`.
+
+Example (argv-safe + `git grep` RC normalization):
+```powershell
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+Write-Host "[probe] git grep Get-LocalGroup -SID"
+& git @("grep","-n","-F","-e","Get-LocalGroup -SID","--","BootstrapLocalAdmin.ps1")
+if ($LASTEXITCODE -eq 0) { exit 0 }
+if ($LASTEXITCODE -eq 1) { exit 0 }  # no matches
+exit $LASTEXITCODE
+```
+
+Rules:
+* Prefer `& tool @("arg1","arg2",...)` (or a `$toolArgs = @(...)` array) over building a command string.
+* After every external tool call, inspect `$LASTEXITCODE` and fail-fast unless explicitly normalized.
+* Only normalize non-zero codes that are documented (example: `git grep` RC=1 as "no matches").
+
 ## Forbidden patterns
 The following are forbidden in this repository’s execution workflow:
 
 * Running temporary execution scripts via `-Command` instead of `-File`
+* Any emitted `<line>` invoking `powershell.exe` with `-Command` (PowerShell in emitted `<line>` is allowed only as the pinned `-File` launcher)
 * Embedding non-trivial PowerShell inside `cmd.exe` quoting layers for logic
 * Adding extra steps to “check the previous step” (for example via `if errorlevel`) instead of relying on the step’s exit code
 * Any “double wrapping” such as `cmd.exe /c "cmd.exe /c ..."`
@@ -182,12 +241,21 @@ Principles:
 1. Prefer tools that operate on tracked files and repo metadata.
 2. Prefer deterministic scopes: explicit paths, no recursive filesystem scans unless required.
 3. Avoid fragile shell constructs in probes. If a probe needs logic, use Scripted mode.
+4. Read-only probes are NOT exempt: do not use `powershell.exe -Command` from CMD even for quick checks (ranges/bytes); use Scripted mode with pinned PowerShell 5.1 via `-File`.
 
 ### Search
 
 Preferred:
 
 * `git grep` for tracked files.
+
+Forbidden:
+
+* `findstr` is FORBIDDEN as a search tool in this repository (including as fallback).
+
+Fallback:
+
+* If `git grep` is insufficient, use Scripted mode and run `Select-String` inside a temporary execution `.ps1` (do not use `powershell.exe -Command`).
 
 When interpreting results:
 
@@ -197,9 +265,75 @@ When interpreting results:
 
 If a probe must branch on grep output, implement it in a temporary execution `.ps1` script and normalize `RC=1` explicitly.
 
+### Viewing file ranges (Scripted mode only)
+
+Viewing file line ranges MUST be done in Scripted mode (temporary execution `.ps1`); inline `powershell.exe -Command ...` mega-strings are forbidden.
+
+Sample script:
+```powershell
+# .codex_tmp\view.ps1
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$path = "docs\INTERACTION_CONTRACT.md"
+$c = Get-Content -LiteralPath $path
+$c[55..95]
+```
+
+Launcher:
+```cmd
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .codex_tmp\view.ps1
+```
+
+`git grep` hardening (prevents option-parsing and argv splitting failures):
+
+* Always separate pattern and paths with `--`.
+* In inline mode, always pass the pattern via `-e` (this also prevents leading-dash patterns from being mistaken for options).
+* If the pattern contains spaces or `:`, treat it as a Windows quoting trigger and run the search in Scripted mode (argv-safe; no mega-strings).
+
+Required examples (why inline fails; scripted alternative):
+
+* Pattern `Get-LocalGroup -SID` (contains a space): inline CMD splits the pattern into multiple argv tokens unless you add quoting, and nested quoting under `cmd.exe /c "<line>"` is fragile; use Scripted mode.
+* Pattern `-SID` (begins with `-`): allowed inline only in the guarded form `git grep -n -F -e "-SID" -- <paths...>`; otherwise use Scripted mode.
+* Pattern `A: SKIP` (contains `:` and a space): inline CMD quoting is fragile; use Scripted mode.
+
+Bad (forbidden):
+```cmd
+git grep -n -F -e "Get-LocalGroup -SID" -- BootstrapLocalAdmin.ps1
+git grep -SID -- BootstrapLocalAdmin.ps1
+git grep -n -F -e "A: SKIP" -- docs/INTERACTION_CONTRACT.md
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command Select-String -Path docs\INTERACTION_CONTRACT.md -Pattern A: SKIP
+```
+
+Good (inline, safe for simple patterns):
+```cmd
+git grep -n -F -e "-SID" -- BootstrapLocalAdmin.ps1
+```
+
+Good (required for fragile patterns: spaces / leading dash / colon):
+```powershell
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# .codex_tmp\probe.ps1
+
+& git @("grep","-n","-F","-e","Get-LocalGroup -SID","--","BootstrapLocalAdmin.ps1")
+if ($LASTEXITCODE -eq 1) { exit 0 }
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& git @("grep","-n","-F","-e","-SID","--","BootstrapLocalAdmin.ps1")
+if ($LASTEXITCODE -eq 1) { exit 0 }
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& git @("grep","-n","-F","-e","A: SKIP","--","docs/INTERACTION_CONTRACT.md")
+if ($LASTEXITCODE -eq 1) { exit 0 }
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+```
+
+Do not use PowerShell `-Command` from CMD for probes/searches that need `Select-String`, formatting, or pipelines. Move the probe into Scripted mode and execute it via pinned PowerShell `-File`.
+
 ### Avoid
 
-* Do not use `findstr` as a default search tool.
 * Do not use file-size heuristics to detect success/failure of a probe.
 
 ## Git safety
@@ -215,12 +349,15 @@ If a probe must branch on grep output, implement it in a temporary execution `.p
 Preflight SHOULD be implemented in Scripted mode (temporary execution `.ps1`) to avoid creating artifacts in repo root.
 
 Preflight must:
-
 * Confirm repository root (`git rev-parse --show-toplevel`) matches the current working directory expectations.
 * Ensure `.codex_tmp` exists (create it if missing).
-* Check the working copy is clean using `git status --porcelain=v1` (read in-memory, no output redirection to repo-root files). If `.codex_tmp` appears, stop and report that `.gitignore` must include `.codex_tmp/`. Do not attempt to modify `.gitignore` unless explicitly instructed.
-* `.codex_tmp` is expected to be ignored by `.gitignore` and must not affect preflight cleanliness.
-* Fail if the working copy is not clean, unless the task explicitly requires changes.
+* Capture and store a baseline workspace state using `git status --porcelain=v1` (read-only, no output redirection to tracked paths).
+* `.codex_tmp/` is expected to be ignored by `.gitignore` and MUST NOT appear in porcelain output. If it appears, stop and report that `.gitignore` must include `.codex_tmp/`. Do not attempt to modify `.gitignore` unless explicitly instructed.
+* If untracked files appear outside `.codex_tmp`, stop and report them. Do not attempt cleanup unless explicitly instructed.
+
+Tracked-file cleanliness policy depends on task type:
+* Read-only probe / smoke test tasks: the baseline porcelain output MUST be identical before and after the probe (no new tracked modifications, and no new untracked files outside `.codex_tmp`).
+* Tasks that intentionally edit tracked files: run preflight once at the start (before edits). After edits begin, a dirty working copy is expected. Do not fail solely due to tracked modifications, but do not modify any files outside the task scope.
 
 ## Output discipline
 1. Print short, stable markers (one line) before major actions.
@@ -254,3 +391,5 @@ Before declaring success, verify:
 9. Any probe/search logic normalized non-error exit codes explicitly (example: `git grep RC=1`).
 10. No repository files were created/modified via redirection or implicit-encoding output commands.
 11. `.codex_tmp/` is ignored via `.gitignore` and does not affect preflight cleanliness.
+12. No emitted `<line>` invoked `powershell.exe -Command` (PowerShell allowed only via pinned `-File` launcher).
+13. No use of `findstr` occurred in probes/searches (including fallback).
