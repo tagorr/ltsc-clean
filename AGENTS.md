@@ -99,7 +99,7 @@ Prefer one task per CLI session. If scope or shell rules change, start a fresh s
   * `-2146498548/2148468748` (“feature not recognized in this image”) and `-2146498541/2148468755` (“invalid install state for this feature”) → warning; log as such, set `HAS_DISM_WARN=1`, and treat as success.
   * Any other RC → fatal servicing error; log it, set `FAILED=1` and `DISM_HARD_FAIL=1`, and capture the first fatal return code in `L2C_FIRST_BAD_RC` via `:track_rc`. Once `DISM_HARD_FAIL` is set, further DISM feature/capability/cleanup calls must be skipped for the rest of the run.
 * **DISM log:** single path for all calls — `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (use `/LogPath` + `/LogLevel:4`).
-* **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (ISO-8601), and the DISM log above.
+* **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (timestamped logger-written lines are normally ISO-8601; some lines may be un-timestamped), and the DISM log above.
 * **Winlogon:** `HKLM\...\Winlogon\IgnoreShiftOverride` = **REG_SZ "0"** (not `REG_DWORD`), with no intermediate `"1"`.
 * **Bootstrap/primary-admin chain:** `BootstrapLocalAdmin.ps1` must resolve the local Administrators group locale-agnostically via SID `S-1-5-32-544`; use the resolved group identity/name for LocalAccounts group membership operations; and translate the SID to an `NTAccount` identity for ACLs on `.bootstrap.pw`.
 * **No secret-on-CLI (bootstrap):** `BootstrapLocalAdmin.ps1` must not pass the bootstrap password as an argument on an external process command line (no `net.exe user <password>`); it uses `Microsoft.PowerShell.LocalAccounts` cmdlets with a `SecureString` password.
