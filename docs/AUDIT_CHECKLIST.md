@@ -45,7 +45,7 @@
 
   * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors.
   * [ ] When the validator returns `4`, `SetupComplete.cmd` logs an explicit internal-failure message (rc=4), sets `FAILED=1`, keeps both ACL flags at `0`, and treats both secrets as invalid for gating.
-  * [ ] There is a check for the existence of `.bootstrap.pw` and that the file is not empty (at least one non-empty line).
+  * [ ] There is a check for the existence of `.bootstrap.pw` and that the first line is non-empty (single-line secret; read via `set /p`, no trimming).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
   * [ ] `.primaryadmin.pw` is read via `set /p` (first line only) only when the ACL/attribute check succeeded, is non-empty as read, and respects the allowed character set/format (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`).
   * [ ] If it is missing or empty:
@@ -138,7 +138,7 @@
 * [ ] File check:
 
   * [ ] `if exist "%PWFILE%" (...)`.
-  * [ ] Inside the loop, non-empty lines are checked.
+  * [ ] The first line is read only (`set /p`) and must be non-empty (single-line secret; no trimming).
 * [ ] If a valid secret is present (`.bootstrap.pw` exists and has content):
 
   * [ ] `HAS_BOOTSTRAP_PW` is set to `"1"`.
