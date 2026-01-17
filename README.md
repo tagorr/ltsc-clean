@@ -56,7 +56,7 @@ This baseline expects the primary local admin password to be supplied explicitly
 * Runtime logs:
 
   1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status; captures stdout/stderr from `BootstrapLocalAdmin.ps1` as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines
-  2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (ISO-8601 timestamps); includes secret gate results, Stage B registration decisions, and reboot-flag evaluation (for example the "Pre-existing Panther reboot flag found..." WARN)
+  2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (mixed producers; many logger-written lines are ISO-8601; some lines are un-timestamped); includes secret gate results, Stage B registration decisions, and reboot-flag evaluation (for example the "Pre-existing Panther reboot flag found..." WARN)
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
   4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale); when Stage B is not scheduled, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage
 
@@ -448,7 +448,7 @@ If the primary admin secret is missing or invalid, `SetupComplete.cmd` logs the 
 
 ### Logging
 
-* Timestamps are ISO-8601. PowerShell logging uses `Get-Date -Format o`.
+* Timestamped logger-written lines are normally ISO-8601: `SetupComplete.cmd` and `PreOOBE.cmd` typically use `Get-Date -Format o` (local time/offset) when available, and `CreatePrimaryAdmin.ps1` uses `[DateTime]::UtcNow.ToString('o')` (UTC). Not every line across all log files is timestamped (for example raw `echo` tags, redirected bootstrap output, and the master log `OUTCOME:` line), and `SetupComplete.cmd` includes best-effort fallbacks that can be non-ISO-8601 and locale-dependent.
 * DISM logging is centralized to `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`.
 * DISM return codes are interpreted as:
 
@@ -707,7 +707,7 @@ Regardless of failure source (platform gate, DISM, or other checks), `SetupCompl
 
 For controlled production environments set `STRICT_DISPLAYVERSION=1`. For forks and experiments keep `0` and adjust `REQUIRED_*` to your target.
 
-All `SetupComplete.cmd` steps log live timestamps computed inside the script; this helps correlate with DISM and CBS logs and debug issues. The orchestration is CMD-first; PowerShell is used only for a small number of targeted helper calls (for example timestamp generation or reading specific values), not as a per-line wrapper around every command.
+Most `SetupComplete.cmd` messages are written via the `:log` subroutine and include a live timestamp computed inside the script; this helps correlate with DISM and CBS logs and debug issues. A small number of lines are written without timestamps (for example some raw `echo` tags), and DISM’s own log format is tool-defined. The orchestration is CMD-first; PowerShell is used only for a small number of targeted helper calls (for example timestamp generation or reading specific values), not as a per-line wrapper around every command.
 
 ## Update (2025-09-19)
 

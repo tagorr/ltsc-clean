@@ -222,7 +222,7 @@ When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs r
 
 * A dedicated `:log` subroutine writes timestamped lines into `%WINDIR%\Panther\SetupComplete.log`.
 
-* Timestamp generation uses PowerShell (`Get-Date -Format o`), falling back to `%DATE% %TIME%` only if PowerShell fails.
+* Timestamp generation is performed inside `:log` (default `LOG_TS_ENGINE=POWERSHELL` using `Get-Date -Format o`). `LOG_TS_ENGINE=WMIC` uses a best-effort normalization of WMIC `LocalDateTime` into an ISO-like `yyyy-MM-ddTHH:mm:ss` form without a timezone; depending on the engine path it may omit sub-second precision. If timestamp generation fails, the script falls back to a simple, locale-dependent `%DATE%`/`%TIME%`-derived value (not guaranteed ISO-8601).
 
 * Each step logs `[SECTION]` and `[STEP]`. Warnings and errors include numeric return codes.
 
@@ -238,7 +238,7 @@ When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs r
 
 ---
 
-* **Timestamps:** ISO-8601 in logs via PowerShell (`Get-Date -Format o`).
+* **Timestamps:** Timestamped logger-written lines are normally ISO-8601: `SetupComplete.cmd`/`PreOOBE.cmd` typically use `Get-Date -Format o` (local time/offset) when available, and `CreatePrimaryAdmin.ps1` uses `[DateTime]::UtcNow.ToString('o')` (UTC). Not every line is timestamped (for example raw `echo` tags, redirected bootstrap output, and the master log `OUTCOME:` line), and `SetupComplete.cmd` includes best-effort fallbacks that can be non-ISO-8601 and locale-dependent.
 
 * **Centralized DISM logging:** every DISM call goes through a runner that appends `/LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4`.
 
