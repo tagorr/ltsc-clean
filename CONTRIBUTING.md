@@ -27,6 +27,59 @@ Thanks for your interest in contributing!
 - Markdown `*.md` **should use LF**.
 - This is enforced by `.gitattributes` and an EOL CI guard (`.github/workflows/eol-guard.yml`).
 
+## VM smoke tests (minimum bar)
+
+These are quick VM checks for PR validation (not a full audit). Use a clean VM or a snapshot.
+
+### Happy-path smoke (fresh VM)
+
+- If available, validate `Autounattend.xml` in WSIM without errors.
+- Install and reach OOBE without Microsoft account screens (local flow).
+- Verify `PreOOBE.cmd` ran and wrote `%WINDIR%\Panther\PreOOBE.log`.
+- Verify `SetupComplete.cmd` ran once and wrote `%WINDIR%\Panther\SetupComplete.log`.
+- On the first console logon, Winlogon may perform AutoAdminLogon with `bootstrap`. This is visible on the VM console (for example Hyper-V VMConnect Basic), not on Enhanced (RDP) sessions.
+- Verify the scheduled task exists and runs the master:
+  - Task name: `\L2C\CreatePrimaryAdmin`
+  - It runs `CreatePrimaryAdmin.ps1` as SYSTEM on logon.
+- Validate the normal success end state (see `README.md` for details):
+  - `C:\ProgramData\l2c_master_<timestamp>.log` exists and contains `OUTCOME: Success`.
+  - `bootstrap` is disabled.
+  - The `\L2C\CreatePrimaryAdmin` scheduled task is removed.
+  - Winlogon temporary values are cleaned up (for example `DefaultPassword` absent and autologon disabled).
+  - `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` are removed on the normal success path.
+  - If `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B succeeded in normal mode, Stage B consumes the flag and performs one controlled reboot.
+
+### Recovery-path smoke (gate closed)
+
+Pick one deliberate gate failure and confirm the run stays fail-closed (no Stage B registration / no autologon priming):
+
+- Remove `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, or make it empty, or break its ACL/attributes so `ValidateSecrets.ps1` reports `primaryadmin=0`.
+- Verify `SetupComplete.log` shows the combined gate did not pass and that SetupComplete entered recovery mode (skipping extra registrations).
+- Confirm the `\L2C\CreatePrimaryAdmin` task is not registered and Winlogon autologon is not primed by SetupComplete.
+- Confirm secrets are preserved for operator investigation (recovery entrypoint remains available).
+
+### Attach evidence to PRs (when relevant)
+
+Include small excerpts (or the full files when diagnosing) from:
+
+- `%WINDIR%\Panther\PreOOBE.log`
+- `%WINDIR%\Panther\SetupComplete.log`
+- `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
+- `C:\ProgramData\l2c_master_<timestamp>.log` (normal or recovery outcome)
+
+## Using Codex CLI in this repo
+
+This repo is designed to be edited with Codex CLI under strict constraints.
+
+- Canonical execution and quoting rules live in `docs/INTERACTION_CONTRACT.md`. Follow it when drafting prompts and when interpreting agent output.
+- `AGENTS.md` defines the runbook and invariants. Do not introduce changes that break the reboot model (flag-based), secret handling, or recovery posture.
+- Keep scope tight: allow-list the exact files Codex may touch. Do not expand scope mid-task.
+- Minimal diffs only. No reformatting outside the hunks required by the change.
+- Temporary helper scripts (if needed) must live under `<workspace>\.codex_tmp\` only.
+- Codex must not perform state-changing Git operations (commit, push, merge, checkout, restore). Read-only Git commands (for example `git status`, `git diff`) are OK when needed for situational awareness.
+- Preserve repository encoding and line endings (scripts CRLF, Markdown LF). UTF-8 without BOM, no NUL bytes.
+- Prefer Windows-native tooling and pinned Windows PowerShell 5.1 execution rules as documented (avoid PowerShell 7+, avoid multi-layer quoting tricks).
+
 ## Shell rules (.cmd/.ps1) and minimal-diff
 
 - `.cmd` guidelines:

@@ -22,7 +22,7 @@
 
   * [ ] PowerShell: `Set-StrictMode -Version Latest`, no syntax errors.
   * [ ] CMD: no unclosed quotes, correct structure of `(` `)` blocks.
-S
+
 ### 1.1. Unattended setup UX (image selection & EULA)
 
 * [ ] Installer skips the edition picker (LTSC vs LTSC N) because the answer file selects the OS by `/IMAGE/INDEX=1` in `windowsPE`.
@@ -343,7 +343,7 @@ S
 * [ ] In recovery mode:
 
   * [ ] Both secrets are intentionally preserved for another Stage A attempt.
-  * [ ] Logs clearly mark that secrets were preserved and that manual cleanup is required after recovery.
+  * [ ] Logs clearly mark that secrets were preserved (for example, `Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt`) and therefore remain on disk until a later successful Stage B cleanup or operator removal.
 
 #### 6.6. Master log (l2c_master_*.log) and OUTCOME
 
