@@ -14,6 +14,13 @@
   - (recommended) backing the change with an ADR that explains why the new file exists.
 - Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated under `<workspace>\.codex_tmp\` only. This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
 
+## Roles and responsibilities
+
+* **Owner (maintainer/operator):** defines the scope for each change, runs Codex CLI locally, reviews diffs, applies changes, performs all state-changing Git actions (commit, push, PR, merge), and remains accountable for final behavior and security posture.
+* **ChatGPT:** helps draft prompts, audits, and documentation text. Has no direct access to the repo working copy, cannot run commands or Git actions, and must not claim that tests were executed.
+* **Codex CLI:** edits files in the local working copy within the allowed scope, produces minimal diffs, follows `docs/INTERACTION_CONTRACT.md`, does not perform state-changing Git actions, and does not expand scope without explicit instruction. Read-only Git commands (for example `git status`, `git diff`) are allowed when needed for situational awareness.
+* **CI (GitHub Actions):** runs automated checks on PRs (for example EOL/BOM/NUL guardrails) and reports status only. CI does not replace human review and does not modify repository content.
+
 ## Invariants
 
 * **No immediate reboots** inside `SetupComplete.cmd`. Reboot requirements are signaled only via `%WINDIR%\Panther\_needs_reboot.flag` (`Panther flag`) when `RC ∈ {3010, 1641}` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`. `SetupComplete.cmd` never calls `shutdown.exe`.
