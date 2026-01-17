@@ -51,7 +51,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## 3A. Contract between files
 
-* `Autounattend.xml`: without `FirstLogonCommands`, without `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`, `InstallToAvailablePartition=false`; `specialize` includes a single `RunSynchronous` command `cmd /c "%WINDIR%\Setup\Scripts\PreOOBE.cmd"`. en-US locales in WinPE and oobeSystem.
+* `Autounattend.xml`: without `FirstLogonCommands`, without `ProductKey`; `ComputerName=*`, `TimeZone=Romance Standard Time`; `DiskConfiguration`/`InstallTo*` intentionally omitted (operator selects the target partition during setup); `specialize` includes a single `RunSynchronous` command `cmd /c "%WINDIR%\Setup\Scripts\PreOOBE.cmd"`. en-US locales in WinPE and oobeSystem.
 
 * `SetupComplete.cmd`: all post install work (DISM, policies, services, tasks), detailed logging, a platform gate for LTSC 2021, idempotent behavior, and, when required, computation of `NEEDS_REBOOT` and writing the Panther flag.
 
@@ -87,13 +87,13 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## 6B. OOBE profile and XML invariants
 
-* No auto-created user and no autologon.
+* `Autounattend.xml` does not create users or configure autologon; setup scripts create accounts and may prime temporary autologon for `bootstrap`.
 
 * MSA online screens are hidden; the local path is available.
 
 * `ComputerName=*`, `TimeZone=Romance Standard Time`.
 
-* `InstallToAvailablePartition=false`, manual partitioning.
+* `DiskConfiguration` and `InstallTo*` are intentionally omitted; partition selection is manual.
 
 * en-US locales in WinPE and oobeSystem.
 

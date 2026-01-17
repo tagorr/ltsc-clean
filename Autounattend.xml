@@ -5,7 +5,7 @@
 
   <!-- Windows 10 Enterprise LTSC 2021 (21H2) - Clean & Quiet Baseline
      Invariants:
-     - No auto-created user accounts, no autologon
+     - This answer file does not create user accounts or configure autologon; setup scripts may create accounts and prime temporary autologon
      - No automatic disk partitioning
      - OOBE is biased toward local accounts; MSA screens are hidden
      - This file defines no FirstLogonCommands; all servicing and tweaks are performed from SetupComplete.cmd -->
