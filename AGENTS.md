@@ -12,7 +12,7 @@
 - Introducing new files for agents to touch without, in the same PR:
   - adding them to the “Allowed to edit” list in `AGENTS.md`, and
   - (recommended) backing the change with an ADR that explains why the new file exists.
-- Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated under `<workspace>\.codex_tmp\` only. This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
+- Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`). This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
 
 ## Roles and responsibilities
 
@@ -65,10 +65,10 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
   - `powershell` without the pinned full path
 
   ```cmd
-  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".codex_tmp\step.ps1"
+  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\repo\.codex_tmp\step.ps1
   ```
 
-  Run from repo root so the relative path resolves. Do not hardcode drive letters for system paths.
+  CWD may drift between harness steps; do not rely on stable CWD. Mandatory bootstrap (Scripted mode): emit `git rev-parse --show-toplevel`, copy the exact value it prints (repository root path), STOP if it fails, and require it contains no whitespace (no quoting workarounds). Use absolute paths rooted at that printed value for both `.codex_tmp` script launch and cleanup. Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel`. For system paths, use `%SystemRoot%` (no drive-letter hardcoding). The repository root drive letter comes from the exact value printed earlier by `git rev-parse --show-toplevel` (so `C:\repo` is example form only).
 
 * If a command needs pipes, redirections, chaining, conditional logic, output parsing, or “quoting gymnastics”, it MUST be done in Scripted mode via a temporary `.ps1` under `.codex_tmp` executed with `-File`.
 

@@ -4,9 +4,9 @@ This repository uses Codex CLI as the sole automation agent. Follow these rules 
 Primary goal: deterministic Windows-native execution without multi-layer quoting failures.
 
 ## Scope and working directory
-1. All work MUST be performed from the repository root (workspace root).
+1. All work MUST be scoped to the repository root (workspace root). Do not assume CWD stability between harness steps.
 2. Do not operate inside `.git` and do not write anything into `.git`.
-3. All temporary execution scripts MUST be created under `<workspace>\.codex_tmp\` only.
+3. All temporary execution scripts MUST be created only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 4. Do not rely on persistent environment variables across runner steps. Within a single Scripted-mode `.ps1`, setting `$env:` is allowed for that script’s process tree.
 
 ## Execution model (Windows-native)
@@ -51,8 +51,7 @@ Scripted mode is REQUIRED if the task involves any of the following:
 - Preflight checks that must not self-dirty the working copy.
 
 Scripted mode workflow:
-1) Write a temporary PowerShell script file under:
-   `<workspace>\.codex_tmp\`
+1) Write a temporary PowerShell script file only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 2) Execute it via Windows PowerShell 5.1 using `-File` (do not run temporary execution scripts via `-Command`).
 3) Cleanup according to the Cleanup policy.
 
@@ -62,31 +61,23 @@ Remember: regardless of mode, the harness executes each emitted step as `cmd.exe
 ## Windows quoting failure triggers (force Scripted mode)
 
 Hard triggers (do NOT inline; use Scripted mode):
-- Any grep/search pattern that begins with `-` MUST use Scripted mode unless it is a simple inline `git grep -n -F -e "<pattern>" -- <paths...>` invocation (example: `-SID`).
-- Patterns containing spaces or `:` MUST ALWAYS be treated as hard triggers and run in Scripted mode (examples: `Get-LocalGroup -SID`, `A: SKIP`).
+- Any grep/search pattern that begins with `-` MUST use Scripted mode unless it is a simple inline `git grep -n -F -e <pattern> -- <paths...>` invocation (example pattern: `-SID`).
+- Patterns containing whitespace or `:` MUST ALWAYS be implemented in Scripted mode (multi-word patterns cannot be safely expressed inline under `cmd.exe /c "<line>"` due to argv splitting). Examples: `Get-LocalGroup -SID`, `A: SKIP`.
 - Any use of `powershell.exe ... -Command ...` in emitted `<line>` is a hard trigger and is forbidden in inline mode. Use Scripted mode (`-File`) instead.
 - Any command requiring pipes, output formatting, output parsing, or branching on output.
 - Any PowerShell in inline mode is forbidden, except the Scripted-mode launcher using pinned Windows PowerShell 5.1 via `-File`.
 - Any command that previously produced errors like `fatal: unable to resolve revision: ...` due to broken quoting/argv splitting: treat as a quoting failure and move it into Scripted mode with argv-safe invocation.
 
-Bad (forbidden) vs Good (required):
+Forbidden patterns (inline): see `Hard triggers` above and `## Forbidden patterns` below.
 
-Bad (forbidden by policy: patterns contain spaces or `:` hard triggers):
+Good (Scripted mode; argv-safe). Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel`:
 ```cmd
-git grep -n -F -e "Get-LocalGroup -SID" -- BootstrapLocalAdmin.ps1
-git grep -SID -- BootstrapLocalAdmin.ps1
-git grep -n -F -e "A: SKIP" -- docs/INTERACTION_CONTRACT.md
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command Select-String -Path docs\INTERACTION_CONTRACT.md -Pattern A: SKIP
-```
-
-Good (Scripted mode; argv-safe):
-```cmd
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .codex_tmp\probe.ps1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\repo\.codex_tmp\probe.ps1
 ```
 
 ## Temporary execution scripts directory: .codex_tmp
 Location:
-- `<workspace>\.codex_tmp\`
+- the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 
 The repository is expected to ignore `.codex_tmp/` via `.gitignore`.
 
@@ -95,7 +86,7 @@ Definitions:
 - Repository scripts are tracked scripts in the repository (for example, `*.ps1` outside `.codex_tmp`) and must never be treated as temporary execution scripts.
 
 Rules:
-- Temporary execution scripts MUST be created only under `.codex_tmp\`.
+- Temporary execution scripts MUST be created only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 - Temporary execution scripts MUST NOT be created anywhere else in the workspace (including the repository root).
 - Temporary execution `.ps1` scripts MUST be created via Codex file editing operations (not via redirection, `Out-File`, or `Set-Content`).
 - Repository scripts (tracked `.ps1` files) are not temporary execution scripts and must not be treated as such.
@@ -118,13 +109,20 @@ When running a temporary execution `.ps1` script, ALWAYS use:
 - `-ExecutionPolicy Bypass`
 - `-File <path-to-script.ps1>`
 
+CWD may drift between harness steps; do not rely on stable CWD.
+
+Mandatory bootstrap (Scripted mode):
+1) Emit: `git rev-parse --show-toplevel`
+2) Copy the exact value it prints (repository root path).
+   - If it fails, STOP.
+   - The printed repo root MUST NOT contain whitespace. If it does, STOP and ask the owner to move the repo to a no-space path (no quoting workarounds).
+3) Use absolute paths rooted at that printed value for both script launch and cleanup.
+
 Temporary `.codex_tmp\*.ps1` script paths MUST NOT be quoted in emitted `<line>`.
 
-Run this command from the repository root so the relative path ".codex_tmp\step.ps1" resolves correctly.
-
-Example:
+Example form (replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel`):
 ```cmd
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .codex_tmp\step.ps1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\repo\.codex_tmp\step.ps1
 ```
 
 Notes:
@@ -137,10 +135,13 @@ Notes:
 * **Failure (non-zero exit code):** the agent MUST keep the script and print its full path for inspection (do not delete).
 * After the cleanup decision (deleted on success, kept on failure), the agent MUST run `git status --porcelain=v1` and confirm **no new tracked changes beyond task scope** and **no new untracked files outside `.codex_tmp`**.
 
+Note: cleanup MUST use the same absolute repository-rooted path form as the launcher. Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel`.
+
 Allowed:
-* `del /q .codex_tmp\probe.ps1`
+* `del /q C:\repo\.codex_tmp\probe.ps1`
 
 Forbidden:
+* `del /q .codex_tmp\probe.ps1`
 * `del .codex_tmp\*.ps1`
 * `rmdir /s /q .codex_tmp`
 
@@ -151,6 +152,14 @@ Every temporary execution `.ps1` MUST start with:
 
 * `Set-StrictMode -Version Latest`
 * `$ErrorActionPreference = 'Stop'`
+
+Repository-root anchoring (mandatory):
+```powershell
+$RepoRoot = (& git rev-parse --show-toplevel).Trim()
+if (-not $RepoRoot) { throw "git rev-parse --show-toplevel returned empty output" }
+if ($RepoRoot -match '\s') { throw "Repo root contains whitespace; unsupported (move repo to a no-space path)" }
+Set-Location -LiteralPath $RepoRoot
+```
 
 2. A short comment header describing purpose and scope.
 
@@ -281,33 +290,28 @@ $c[55..95]
 ```
 
 Launcher:
+Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel`:
 ```cmd
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .codex_tmp\view.ps1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\repo\.codex_tmp\view.ps1
 ```
 
 `git grep` hardening (prevents option-parsing and argv splitting failures):
 
 * Always separate pattern and paths with `--`.
 * In inline mode, always pass the pattern via `-e` (this also prevents leading-dash patterns from being mistaken for options).
-* If the pattern contains spaces or `:`, treat it as a Windows quoting trigger and run the search in Scripted mode (argv-safe; no mega-strings).
+* If the pattern contains whitespace or `:`, treat it as a Windows quoting trigger and run the search in Scripted mode (argv-safe; no mega-strings).
 
 Required examples (why inline fails; scripted alternative):
 
 * Pattern `Get-LocalGroup -SID` (contains a space): inline CMD splits the pattern into multiple argv tokens unless you add quoting, and nested quoting under `cmd.exe /c "<line>"` is fragile; use Scripted mode.
-* Pattern `-SID` (begins with `-`): allowed inline only in the guarded form `git grep -n -F -e "-SID" -- <paths...>`; otherwise use Scripted mode.
+* Pattern `-SID` (begins with `-`): allowed inline only in the guarded form `git grep -n -F -e -SID -- <paths...>`; otherwise use Scripted mode.
 * Pattern `A: SKIP` (contains `:` and a space): inline CMD quoting is fragile; use Scripted mode.
 
-Bad (forbidden):
-```cmd
-git grep -n -F -e "Get-LocalGroup -SID" -- BootstrapLocalAdmin.ps1
-git grep -SID -- BootstrapLocalAdmin.ps1
-git grep -n -F -e "A: SKIP" -- docs/INTERACTION_CONTRACT.md
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command Select-String -Path docs\INTERACTION_CONTRACT.md -Pattern A: SKIP
-```
+Forbidden patterns (inline): see `Windows quoting failure triggers (force Scripted mode)` above.
 
 Good (inline, safe for simple patterns):
 ```cmd
-git grep -n -F -e "-SID" -- BootstrapLocalAdmin.ps1
+git grep -n -F -e -SID -- BootstrapLocalAdmin.ps1
 ```
 
 Good (required for fragile patterns: spaces / leading dash / colon):
