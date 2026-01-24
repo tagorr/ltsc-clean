@@ -56,6 +56,7 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 * Do not use command chaining operators (`&&`, `||`, command-separator `&`) in emitted CMD `<line>`.
 * Do not use pipes `|` in emitted CMD `<line>`.
+* Cleanup MUST NOT use force delete flags (for example: `del /f`). Use `del /q <absolute-probe-path>` for deleting a just-executed `.codex_tmp\*.ps1 probe.`
 * Inline `git grep` is restricted to single-token fixed-string searches only: use `git grep -n -F -e <token> -- <paths...>`. Do not use regex modes (`-E`, `-P`, `--extended-regexp`, `--basic-regexp`, `--perl-regexp`) and do not use regex constructs (for example `[[:space:]]`, `\s`, `.*`) to emulate multi-word matching. Anything beyond a single literal token must use Scripted mode.
 * Hard stop: any emitted `<line>` invoking `powershell.exe` with `-Command` is forbidden (no read-only exceptions: viewing, searching, printing line ranges, formatting output). See `docs/INTERACTION_CONTRACT.md` → `## Forbidden patterns`.
 * Replacement: create or update exactly one single-use `.ps1` probe under the repo-rooted `.codex_tmp\` and execute it only via pinned Windows PowerShell 5.1 using `-File` with an absolute repo-rooted path (no nested shells, no command strings, no extra helper scripts). See `docs/INTERACTION_CONTRACT.md` → `## Execution model (Windows-native)` and `## Diagnostics and probes`.

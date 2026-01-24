@@ -162,6 +162,7 @@ Notes:
 ## Cleanup policy
 * **Success (exit code 0):** the agent MUST delete the **single** just-executed temporary script file under `.codex_tmp\` **as the next separate step** (do not combine deletion with the launcher step).
 * The delete step MUST use the **exact script file path** and MUST delete **only that one file** (no wildcards like `*` or `?`, no directory deletes, no recursive deletes).
+* `* Cleanup MUST NOT use force delete flags (for example: 'del /f'). In this harness, '/f' may trigger an interactive confirmation prompt. Use 'del /q <absolute-probe-path>' instead.`
 * **Failure (non-zero exit code):** the agent MUST keep the script and print its full path for inspection (do not delete).
 * After the cleanup decision (deleted on success, kept on failure), the agent MUST run `git status --porcelain=v1` and confirm **no new tracked changes beyond task scope** and **no new untracked files outside `.codex_tmp`**.
 
@@ -175,6 +176,8 @@ Forbidden:
 * `del /q .codex_tmp\probe.ps1`
 * `del .codex_tmp\*.ps1`
 * `rmdir /s /q .codex_tmp`
+* `del /f C:\repo\.codex_tmp\probe.ps1`
+* `del /f /q C:\repo\.codex_tmp\probe.ps1`
 
 ## Script content requirements (deterministic and fail-fast)
 Every temporary execution `.ps1` MUST start with:
