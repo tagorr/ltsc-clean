@@ -56,6 +56,8 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 * Do not use command chaining operators (`&&`, `||`, command-separator `&`) in emitted CMD `<line>`.
 * Do not use pipes `|` in emitted CMD `<line>`.
+* Hard stop: any emitted `<line>` invoking `powershell.exe` with `-Command` is forbidden (no read-only exceptions: viewing, searching, printing line ranges, formatting output). See `docs/INTERACTION_CONTRACT.md` → `## Forbidden patterns`.
+* Replacement: create or update exactly one single-use `.ps1` probe under the repo-rooted `.codex_tmp\` and execute it only via pinned Windows PowerShell 5.1 using `-File` with an absolute repo-rooted path (no nested shells, no command strings, no extra helper scripts). See `docs/INTERACTION_CONTRACT.md` → `## Execution model (Windows-native)` and `## Diagnostics and probes`.
 * Treat CMD metacharacters as hard triggers to Scripted mode; in inline emitted `<line>`, the following forms/patterns are forbidden: `|`, `>`, `>>`, `<`, `&`, `&&`, `||`, `(`, `)`, `^`, `!`.
 * Inline CWD management is forbidden: do not emit `cd`, `pushd`, or `popd`; use `Set-Location` inside the temporary `.ps1` instead.
 * If an inline step fails with symptoms consistent with argv splitting or quoting fragility, do not retry inline by adding quoting/escaping; switch to Scripted mode immediately.

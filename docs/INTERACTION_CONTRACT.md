@@ -19,6 +19,7 @@ In emitted inline `<line>`, quoting characters are forbidden: do not use `"` or 
 - Do not use pipes `|` in inline steps. If piping is required, use Scripted mode (pipelines inside `.ps1` are allowed).
 - Inline mode MUST NOT invoke `powershell.exe` with `-Command` (or `-c`).
 - Any PowerShell usage in emitted `<line>` is allowed ONLY as the Scripted-mode launcher invoking pinned Windows PowerShell 5.1 via `-File` with required flags. Do not attempt to "carefully quote" `-Command` inside `cmd.exe /c "<line>"`: it is forbidden by policy.
+- Anything you would normally do via a PowerShell one-liner (view file ranges, search multi-word patterns, print numbered lines, formatting output) MUST be done in Scripted mode: create or update exactly one single-use `.ps1` probe under the repo-rooted `.codex_tmp\`, anchor to repo root per this document, do the work inside the `.ps1`, and execute it only via pinned Windows PowerShell 5.1 `-File` using an absolute repo-rooted path. No nested shells, no command strings, no helper scripts.
 - Do not add an extra `cmd.exe /c` wrapper inside emitted step commands. The harness already runs every step via `cmd.exe /c "<line>"`.
 - For any file writes, redirections, and encoding rules, follow the section: "File writes, encoding, and redirections".
 
@@ -102,7 +103,7 @@ A temporary execution `.ps1` under `.codex_tmp` is a single-use probe:
 - It MUST be self-contained (one file).
 - It MUST NOT depend on or create additional helper scripts/modules (no `helper.ps1`, `common.ps1`, `*.psm1`, subfolders, or multi-file toolchains).
 - It SHOULD prefer stdout/stderr only.
-- Exception: it MAY write at most ONE diagnostic log file per probe under `.codex_tmp\...` only when necessary (for example: output too large for terminal history or owner explicitly needs an attached log).
+- Exception: it MAY write at most ONE diagnostic log file per probe under the repo-rooted `.codex_tmp\...` only when necessary (for example: output too large for terminal history or owner explicitly needs an attached log).
 - If a diagnostic log is written, encoding MUST be explicitly specified as UTF-8.
 - Small local functions inside the same `.ps1` are allowed when used only within that file.
 
@@ -220,7 +221,8 @@ Rules:
 The following are forbidden in this repository’s execution workflow:
 
 * Running temporary execution scripts via `-Command` instead of `-File`
-* Any emitted `<line>` invoking `powershell.exe` with `-Command` (PowerShell in emitted `<line>` is allowed only as the pinned `-File` launcher)
+* HARD STOP: Any emitted `<line>` invoking `powershell.exe` with `-Command` is forbidden. No exceptions, including read-only viewing, searching, printing line ranges, or formatting output.
+* PowerShell in emitted `<line>` is allowed ONLY as the pinned `-File` launcher, never `-Command`.
 * Embedding non-trivial PowerShell inside `cmd.exe` quoting layers for logic
 * Retrying a failed inline step by adding quoting/escaping due to argv splitting or quoting fragility; switch to Scripted mode immediately instead
 * Adding extra steps to “check the previous step” (for example via `if errorlevel`) instead of relying on the step’s exit code
@@ -271,6 +273,8 @@ Principles:
 2. Prefer deterministic scopes: explicit paths, no recursive filesystem scans unless required.
 3. Avoid fragile shell constructs in probes. If a probe needs logic, use Scripted mode.
 4. Read-only probes are NOT exempt: do not use `powershell.exe -Command` from CMD even for quick checks (ranges/bytes); use Scripted mode with pinned PowerShell 5.1 via `-File`.
+
+Replacement for PowerShell one-liners: create or update exactly one single-use `.ps1` probe under the repo-rooted `.codex_tmp\`, anchor to repo root per this document, perform the viewing/searching/printing inside the `.ps1`, and execute it only via pinned Windows PowerShell 5.1 using `-File` with an absolute repo-rooted path. No nested shells, no command strings, no extra helper scripts.
 
 ### Blessed probe primitives
 Inline probes (only when inline is allowed by this contract and requires no quoting characters in emitted `<line>`):
