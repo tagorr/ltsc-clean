@@ -82,6 +82,7 @@ Remember: regardless of mode, the harness executes each emitted step as `cmd.exe
 Hard triggers (do NOT inline; use Scripted mode):
 - Any grep/search pattern that begins with `-` MUST use Scripted mode unless it is a simple inline `git grep -n -F -e <pattern> -- <paths...>` invocation (example pattern: `-SID`).
 - Patterns containing whitespace or `:` MUST ALWAYS be implemented in Scripted mode (multi-word patterns cannot be safely expressed inline under `cmd.exe /c "<line>"` due to argv splitting). Examples: `Get-LocalGroup -SID`, `A: SKIP`.
+- Inline `git grep` MUST be limited to a single simple fixed-string token and MUST use `-F -e` (for example: `git grep -n -F -e <token> -- <paths...>`). Inline `git grep` MUST NOT use any regex mode (`-E`, `-P`, `--extended-regexp`, `--basic-regexp`, `--perl-regexp`) and MUST NOT use regex constructs as a workaround to emulate multi-word matching (for example `[[:space:]]`, `\s`, `.*` between words). Any search intent beyond a single literal token is a hard trigger: use Scripted mode. 
 - Any use of `powershell.exe ... -Command ...` in emitted `<line>` is a hard trigger and is forbidden in inline mode. Use Scripted mode (`-File`) instead.
 - Any command requiring pipes, output formatting, output parsing, or branching on output.
 - Any PowerShell in inline mode is forbidden, except the Scripted-mode launcher using pinned Windows PowerShell 5.1 via `-File`.
