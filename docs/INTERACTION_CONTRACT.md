@@ -12,6 +12,17 @@ Primary goal: deterministic Windows-native execution without multi-layer quoting
 ## Execution model (Windows-native)
 Each step is one harness invocation executed as `cmd.exe /c "<line>"`. Scripted mode may require a prior file-edit operation to create a temporary execution script under `.codex_tmp`. 
 In Scripted mode, the emitted `<line>` MUST invoke pinned Windows PowerShell 5.1 via `-File` and MUST NOT add any additional shell wrappers.
+Scripted-mode probes MUST determine the repository root at runtime from inside the .ps1 itself: invoke git rev-parse --show-toplevel, capture stdout, remove the trailing newline, then
+Set-Location to that path before any other work in the probe.
+It is forbidden for a probe to hardcode the repository root as any constant absolute path string, regardless of path format, even if that value was obtained earlier in the session.
+It is also forbidden to derive the repository root from $PSScriptRoot, $MyInvocation, $PWD, the current working directory as the source of truth for repo root, or from the probe launcher    path.
+
+Blessed probe bootstrap (top of the .ps1):
+
+$repoRoot = & git rev-parse --show-toplevel
+Set-Location -LiteralPath $repoRoot
+
+If needed, normalize the captured output by removing the trailing newline before using it for Set-Location.
 The emitted `<line>` MUST use ASCII punctuation only (no smart quotes).
 In emitted inline `<line>`, quoting characters are forbidden: do not use `"` or `'`. If quoting would be needed, use Scripted mode instead. This rule applies to the emitted `<line>` only, not to PowerShell script contents.
 
@@ -58,6 +69,7 @@ Scripted mode is REQUIRED if the task involves any of the following:
 - Preflight checks that must not self-dirty the working copy.
 
 Scripted mode workflow:
+Inside the temporary .ps1, apply the repository-root anchoring rule from ## Execution model (Windows-native) before doing any other work.
 1) Write a temporary PowerShell script file only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 2) Execute it via Windows PowerShell 5.1 using `-File` (do not run temporary execution scripts via `-Command`).
 3) Cleanup according to the Cleanup policy.
