@@ -92,10 +92,19 @@ Definitions:
 - Repository scripts are tracked scripts in the repository (for example, `*.ps1` outside `.codex_tmp`) and must never be treated as temporary execution scripts.
 
 Rules:
-- Temporary execution scripts MUST be created only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
+- Temporary execution scripts MUST be created only under the repository root's `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 - Temporary execution scripts MUST NOT be created anywhere else in the workspace (including the repository root).
 - Temporary execution `.ps1` scripts MUST be created via Codex file editing operations (not via redirection, `Out-File`, or `Set-Content`).
 - Repository scripts (tracked `.ps1` files) are not temporary execution scripts and must not be treated as such.
+
+### Temporary probes (single-use)
+A temporary execution `.ps1` under `.codex_tmp` is a single-use probe:
+- It MUST be self-contained (one file).
+- It MUST NOT depend on or create additional helper scripts/modules (no `helper.ps1`, `common.ps1`, `*.psm1`, subfolders, or multi-file toolchains).
+- It SHOULD prefer stdout/stderr only.
+- Exception: it MAY write at most ONE diagnostic log file per probe under `.codex_tmp\...` only when necessary (for example: output too large for terminal history or owner explicitly needs an attached log).
+- If a diagnostic log is written, encoding MUST be explicitly specified as UTF-8.
+- Small local functions inside the same `.ps1` are allowed when used only within that file.
 
 ## PowerShell pinning (Windows PowerShell 5.1 only)
 All scripted execution MUST use Windows PowerShell 5.1 by full pinned path:
@@ -218,6 +227,9 @@ The following are forbidden in this repository’s execution workflow:
 * Any “double wrapping” such as `cmd.exe /c "cmd.exe /c ..."`
 * Including `cmd.exe /c` in an emitted step command (the harness already supplies it)
 * Building a single command string to execute via a shell inside `.ps1` instead of invoking tools directly
+* Creating multiple temporary execution `.ps1` files for one investigation when one probe script would suffice
+* Building reusable tooling/frameworks under `.codex_tmp` (for example: `common.ps1`, `helper.ps1`, `*.psm1`, subfolders, or multi-file toolchains)
+* Growing a probe across retries into a larger multi-mode tool instead of keeping it a single-use probe
 * Introducing `EnableDelayedExpansion` in tracked `.cmd` / `.bat` scripts
 
 
@@ -235,12 +247,13 @@ Forbidden when the destination is a tracked repository path:
 
 Preferred:
 - Use Codex file editing operations for tracked repository files.
-- If you must capture tool output, write only under `.codex_tmp\...` (for example: `.codex_tmp\tool.log`).
+- Temporary probes SHOULD prefer stdout/stderr only; exception: write at most ONE diagnostic log file under `.codex_tmp\...` when necessary (for example: `.codex_tmp\tool.log`), with encoding explicitly specified as UTF-8.
 
 Capturing output (diagnostic logs):
-- If output must be captured, do it only in Scripted mode and write only under `.codex_tmp\...`.
+- Temporary probes SHOULD use stdout/stderr only.
+- Exception: if output must be captured, do it only in Scripted mode and write at most ONE diagnostic log file under `.codex_tmp\...`.
 - CMD redirection is forbidden (even when writing under `.codex_tmp`).
-- Writing logs under `.codex_tmp` is allowed using `Out-File` / `Set-Content` only when the destination is under `.codex_tmp` and encoding is explicitly specified. (BOM is acceptable for diagnostic logs.)
+- Writing logs under `.codex_tmp` is allowed using `Out-File` / `Set-Content` only when the destination is under `.codex_tmp` and encoding is explicitly specified as UTF-8. (BOM is acceptable for diagnostic logs.)
 - Prefer `Out-File -Encoding UTF8` (or an explicitly specified encoding) when writing diagnostic logs under `.codex_tmp`.
 
 ### Encoding and EOL
@@ -258,6 +271,29 @@ Principles:
 2. Prefer deterministic scopes: explicit paths, no recursive filesystem scans unless required.
 3. Avoid fragile shell constructs in probes. If a probe needs logic, use Scripted mode.
 4. Read-only probes are NOT exempt: do not use `powershell.exe -Command` from CMD even for quick checks (ranges/bytes); use Scripted mode with pinned PowerShell 5.1 via `-File`.
+
+### Blessed probe primitives
+Inline probes (only when inline is allowed by this contract and requires no quoting characters in emitted `<line>`):
+
+* `git status -sb`
+* `git diff --`
+* `git diff --name-status --`
+* `git log -n N -- <path>` (inline-only when `<path>` requires no quoting; otherwise Scripted mode)
+* `git rev-parse --show-toplevel`
+* `git grep` only in the already-allowed inline forms described elsewhere in this contract (use Scripted mode for all other cases)
+
+Scripted probes (temporary execution `.ps1`):
+
+* Use a single `.ps1` file to run direct tool invocations and minimal processing, without nested shells or building command strings.
+
+### Retry model (bounded; non-escalating)
+Inline:
+* At most one attempt. If it fails, do not retry inline by adding quoting/escaping; switch to Scripted mode immediately.
+
+Scripted:
+* Up to two iterations of the same probe (edit the same `.ps1` and re-run), only if each iteration reduces or keeps complexity flat (simplify, remove parsing, switch to a simpler blessed probe). These iterations are only to simplify/clarify the same probe, not to expand it into a larger multi-mode tool.
+* Retries MUST NOT increase complexity: no new files beyond the single probe `.ps1`, no additional shell layers, no metacharacters/redirections, no quoting workarounds, and no environment setup steps (installing tools, downloading dependencies).
+* If the probe still fails or results remain ambiguous after the limit, STOP and report: repo root used, probe path, commands invoked, exit code, and the last relevant stdout/stderr summary.
 
 ### Search
 
