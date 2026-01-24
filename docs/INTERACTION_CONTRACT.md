@@ -144,7 +144,8 @@ Mandatory bootstrap (Scripted mode):
 2) Copy the exact value it prints (repository root path).
    - If it fails, STOP.
    - The printed repo root MUST NOT contain whitespace. If it does, STOP and ask the owner to move the repo to a no-space path (no quoting workarounds).
-3) Use absolute paths rooted at that printed value for both script launch and cleanup.
+   - git rev-parse --show-toplevel may print the repository root with forward slashes (example: D:/...). When constructing any absolute Windows paths in emitted <line> (launcher and cleanup), you MUST normalize the repo root to backslashes (\) first, and then append \.codex_tmp\.... Do not use forward slashes in emitted <line> absolute paths.
+3) Use absolute paths rooted at that printed value (after backslash normalization as described above) for both script launch and cleanup.
 
 Temporary `.codex_tmp\*.ps1` script paths MUST NOT be quoted in emitted `<line>`.
 
@@ -164,6 +165,7 @@ Notes:
 * After the cleanup decision (deleted on success, kept on failure), the agent MUST run `git status --porcelain=v1` and confirm **no new tracked changes beyond task scope** and **no new untracked files outside `.codex_tmp`**.
 
 Note: cleanup MUST use the same absolute repository-rooted path form as the launcher. Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel`.
+Use the normalized backslash form of the repo root (see Mandatory bootstrap) when constructing the launcher path and the del path.
 
 Allowed:
 * `del /q C:\repo\.codex_tmp\probe.ps1`
@@ -183,8 +185,12 @@ Every temporary execution `.ps1` MUST start with:
 
 Repository-root anchoring (mandatory):
 ```powershell
-$RepoRoot = (& git rev-parse --show-toplevel).Trim()
+$RepoRoot = (& git rev-parse --show-toplevel).TrimEnd("`r","`n")
+# Purpose: remove only the trailing CR/LF from git output; broad whitespace trimming is not intended.
 if (-not $RepoRoot) { throw "git rev-parse --show-toplevel returned empty output" }
+
+# Normalize to Windows path separators for deterministic behavior in emitted paths and probes.
+$RepoRoot = $RepoRoot.Replace('/','\')
 if ($RepoRoot -match '\s') { throw "Repo root contains whitespace; unsupported (move repo to a no-space path)" }
 Set-Location -LiteralPath $RepoRoot
 ```
