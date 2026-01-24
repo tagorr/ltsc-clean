@@ -52,10 +52,13 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
   The agent MUST emit only `<line>` (the inner command line) and MUST NOT include `cmd.exe /c` inside emitted steps.
 
-* In emitted CMD `<line>`, use ASCII punctuation only (no smart quotes) and ASCII double quotes only (no single quotes). This rule applies to the emitted `<line>` only, not to PowerShell script contents.
+* In emitted inline CMD `<line>`, forbid any quoting characters: do not use `"` or `'`. If quoting would be needed, use Scripted mode instead. This rule applies to the emitted `<line>` only, not to PowerShell script contents.
 
 * Do not use command chaining operators (`&&`, `||`, command-separator `&`) in emitted CMD `<line>`.
 * Do not use pipes `|` in emitted CMD `<line>`.
+* Treat CMD metacharacters as hard triggers to Scripted mode; in inline emitted `<line>`, the following forms/patterns are forbidden: `|`, `>`, `>>`, `<`, `&`, `&&`, `||`, `(`, `)`, `^`, `!`.
+* Inline CWD management is forbidden: do not emit `cd`, `pushd`, or `popd`; use `Set-Location` inside the temporary `.ps1` instead.
+* If an inline step fails with symptoms consistent with argv splitting or quoting fragility, do not retry inline by adding quoting/escaping; switch to Scripted mode immediately.
 * CMD redirection is forbidden (even when writing under `.codex_tmp`).
 * Scripted mode: run temporary execution scripts via Windows PowerShell 5.1 explicitly (full pinned path) and `-File` (NOT `-Command`):
 
@@ -74,7 +77,7 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
 * Never run Git from inside `.git` subfolders.
 
-* Before a risky step, print `cd` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Rely on the step’s exit code, do NOT add extra “check the previous step” steps (for example `if errorlevel`). For searches, the explicit `RC=1` normalization rule is defined in `docs/INTERACTION_CONTRACT.md`.
+* Before a risky step, print `git rev-parse --show-toplevel` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Rely on the step’s exit code, do NOT add extra “check the previous step” steps (for example `if errorlevel`). For searches, the explicit `RC=1` normalization rule is defined in `docs/INTERACTION_CONTRACT.md`.
 
 ### Shell roles
 

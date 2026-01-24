@@ -13,7 +13,7 @@ Primary goal: deterministic Windows-native execution without multi-layer quoting
 Each step is one harness invocation executed as `cmd.exe /c "<line>"`. Scripted mode may require a prior file-edit operation to create a temporary execution script under `.codex_tmp`. 
 In Scripted mode, the emitted `<line>` MUST invoke pinned Windows PowerShell 5.1 via `-File` and MUST NOT add any additional shell wrappers.
 The emitted `<line>` MUST use ASCII punctuation only (no smart quotes).
-In the CMD layer (`cmd.exe /c "<line>"`), use ASCII double quotes only (no single quotes). This rule applies to the emitted `<line>` only, not to PowerShell script contents.
+In emitted inline `<line>`, quoting characters are forbidden: do not use `"` or `'`. If quoting would be needed, use Scripted mode instead. This rule applies to the emitted `<line>` only, not to PowerShell script contents.
 
 - Do not use command chaining operators (`&&`, `||`, command-separator `&`) in inline steps.
 - Do not use pipes `|` in inline steps. If piping is required, use Scripted mode (pipelines inside `.ps1` are allowed).
@@ -34,13 +34,19 @@ Use exactly one of these modes:
 Inline mode is allowed only when all of the following are true:
 - A single executable invocation with straightforward arguments.
 - No pipes, no redirections, no chaining, no nested shells.
-- No complex quoting beyond normal path quoting.
-- No conditional logic (“if”, parsing output, branching, loops).
+- No quoting characters in emitted `<line>` (no `"` and no `'`).
+- No conditional logic ("if", parsing output, branching, loops).
 
 Examples (allowed):
 - `git status -sb`
 - `git diff --name-status --`
 - `git rev-parse --show-toplevel`
+
+Inline mode is intentionally "flat" and quote-free. The following forms/patterns MUST NOT appear in an emitted inline `<line>`; if any apply, use Scripted mode instead:
+- Any quoting characters: `"` or `'`
+- Any CMD metacharacters: `|`, `>`, `>>`, `<`, `&`, `&&`, `||`, `(`, `)`, `^`, `!`
+- Any redirection/piping/chaining or multi-command constructs.
+- Any attempt to manage the working directory in inline mode: `cd`, `pushd`, `popd` (use `Set-Location` inside the temporary `.ps1` after anchoring to repo root).
 
 ### 2) Scripted mode (required for anything non-trivial)
 Scripted mode is REQUIRED if the task involves any of the following:
@@ -207,6 +213,7 @@ The following are forbidden in this repository’s execution workflow:
 * Running temporary execution scripts via `-Command` instead of `-File`
 * Any emitted `<line>` invoking `powershell.exe` with `-Command` (PowerShell in emitted `<line>` is allowed only as the pinned `-File` launcher)
 * Embedding non-trivial PowerShell inside `cmd.exe` quoting layers for logic
+* Retrying a failed inline step by adding quoting/escaping due to argv splitting or quoting fragility; switch to Scripted mode immediately instead
 * Adding extra steps to “check the previous step” (for example via `if errorlevel`) instead of relying on the step’s exit code
 * Any “double wrapping” such as `cmd.exe /c "cmd.exe /c ..."`
 * Including `cmd.exe /c` in an emitted step command (the harness already supplies it)
