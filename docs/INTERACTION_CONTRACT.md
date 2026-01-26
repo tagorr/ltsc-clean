@@ -12,7 +12,7 @@ Primary goal: deterministic Windows-native execution without multi-layer quoting
 ## Execution model (Windows-native)
 Each step is one harness invocation executed as `cmd.exe /c "<line>"`. Scripted mode may require a prior file-edit operation to create a temporary execution script under `.codex_tmp`. 
 In Scripted mode, the emitted `<line>` MUST invoke pinned Windows PowerShell 5.1 via `-File` and MUST NOT add any additional shell wrappers.
-Scripted-mode probes MUST determine the repository root at runtime from inside the .ps1 itself: invoke git rev-parse --show-toplevel, capture stdout, remove the trailing newline, then
+Scripted-mode probes MUST determine the repository root at runtime from inside the .ps1 itself: invoke git rev-parse --show-toplevel, capture stdout, remove only the trailing CR/LF (for example: TrimEnd("`r","`n"); do NOT use .Trim()), then
 Set-Location to that path before any other work in the probe.
 It is forbidden for a probe to hardcode the repository root as any constant absolute path string, regardless of path format, even if that value was obtained earlier in the session.
 It is also forbidden to derive the repository root from $PSScriptRoot, $MyInvocation, $PWD, the current working directory as the source of truth for repo root, or from the probe launcher    path.
@@ -22,7 +22,7 @@ Blessed probe bootstrap (top of the .ps1):
 $repoRoot = & git rev-parse --show-toplevel
 Set-Location -LiteralPath $repoRoot
 
-If needed, normalize the captured output by removing the trailing newline before using it for Set-Location.
+If needed, normalize the captured output by removing only the trailing CR/LF (for example: TrimEnd("`r","`n")) before using it for Set-Location; do NOT use .Trim().
 The emitted `<line>` MUST use ASCII punctuation only (no smart quotes).
 In emitted inline `<line>`, quoting characters are forbidden: do not use `"` or `'`. If quoting would be needed, use Scripted mode instead. This rule applies to the emitted `<line>` only, not to PowerShell script contents.
 
@@ -142,9 +142,10 @@ CWD may drift between harness steps; do not rely on stable CWD.
 
 Mandatory bootstrap (Scripted mode):
 1) Emit: `git rev-parse --show-toplevel`
-2) Copy the exact value it prints (repository root path).
+2) Capture the exact value it prints (repository root path).
    - If it fails, STOP.
    - The printed repo root MUST NOT contain whitespace. If it does, STOP and ask the owner to move the repo to a no-space path (no quoting workarounds).
+   - When using the printed repo root value, remove only the trailing CR/LF (for example: TrimEnd("`r","`n"); do NOT use .Trim()).
    - git rev-parse --show-toplevel may print the repository root with forward slashes (example: D:/...). When constructing any absolute Windows paths in emitted <line> (launcher and cleanup), you MUST normalize the repo root to backslashes (\) first, and then append \.codex_tmp\.... Do not use forward slashes in emitted <line> absolute paths.
 3) Use absolute paths rooted at that printed value (after backslash normalization as described above) for both script launch and cleanup.
 
@@ -188,6 +189,7 @@ Every temporary execution `.ps1` MUST start with:
 * `$ErrorActionPreference = 'Stop'`
 
 Repository-root anchoring (mandatory):
+The following block is normative: copy it verbatim into every temporary probe; do not rewrite, shorten, or partially implement it (including the CR/LF-only trimming line: do not substitute .Trim() for TrimEnd("`r","`n")).
 ```powershell
 $RepoRoot = (& git rev-parse --show-toplevel).TrimEnd("`r","`n")
 # Purpose: remove only the trailing CR/LF from git output; broad whitespace trimming is not intended.
