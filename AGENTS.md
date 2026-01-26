@@ -12,7 +12,7 @@
 - Introducing new files for agents to touch without, in the same PR:
   - adding them to the “Allowed to edit” list in `AGENTS.md`, and
   - (recommended) backing the change with an ADR that explains why the new file exists.
-- Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated under `<workspace>\.codex_tmp\` only. This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
+- Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`). This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
 
 ## Roles and responsibilities
 
@@ -52,10 +52,17 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
 
   The agent MUST emit only `<line>` (the inner command line) and MUST NOT include `cmd.exe /c` inside emitted steps.
 
-* In emitted CMD `<line>`, use ASCII punctuation only (no smart quotes) and ASCII double quotes only (no single quotes). This rule applies to the emitted `<line>` only, not to PowerShell script contents.
+* In emitted inline CMD `<line>`, forbid any quoting characters: do not use `"` or `'`. If quoting would be needed, use Scripted mode instead. This rule applies to the emitted `<line>` only, not to PowerShell script contents.
 
 * Do not use command chaining operators (`&&`, `||`, command-separator `&`) in emitted CMD `<line>`.
 * Do not use pipes `|` in emitted CMD `<line>`.
+* Cleanup MUST NOT use force delete flags (for example: `del /f`). Use `del /q <absolute-probe-path>` for deleting a just-executed `.codex_tmp\*.ps1` probe. See Mandatory bootstrap for emitted CMD `<line>` path normalization (backslashes only).
+* Inline `git grep` is restricted to single-token fixed-string searches only: use `git grep -n -F -e <token> -- <paths...>`. Do not use regex modes (`-E`, `-P`, `--extended-regexp`, `--basic-regexp`, `--perl-regexp`) and do not use regex constructs (for example `[[:space:]]`, `\s`, `.*`) to emulate multi-word matching. Anything beyond a single literal token must use Scripted mode.
+* Hard stop: any emitted `<line>` invoking `powershell.exe` with `-Command` is forbidden (no read-only exceptions: viewing, searching, printing line ranges, formatting output). See `docs/INTERACTION_CONTRACT.md` → `## Forbidden patterns`.
+* Replacement: create or update exactly one single-use `.ps1` probe under the repo-rooted `.codex_tmp\` and execute it only via pinned Windows PowerShell 5.1 using `-File` with an absolute repo-rooted path (no nested shells, no command strings, no extra helper scripts). See `docs/INTERACTION_CONTRACT.md` → `## Execution model (Windows-native)` and `## Diagnostics and probes`.
+* Treat CMD metacharacters as hard triggers to Scripted mode; in inline emitted `<line>`, the following forms/patterns are forbidden: `|`, `>`, `>>`, `<`, `&`, `&&`, `||`, `(`, `)`, `^`, `!`.
+* Inline CWD management is forbidden: do not emit `cd`, `pushd`, or `popd`; use `Set-Location` inside the temporary `.ps1` instead.
+* If an inline step fails with symptoms consistent with argv splitting or quoting fragility, do not retry inline by adding quoting/escaping; switch to Scripted mode immediately.
 * CMD redirection is forbidden (even when writing under `.codex_tmp`).
 * Scripted mode: run temporary execution scripts via Windows PowerShell 5.1 explicitly (full pinned path) and `-File` (NOT `-Command`):
 
@@ -65,16 +72,23 @@ Codex CLI runs locally against this repository’s working copy. Follow these ru
   - `powershell` without the pinned full path
 
   ```cmd
-  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".codex_tmp\step.ps1"
+  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\repo\.codex_tmp\step.ps1
   ```
 
-  Run from repo root so the relative path resolves. Do not hardcode drive letters for system paths.
+  CWD may drift between harness steps; do not rely on stable CWD. Mandatory bootstrap (Scripted mode): emit `git rev-parse --show-toplevel` to print the repository root path, STOP if it fails, and require it contains no whitespace (no quoting workarounds). Use absolute paths rooted at that printed value only for `.codex_tmp` script launch and cleanup; do not embed the printed repository root as a constant inside probe scripts. Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel` when constructing absolute launcher/cleanup paths. For emitted CMD <line> absolute paths (launcher and cleanup), normalize the repo root to backslashes (\) first (do not use forward slashes). For system paths, use `%SystemRoot%` (no drive-letter hardcoding). The repository root drive letter comes from the exact value printed earlier by `git rev-parse --show-toplevel` (so `C:\repo` is example form only).
 
-* If a command needs pipes, redirections, chaining, conditional logic, output parsing, or “quoting gymnastics”, it MUST be done in Scripted mode via a temporary `.ps1` under `.codex_tmp` executed with `-File`.
+Additionally, every temporary .ps1 probe MUST re-derive the repository root at runtime inside the probe via git rev-parse --show-toplevel, remove only the trailing CR/LF (for example: TrimEnd("`r","`n"); do NOT use .Trim()), and Set-Location
+to it; the probe MUST NOT hardcode the repository root or infer it from $PSScriptRoot, $MyInvocation, $PWD, the current working directory as the source of truth for repo root, or the
+probe launcher path.
+
+* If a command needs pipes, redirections, chaining, conditional logic, output parsing, or "quoting gymnastics", it MUST be done in Scripted mode via a temporary `.ps1` under `.codex_tmp` executed with `-File`.
+
+* Temporary execution `.ps1` scripts under `.codex_tmp` are single-use probes: one file only, no helper scripts/modules/subfolders; probes SHOULD prefer stdout/stderr only (at most ONE diagnostic log file under `.codex_tmp\...` when necessary, with explicit UTF-8 encoding).
+* Preferred probes and retry limits: see `docs/INTERACTION_CONTRACT.md` → `## Diagnostics and probes` → `### Blessed probe primitives` and `### Retry model (bounded; non-escalating)`.
 
 * Never run Git from inside `.git` subfolders.
 
-* Before a risky step, print `cd` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Rely on the step’s exit code, do NOT add extra “check the previous step” steps (for example `if errorlevel`). For searches, the explicit `RC=1` normalization rule is defined in `docs/INTERACTION_CONTRACT.md`.
+* Before a risky step, print `git rev-parse --show-toplevel` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Rely on the step's exit code, do NOT add extra "check the previous step" steps (for example `if errorlevel`). For searches, the explicit `RC=1` normalization rule is defined in `docs/INTERACTION_CONTRACT.md`.
 
 ### Shell roles
 
