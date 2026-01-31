@@ -29,6 +29,7 @@ set "HAS_BOOTSTRAP_PW=0"
 set "L2C_BOOTSTRAP_SECRET=%WINDIR%\Setup\Scripts\.bootstrap.pw"
 set "L2C_PRIMARYADMIN_SECRET=%WINDIR%\Setup\Scripts\.primaryadmin.pw"
 set "L2C_BOOTSTRAP_PW_ACL_OK=0"
+set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
 set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
 set "L2C_HAS_PRIMARYADMIN_SECRET=0"
 set "L2C_PW_ALLOWED=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-"
@@ -391,6 +392,33 @@ set "L2C_PW_CHECK="
 set "L2C_PW_SEEN="
 exit /b 0
 
+:validate_bootstrap_password
+set "L2C_PW_CHECK="
+set "L2C_PW_SEEN=0"
+if not defined L2C_BOOTSTRAP_PASSWORD exit /b 1
+if "%L2C_BOOTSTRAP_PASSWORD%"=="" exit /b 1
+set "L2C_PW_CHECK=%L2C_BOOTSTRAP_PASSWORD%"
+
+:_validate_bootstrap_password_loop
+if not defined L2C_PW_CHECK goto :_validate_bootstrap_password_ok
+if "%L2C_PW_CHECK%"=="" if "%L2C_PW_SEEN%"=="1" goto :_validate_bootstrap_password_ok
+set "L2C_PW_CHAR=%L2C_PW_CHECK:~0,1%"
+call :is_primaryadmin_char_allowed "%L2C_PW_CHAR%"
+if not "%ERRORLEVEL%"=="0" (
+  set "L2C_PW_CHAR="
+  set "L2C_PW_CHECK="
+  set "L2C_PW_SEEN="
+  exit /b 1
+)
+set "L2C_PW_SEEN=1"
+set "L2C_PW_CHECK=%L2C_PW_CHECK:~1%"
+goto :_validate_bootstrap_password_loop
+:_validate_bootstrap_password_ok
+set "L2C_PW_CHAR="
+set "L2C_PW_CHECK="
+set "L2C_PW_SEEN="
+exit /b 0
+
 :is_primaryadmin_char_allowed
 set "L2C_PW_CHAR_TEST=%~1"
 if "%L2C_PW_CHAR_TEST%"=="" (
@@ -617,6 +645,19 @@ if exist "%PWFILE%" (
   set /p BOOTSTRAP_CHECK=<"%PWFILE%"
 )
 if defined BOOTSTRAP_CHECK set "HAS_BOOTSTRAP_PW=1"
+set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
+if defined BOOTSTRAP_CHECK (
+  set "L2C_BOOTSTRAP_PASSWORD=%BOOTSTRAP_CHECK%"
+  call :validate_bootstrap_password
+  if errorlevel 1 (
+    set "FAILED=1"
+    set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
+    call :log "[ERROR] bootstrap password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration and autologon priming will be skipped."
+  ) else (
+    set "L2C_BOOTSTRAP_PW_FORMAT_OK=1"
+  )
+  set "L2C_BOOTSTRAP_PASSWORD="
+)
 set "BOOTSTRAP_CHECK="
 
 :after_pw_check
@@ -670,22 +711,22 @@ if "%FAILED%"=="0" if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
 set "L2C_PRIMARYADMIN_PASSWORD="
 
 REM Temporary logon policies
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   REM Temp logon relax, only if secret present
   reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
 ) else (
-  call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
+  call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
 )
 reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
 REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   call :l2c_stageb_schedule_and_prime
 ) else (
-  call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
-  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
+  call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
+  call :log "[INFO] Stage B registration skipped due to gate (FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
   set "STAGEB_SKIPPED_GATE=1"
   set "STAGEB_NOT_SCHEDULED=1"
 )
@@ -821,7 +862,7 @@ if not "%RC%"=="0" (
   exit /b %RC%
 )
 
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -Raw; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -TotalCount 1 -ErrorAction Stop; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
 call :winlogon_handle_default_password
 exit /b %ERRORLEVEL%
 
