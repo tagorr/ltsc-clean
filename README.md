@@ -159,7 +159,7 @@ Interpretation:
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid; validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists (non-empty first line), the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
      * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition;
      * primes Winlogon autologon for `bootstrap` using the secret from `.bootstrap.pw` and applies temporary logon settings (`DisableCAD=1`, `Ngc\DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0`). Winlogon priming happens only after the task is created successfully; if any priming sub-step fails after task creation, SetupComplete logs an `[ERROR]`, rolls back Winlogon autologon-related values, attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`, and sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`.
-   * Stage B registration is skipped whenever any gate input fails; `SetupComplete.cmd` logs `[INFO] Stage B registration skipped due to gate (FAILED=..., HAS_BOOTSTRAP_PW=..., L2C_HAS_PRIMARYADMIN_SECRET=..., L2C_BOOTSTRAP_PW_ACL_OK=..., L2C_PRIMARYADMIN_PW_ACL_OK=...)` and does not register the task.
+   * Stage B registration is skipped whenever any gate input fails; `SetupComplete.cmd` logs `[INFO] Stage B registration skipped due to gate (FAILED=..., HAS_BOOTSTRAP_PW=..., L2C_BOOTSTRAP_PW_FORMAT_OK=..., L2C_HAS_PRIMARYADMIN_SECRET=..., L2C_BOOTSTRAP_PW_ACL_OK=..., L2C_PRIMARYADMIN_PW_ACL_OK=...)` and does not register the task. `HAS_BOOTSTRAP_PW` indicates present + non-empty first line; format validity is `L2C_BOOTSTRAP_PW_FORMAT_OK`.
    * if the primary admin secret is missing or invalid, ACL/attribute checks fail, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task; the script exits with a non-zero RC, leaving the system in a recovery state.
    * when `FAILED=1` (regardless of whether set by servicing, secret/ACL validation, task creation, or Winlogon priming), the recovery gate logs `SetupComplete entered recovery mode; skipping extra registrations` and suppresses extra registrations (including Stage B scheduling/priming).
    * after the Stage B gateway, evaluates reboot requirement and writes `%WINDIR%\Panther\_needs_reboot.flag` only when a reboot is required (`NEEDS_REBOOT=1`) or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; if the flag already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (it is not deleted on entry); the script does not scan prior `SetupComplete.log` history.
@@ -170,7 +170,7 @@ Interpretation:
 If you manually rerun `SetupComplete.cmd`:
 - it does not scan historical `SetupComplete.log` for older `3010/1641` markers; it decides whether to write `%WINDIR%\Panther\_needs_reboot.flag` based only on the current run’s servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`;
 - if `%WINDIR%\Panther\_needs_reboot.flag` already exists at `SetupComplete.cmd` start, `SetupComplete.cmd` logs a WARN and preserves it as a sticky pending reboot marker (reruns do not delete it).
-- it re-runs secret validation and logs the current ACL/attribute and format status of `.bootstrap.pw` / `.primaryadmin.pw`.
+- it re-runs secret validation and logs the current ACL/attribute status; bootstrap format failures emit an explicit `[ERROR]`, and gate-skip logs include `L2C_BOOTSTRAP_PW_FORMAT_OK`.
 
 A rerun does not undo a previously successful Stage B. If Stage B has already deleted the secrets, `SetupComplete.cmd` may see them as missing and stay on a recovery-style path, but it does not invalidate the existing primary admin account or re-enable bootstrap in a way that breaks assumptions.
 
@@ -417,13 +417,13 @@ For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST
 
 ### Autologon priming (SetupComplete)
 
-`SetupComplete.cmd` primes Winlogon autologon only when a single combined gate passes: `FAILED=0`, `.bootstrap.pw` exists and is non-empty, `.primaryadmin.pw` exists, `ValidateSecrets.ps1` reported valid ACL/attributes for both secrets, and `.primaryadmin.pw` was read successfully with allowed characters.
+`SetupComplete.cmd` primes Winlogon autologon only when a single combined gate passes: `FAILED=0`, `.bootstrap.pw` exists, the first line is non-empty and contains only allowed characters, `.primaryadmin.pw` exists, `ValidateSecrets.ps1` reported valid ACL/attributes for both secrets, and `.primaryadmin.pw` was read successfully with allowed characters.
 
 Keys:
 
 * `DefaultUserName = bootstrap`
 * `DefaultDomainName = <COMPUTERNAME>`
-* `DefaultPassword = <file contents>`
+* `DefaultPassword = <first line of .bootstrap.pw>`
 * `AutoAdminLogon = 1` (REG_SZ)
 * `ForceAutoLogon = 1` (REG_SZ)
 * `AutoLogonCount = 2` (REG_DWORD)

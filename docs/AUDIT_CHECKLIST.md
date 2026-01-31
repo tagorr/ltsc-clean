@@ -58,7 +58,7 @@
     * [ ] An `[ERROR]` is logged.
     * [ ] `FAILED=1` is set.
     * [ ] Stage B registration and autologon priming are blocked.
-  * [ ] A single combined gate (FAILED==0, `.bootstrap.pw` present/non-empty, `.primaryadmin.pw` present and ACL/attribute OK, allowed characters) controls temporary logon tweaks, autologon priming, and Stage B registration; the gate also stays closed when the validator returns exit code `4` (internal error) because `FAILED=1` is set and both ACL flags remain `0`.
+  * [ ] A single combined gate (FAILED==0, `.bootstrap.pw` present/non-empty, `L2C_BOOTSTRAP_PW_FORMAT_OK==1`, `.primaryadmin.pw` present and ACL/attribute OK, allowed characters) controls temporary logon tweaks, autologon priming, and Stage B registration; the gate also stays closed when the validator returns exit code `4` (internal error) because `FAILED=1` is set and both ACL flags remain `0`.
   * [ ] For a happy-path run, `SetupComplete.log` shows `[SECTION] Secret ACL validation (bootstrap=1, primaryadmin=1)` before CreatePrimaryAdmin is scheduled; for a deliberate ACL/attribute/absence fault in either secret the log shows at least one `0` and SetupComplete enters the fail-closed/recovery path (no task registration or autologon priming).
 * [ ] `.primaryadmin.pw` formatting checks:
 
@@ -113,7 +113,8 @@
   * [ ] `ALWAYS_REBOOT_AFTER_FIRST_LOGON` (manual reboot after first logon).
   * [ ] `NEEDS_REBOOT` (whether a post-install reboot is required).
   * [ ] `FAILED` (SetupComplete failure).
-  * [ ] `HAS_BOOTSTRAP_PW` (valid `.bootstrap.pw`).
+  * [ ] `HAS_BOOTSTRAP_PW` (present + non-empty first line of `.bootstrap.pw`).
+  * [ ] `L2C_BOOTSTRAP_PW_FORMAT_OK` (bootstrap first-line format/charset validity).
   * [ ] `L2C_FIRST_BAD_RC` (first non-success servicing RC).
   * [ ] `REBOOT_FLAG` (path to the Panther flag `%WINDIR%\Panther\_needs_reboot.flag`).
 * [ ] All servicing return code (RC) handling:
@@ -139,14 +140,16 @@
 
   * [ ] `if exist "%PWFILE%" (...)`.
   * [ ] The first line is read only (`set /p`) and must be non-empty (single-line secret; no trimming).
-* [ ] If a valid secret is present (`.bootstrap.pw` exists and has content):
+* [ ] If `.bootstrap.pw` exists and the first line is non-empty:
 
   * [ ] `HAS_BOOTSTRAP_PW` is set to `"1"`.
+  * [ ] `L2C_BOOTSTRAP_PW_FORMAT_OK` is set to `"1"` only when the first line contains allowed characters only (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`), and otherwise an explicit `[ERROR]` is logged (no secret contents), `FAILED=1` is set, and Stage B registration/autologon priming are blocked.
 * [ ] If missing or empty:
 
   * [ ] `HAS_BOOTSTRAP_PW` remains `"0"` or equivalent.
   * [ ] `FAILED=1`.
   * [ ] Log contains `[ERROR] .bootstrap.pw missing or empty; ...`.
+  * [ ] Negative test: if the `.bootstrap.pw` first line contains unsupported characters, the gate stays closed (`FAILED=1`), Stage B registration/autologon priming are skipped, an explicit `[ERROR]` is emitted, and gate-state logs show `L2C_BOOTSTRAP_PW_FORMAT_OK=0`.
 * [ ] `.primaryadmin.pw` validation:
 
   * [ ] Presence and non-empty first-line content at `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is validated using the allowed character set (no trimming).
@@ -155,7 +158,7 @@
   * [ ] ACL/attribute flags from `ValidateSecrets.ps1` (`L2C_BOOTSTRAP_PW_ACL_OK`, `L2C_PRIMARYADMIN_PW_ACL_OK`) must be `1`; failures are logged and force `FAILED=1` before the primary admin password is read.
 * [ ] Winlogon autologon to `bootstrap`:
 
-  * [ ] Runs only when `HAS_BOOTSTRAP_PW=="1"` and a valid primary admin secret is present and `FAILED==0`.
+  * [ ] Runs only when `FAILED==0`, `HAS_BOOTSTRAP_PW=="1"`, `L2C_BOOTSTRAP_PW_FORMAT_OK==1`, and a valid primary admin secret is present.
   * [ ] Follows an all-or-nothing model: `SetupComplete.cmd` first creates the `\L2C\CreatePrimaryAdmin` executor task; only then it writes `DefaultPassword` and checks the RC, and only when RC=0 enables `AutoAdminLogon` and `ForceAutoLogon`.
   * [ ] If any Winlogon priming sub-step fails after task creation (password write or `reg add`), SetupComplete logs one or more `[ERROR]` entries (depending on the failing sub-step), sets `FAILED=1` and `STAGEB_NOT_SCHEDULED=1`, rolls back Winlogon autologon-related values (clears `DefaultUserName`/`DefaultDomainName`, removes `DefaultPassword` (absent), resets `AutoAdminLogon`/`ForceAutoLogon`/`AutoLogonCount`), and attempts best-effort deletion of `\L2C\CreatePrimaryAdmin`.
   * [ ] Temporary logon policy relaxations (`DisableCAD`, `DevicePasswordLessBuildVersion`) occur only when the combined gate passes; skip path logs the gate state.
@@ -164,7 +167,7 @@
 
 * [ ] Creation of the `\L2C\CreatePrimaryAdmin` task:
 
-  * [ ] Happens only when `FAILED==0`, `HAS_BOOTSTRAP_PW==1`, and a validated primary admin secret is present.
+  * [ ] Happens only when `FAILED==0`, `HAS_BOOTSTRAP_PW==1`, `L2C_BOOTSTRAP_PW_FORMAT_OK==1`, and a validated primary admin secret is present.
   * [ ] Task parameters: SYSTEM, Highest, OnLogon, path to `CreatePrimaryAdmin.ps1`; `/TR` contains no password or other secret arguments.
 * [ ] On `schtasks /Create` error:
 
@@ -175,7 +178,7 @@
   * [ ] Negative test: force `schtasks /Create` to fail, verify Winlogon autologon values are not written and `STAGEB_NOT_SCHEDULED=1` is set.
 * [ ] In the blocked branch:
 
-  * [ ] The log records that Stage B registration was skipped, with explicit `FAILED` and `HAS_BOOTSTRAP_PW` values.
+  * [ ] The log records that Stage B registration was skipped, with explicit `FAILED`, `HAS_BOOTSTRAP_PW`, and `L2C_BOOTSTRAP_PW_FORMAT_OK` values.
 
 * [ ] When `ALWAYS_REBOOT_AFTER_FIRST_LOGON==1`:
 
