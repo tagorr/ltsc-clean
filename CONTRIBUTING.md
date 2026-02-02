@@ -66,6 +66,10 @@ Include small excerpts (or the full files when diagnosing) from:
 - `%WINDIR%\Panther\SetupComplete.log`
 - `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
 - `C:\ProgramData\l2c_master_<timestamp>.log` (normal or recovery outcome)
+  - If Stage B retained `bootstrap` / the executor task / secrets unexpectedly, look for:
+    - `HARD FAIL: Logon policy restore verification failed, refusing to teardown executor/bootstrap.`
+    - `Teardown blocked due to logon policy restore verification failure; bootstrap/task/secrets retained.`
+    - `OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)`
 
 ## Using Codex CLI in this repo
 
