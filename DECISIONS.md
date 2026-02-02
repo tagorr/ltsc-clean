@@ -706,6 +706,8 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Stage B of `CreatePrimaryAdmin.ps1` now:
   - Deletes `DefaultUserName`, `DefaultDomainName`, and `DefaultPassword`, and resets `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount`.
   - Verifies post-action that Winlogon is sanitized (treats read errors as failure); if verification fails, Stage B hard-fails and refuses to teardown the `bootstrap`/`\L2C\CreatePrimaryAdmin` executor path, preserves `.bootstrap.pw` and `.primaryadmin.pw`, and suppresses automatic reboot.
+  - Restores `DisableCAD=0` and restores `DevicePasswordLessBuildVersion` mode-aware (`2` in normal mode, `0` in recovery), then verifies the logon policy restore; teardown occurs only when both Winlogon cleanup and logon policy restore are verified in normal mode.
+  - When logon policy restore verification fails, Stage B refuses teardown of `bootstrap`/`\L2C\CreatePrimaryAdmin`, preserves both secrets, and (when the current `rc` is `0`) sets `rc=6` for the failure outcome (operation-level AccessDenied may appear as effective `rc=5` in reg operation summaries).
   - Logs `net user bootstrap /active:no` success or WARN with the exact RC.
   - Logs WARN for non-zero RCs from `schtasks.exe /Delete` and still surfaces caught exceptions as WARN.
   - Tracks cleanup state for both `.bootstrap.pw` and `.primaryadmin.pw` in dedicated variables, logs `removed`/`missing`/`error`/`preserved` states for each, and records the resulting state in the Stage B master log summary.

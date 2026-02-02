@@ -251,6 +251,41 @@ function Test-WinlogonSanitized([string]$WinlogonKeyPath) {
   return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); Reasons = @($reasons) }
 }
 
+function Test-LogonPolicyRestored([int]$ExpectedDevicePasswordLessBuildVersion) {
+  $reasons = New-Object System.Collections.Generic.List[string]
+
+  $sysKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+  $cad = Get-RegValueState -KeyPath $sysKey -Name 'DisableCAD'
+  if ($cad.State -eq 'error') {
+    [void]$reasons.Add(("DisableCAD read error: {0}" -f $cad.Error))
+  } elseif ($cad.State -eq 'absent') {
+    [void]$reasons.Add('DisableCAD missing (expected REG_DWORD 0)')
+  } elseif (-not (Test-ZeroDisabled $cad.Value)) {
+    [void]$reasons.Add(("DisableCAD not restored (value={0} expected=0)" -f $cad.Value))
+  }
+
+  $ngcKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc'
+  $dplbv = Get-RegValueState -KeyPath $ngcKey -Name 'DevicePasswordLessBuildVersion'
+  if ($dplbv.State -eq 'error') {
+    [void]$reasons.Add(("DevicePasswordLessBuildVersion read error: {0}" -f $dplbv.Error))
+  } elseif ($dplbv.State -eq 'absent') {
+    [void]$reasons.Add(("DevicePasswordLessBuildVersion missing (expected REG_DWORD {0})" -f $ExpectedDevicePasswordLessBuildVersion))
+  } else {
+    $ok = $false
+    try {
+      $actual = [int64]$dplbv.Value
+      $ok = ($actual -eq [int64]$ExpectedDevicePasswordLessBuildVersion)
+    } catch {
+      $ok = $false
+    }
+    if (-not $ok) {
+      [void]$reasons.Add(("DevicePasswordLessBuildVersion not restored (value={0} expected={1})" -f $dplbv.Value, $ExpectedDevicePasswordLessBuildVersion))
+    }
+  }
+
+  return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); Reasons = @($reasons) }
+}
+
 function Test-SystemRebootPending {
   $reasons = New-Object System.Collections.Generic.List[string]
   $errors  = New-Object System.Collections.Generic.List[string]
@@ -479,6 +514,8 @@ $StageA_RC = 0
 $StageAAbortReason = $null
 $StageB_Succeeded = $false
 $WinlogonSanitizedOk = $true
+$LogonPolicyRestoredOk = $true
+$TeardownEligible = $false
 
 Write-SetupLog "Begin A: Primary admin creation/config"
 try {
@@ -659,12 +696,64 @@ try {
     $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $wlMsg)
   }
   if ($wlAccessDenied) { $isRecovery = $true }  # force recovery early (for recovery-specific steps below)
-  Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0'
+
+  $expectedDplbv = if ($isRecovery) { 0 } else { 2 }
+  $policyModeLabel = if ($isRecovery) { 'recovery' } else { 'normal' }
+  $plMsg = ("Logon policy restore: begin (mode={0} expected DisableCAD=0 DevicePasswordLessBuildVersion={1})" -f $policyModeLabel, $expectedDplbv)
+  Write-SetupLog $plMsg
+  $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $plMsg)
+
+  $policyRcsRaw = @()
+  $policyRcs = @()
+  $policyAnyNormalized = $false
+
+  $res = Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'DisableCAD' 'REG_DWORD' '0' -ReturnResult -SuppressWarnOnAccessDenied; $policyRcsRaw += $res.Raw; $policyRcs += $res.Effective; if ($res.Normalized) { $policyAnyNormalized = $true }
+  $res = Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' ($expectedDplbv.ToString()) -ReturnResult -SuppressWarnOnAccessDenied; $policyRcsRaw += $res.Raw; $policyRcs += $res.Effective; if ($res.Normalized) { $policyAnyNormalized = $true }
   if ($isRecovery) {
-    Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '0'
-    Write-SetupLog 'Recovery mode: forcing DevicePasswordLessBuildVersion=0 for troubleshooting' 'WARN'
+    Write-SetupLog 'Recovery mode: DevicePasswordLessBuildVersion expected=0 (troubleshooting)' 'WARN'
+  }
+
+  $policyAccessDenied = ($policyRcs -contains 5)
+  $policyRcOk = ($policyRcs.Count -gt 0 -and (($policyRcs | ForEach-Object { $_ -eq 0 }) -notcontains $false))
+
+  $plMsg = if ($policyRcOk) { 'Logon policy restore: attempted' } else { ("Logon policy restore: attempted (policyRcs={0})" -f ($policyRcs -join ',')) }
+  Write-SetupLog $plMsg
+  $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $plMsg)
+  if ($VerboseLog -and $policyAnyNormalized) {
+    $plMsg = ("Logon policy restore rc detail: raw={0} effective={1}" -f ($policyRcsRaw -join ','), ($policyRcs -join ','))
+    Write-SetupLog $plMsg 'DEBUG'
+    $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $plMsg)
+  }
+
+  $policyTest = Test-LogonPolicyRestored -ExpectedDevicePasswordLessBuildVersion $expectedDplbv
+  $LogonPolicyRestoredOk = ($policyRcOk -and -not $policyAccessDenied -and $policyTest.Ok)
+  if ($LogonPolicyRestoredOk) {
+    $plMsg = 'Logon policy restore verification passed (values verified)'
+    Write-SetupLog $plMsg
+    $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $plMsg)
   } else {
-    Reg-Add 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Ngc' 'DevicePasswordLessBuildVersion' 'REG_DWORD' '2'
+    Write-SetupLog 'HARD FAIL: Logon policy restore verification failed, refusing to teardown executor/bootstrap.' 'ERROR'
+    $finalLogEntries += ("[{0}] HARD FAIL: Logon policy restore verification failed; executor/bootstrap teardown suppressed" -f ([DateTime]::UtcNow.ToString('o')))
+
+    if ($policyAccessDenied) {
+      $reason = 'Logon policy restore blocked by ACL (AccessDenied, rc=5)'
+      Write-SetupLog ("Logon policy verify: {0}" -f $reason) 'ERROR'
+      $finalLogEntries += ("[{0}] Logon policy verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $reason)
+    }
+    foreach ($pRc in $policyRcs) {
+      if ($pRc -ne 0 -and $pRc -ne 5) {
+        $reason = ("Logon policy restore RC failure (rc={0})" -f $pRc)
+        Write-SetupLog ("Logon policy verify: {0}" -f $reason) 'ERROR'
+        $finalLogEntries += ("[{0}] Logon policy verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $reason)
+      }
+    }
+    foreach ($reason in $policyTest.Reasons) {
+      Write-SetupLog ("Logon policy verify: {0}" -f $reason) 'ERROR'
+      $finalLogEntries += ("[{0}] Logon policy verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $reason)
+    }
+    $plMsg = 'Teardown blocked due to logon policy restore verification failure; bootstrap/task/secrets retained.'
+    Write-SetupLog $plMsg 'ERROR'
+    $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $plMsg)
   }
 
   $wlPs = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
@@ -693,43 +782,45 @@ try {
     if ($rc -eq 0) { $rc = 4 }
   }
 
-  if (-not $isRecovery) {
-    if ($WinlogonSanitizedOk) {
-      Write-Verbose "Stage B: deactivating bootstrap account"
-      & "$env:SystemRoot\System32\net.exe" user bootstrap /active:no | Out-Null 2>$null
-      $bootstrapRC = $LASTEXITCODE
-      if ($bootstrapRC -eq 0) {
-        Write-SetupLog "bootstrap deactivated"
-      } else {
-        Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
-      }
-      $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
+  $TeardownEligible = (-not $isRecovery -and $WinlogonSanitizedOk -and $LogonPolicyRestoredOk)
 
-      Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
-      $taskDeleteRC = -1
-      try {
-        & "$env:SystemRoot\System32\schtasks.exe" /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
-        $taskDeleteRC = $LASTEXITCODE
-        if ($taskDeleteRC -eq 0) {
-          Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
-        } elseif ($taskDeleteRC -ne 0) {
-          Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
-        }
-      } catch {
-        Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
-      }
-      $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
+  if ($TeardownEligible) {
+    Write-Verbose "Stage B: deactivating bootstrap account"
+    & "$env:SystemRoot\System32\net.exe" user bootstrap /active:no | Out-Null 2>$null
+    $bootstrapRC = $LASTEXITCODE
+    if ($bootstrapRC -eq 0) {
+      Write-SetupLog "bootstrap deactivated"
     } else {
-      Write-SetupLog 'Winlogon cleanup verification failed; leaving bootstrap account enabled and scheduled task retained' 'ERROR'
+      Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
     }
-  } else {
+    $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
+
+    Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
+    $taskDeleteRC = -1
+    try {
+      & "$env:SystemRoot\System32\schtasks.exe" /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
+      $taskDeleteRC = $LASTEXITCODE
+      if ($taskDeleteRC -eq 0) {
+        Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
+      } elseif ($taskDeleteRC -ne 0) {
+        Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
+      }
+    } catch {
+      Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
+    }
+    $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
+  } elseif ($isRecovery) {
     Write-SetupLog "Recovery mode: bootstrap account remains enabled and scheduled task retained" 'WARN'
+  } elseif (-not $WinlogonSanitizedOk) {
+    Write-SetupLog 'Winlogon cleanup verification failed; leaving bootstrap account enabled and scheduled task retained' 'ERROR'
+  } else {
+    Write-SetupLog 'Teardown blocked due to logon policy restore verification failure; leaving bootstrap account enabled and scheduled task retained' 'ERROR'
   }
 
   # Stage B: remove transient password source files (best-effort)
   $pwCleanupState = 'skipped'
   $primaryPwCleanupState = 'skipped'
-  if (-not $isRecovery -and $WinlogonSanitizedOk) {
+  if ($TeardownEligible) {
     $pwCleanupState = 'unknown'
     $primaryPwCleanupState = 'unknown'
     try {
@@ -765,8 +856,12 @@ try {
     Write-SetupLog 'Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt' 'WARN'
     $pwCleanupState = 'preserved'
     $primaryPwCleanupState = 'preserved'
-  } else {
+  } elseif (-not $WinlogonSanitizedOk) {
     Write-SetupLog 'Winlogon cleanup verification failed; preserving bootstrap.pw and primaryadmin.pw' 'ERROR'
+    $pwCleanupState = 'preserved'
+    $primaryPwCleanupState = 'preserved'
+  } else {
+    Write-SetupLog 'Teardown blocked due to logon policy restore verification failure; preserving bootstrap.pw and primaryadmin.pw' 'ERROR'
     $pwCleanupState = 'preserved'
     $primaryPwCleanupState = 'preserved'
   }
@@ -797,6 +892,8 @@ try {
     $outcomeLine = 'OUTCOME: FAIL - secret cleanup error (bootstrap/primaryadmin secrets not removed)'
   } elseif ($StageA_Succeeded -and (-not $WinlogonSanitizedOk)) {
     $outcomeLine = 'OUTCOME: FAIL - Winlogon cleanup verification failed (executor/bootstrap retained)'
+  } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
+    $outcomeLine = 'OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)'
   } elseif ($StageA_Succeeded) {
     $outcomeLine = 'OUTCOME: SUCCESS'
   } else {
@@ -805,7 +902,7 @@ try {
   $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
   $sw.WriteLine($outcomeLine)
   $sw.Dispose()
-  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk)) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
+  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
   if ($SecretCleanupError) {
     Write-SetupLog "End B (FAIL - secret cleanup error)" 'ERROR'
@@ -814,6 +911,10 @@ try {
   } elseif (-not $WinlogonSanitizedOk) {
     Write-SetupLog "End B (FAIL - Winlogon cleanup verification failed)" 'ERROR'
     if ($rc -eq 0) { $rc = 4 }
+    $StageB_Succeeded = $false
+  } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
+    Write-SetupLog "End B (FAIL - logon policy restore verification failed)" 'ERROR'
+    if ($rc -eq 0) { $rc = 6 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded) {
     Write-SetupLog "End B (SUCCESS)"
