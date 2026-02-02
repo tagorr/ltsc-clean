@@ -176,13 +176,16 @@ During priming:
 - `DisableCAD=1`, `DevicePasswordLessBuildVersion=0`, `IgnoreShiftOverride=0 (REG_SZ, with no intermediate "1")`.
 
 On rollback:
-- `DisableCAD=0`, `DevicePasswordLessBuildVersion=2`, `IgnoreShiftOverride=0 (REG_SZ)`.
+- `DisableCAD=0`, `IgnoreShiftOverride=0 (REG_SZ)`.
+- `DevicePasswordLessBuildVersion=2` in the normal Stage B path; `0` in the recovery Stage B path.
 
 The restore guarantee is provided by the idempotent logic in `CreatePrimaryAdmin.ps1`.
 
+Safety invariant: teardown (disabling `bootstrap`, deleting the `\L2C\CreatePrimaryAdmin` task, deleting `.bootstrap.pw` / `.primaryadmin.pw`) must not occur unless logon policy restore is verified, even if Winlogon cleanup verification passed.
+
 In the normal Stage B path:
 
-* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, and (when Winlogon cleanup verification succeeded) `.bootstrap.pw` and `.primaryadmin.pw` are deleted; if verification failed, both secrets are preserved. If the Panther flag is present and Stage B completed successfully in the normal path, it is logged and Stage B performs the tri-state decision: `state=true` consumes the flag and reboots, `state=false` clears the stale flag without reboot, `state=unknown` reboots conservatively.
+* `DisableCAD` is returned to `0`, `DevicePasswordLessBuildVersion` is set to `2`, the `bootstrap` account is disabled, the `\L2C\CreatePrimaryAdmin` task is removed, and (when TeardownEligible is true: normal mode and both Winlogon cleanup and logon policy restore are verified) `.bootstrap.pw` and `.primaryadmin.pw` are deleted; if verification failed, both secrets are preserved. If the Panther flag is present and Stage B completed successfully in the normal path, it is logged and Stage B performs the tri-state decision: `state=true` consumes the flag and reboots, `state=false` clears the stale flag without reboot, `state=unknown` reboots conservatively.
 
 In the recovery Stage B path:
 

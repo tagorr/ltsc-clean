@@ -92,6 +92,10 @@ High-level interpretation:
 2. Look for:
 
    - the final `OUTCOME: ...` line (`SUCCESS`, `FAIL`, or `ABORTED`);
+   - logon policy restore verification failures:
+     - `HARD FAIL: Logon policy restore verification failed, refusing to teardown executor/bootstrap.`
+     - `Teardown blocked due to logon policy restore verification failure; bootstrap/task/secrets retained.`
+     - `OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)`
    - cleanup state lines:
      - `bootstrap.pw cleanup state=removed/missing/error/preserved`
      - `primaryadmin.pw cleanup state=removed/missing/error/preserved`
@@ -252,7 +256,9 @@ Common work:
   * in the normal path, enforce `DisableCAD=0` and `Ngc\DevicePasswordLessBuildVersion=2`;
   * in the recovery path, set `Ngc\DevicePasswordLessBuildVersion=0` to allow a more classic logon experience for diagnostics.
 
-Normal path (Winlogon cleanup verification succeeded):
+Teardown is allowed only when TeardownEligible is true: normal mode and both Winlogon cleanup and logon policy restore are verified.
+
+Normal path (TeardownEligible: Winlogon cleanup verified + logon policy restore verified):
 
 * disables the `bootstrap` account;
 * deletes the scheduled task `\L2C\CreatePrimaryAdmin`;
@@ -298,7 +304,7 @@ Diagnostics checklist:
 * `DefaultPassword` is absent; `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`;
 * `DisableCAD=0` and `DevicePasswordLessBuildVersion=2` in the normal path, `0` in recovery while diagnostics are ongoing;
 * `bootstrap` is disabled in the normal path and remains enabled in the recovery path;
-* `.bootstrap.pw` and `.primaryadmin.pw` have been deleted in the normal success path and preserved in recovery or when Winlogon cleanup verification failed;
+* `.bootstrap.pw` and `.primaryadmin.pw` have been deleted in the normal success path and preserved in recovery or when Winlogon cleanup verification failed or logon policy restore verification failed;
 * in the normal path `_needs_reboot.flag` is cleared after Stage B’s tri-state decision (reboot or stale-clear); in recovery mode or when Stage B fails the flag may remain to signal manual follow-up.
 
 ### Bootstrap password source file
@@ -619,6 +625,13 @@ Alternative when quoting is painful: use `-EncodedCommand` with UTF-8 encoded Po
     Do not reboot inside `SetupComplete.cmd`; `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` (and logs a WARN if a pre-existing flag is found), and Stage B in `CreatePrimaryAdmin.ps1` performs a tri-state pending reboot check after the first logon only when Stage B succeeded in the normal path and the flag exists: `state=true` consumes the flag and reboots, `state=false` clears the stale flag without reboot, `state=unknown` logs a WARN and reboots conservatively; state precedence is `true` if any reasons exist even if errors exist, `unknown` only if no reasons but probe errors exist, `false` only if no reasons and no errors; indicators include CBS and Windows Update markers, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`.
 
 For `DISM` and `reg.exe`, log return codes; treat `3010` as a deferred reboot, not as an error.
+
+`CreatePrimaryAdmin.ps1` Stage B outcomes:
+
+* `rc=3` secret cleanup error (teardown attempted but secrets not removed)
+* `rc=4` Winlogon cleanup verification failed/blocked (teardown suppressed)
+* `rc=6` logon policy restore verification failed (teardown suppressed; set only when the current `rc` is `0`)
+* AccessDenied may appear as effective `rc=5` in `wlRcs=` or policy RC summaries for individual reg operations; it is not the script exit code for the policy verification failure outcome.
 
 For detailed Codex CLI invocation and quoting rules, see `docs/INTERACTION_CONTRACT.md` together with `AGENTS.md`.
 

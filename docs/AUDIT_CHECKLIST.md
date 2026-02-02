@@ -317,6 +317,11 @@
   * [ ] A post-action verification reads `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` and treats read errors as failures; if `DefaultPassword` is present or any autologon value is present and not `0`, Stage B hard-fails and refuses to disable `bootstrap` or delete `\L2C\CreatePrimaryAdmin` (and suppresses any automatic reboot).
   * [ ] `IgnoreShiftOverride` is set to `REG_SZ=0`.
   * [ ] `DisableCAD` is set to `0`.
+  * [ ] Logging for logon policy restore is explicit and truthful:
+    * [ ] `Logon policy restore: begin (mode=` is present with the expected values (DisableCAD=0; DevicePasswordLessBuildVersion is `2` in normal mode and `0` in recovery).
+    * [ ] `Logon policy restore: attempted` is present (may include a `(policyRcs=...)` suffix when effective RCs are non-zero).
+    * [ ] `Logon policy restore verification passed (values verified)` is emitted only when verification genuinely succeeded.
+    * [ ] On failure, the log contains `HARD FAIL: Logon policy restore verification failed, refusing to teardown executor/bootstrap.` and a `Teardown blocked due to logon policy restore verification failure...` message indicating executor/bootstrap teardown was suppressed.
 * [ ] Additionally:
 
   * [ ] In the **normal** path, `DevicePasswordLessBuildVersion` is set back to `2`.
@@ -324,12 +329,12 @@
 
 #### 6.3. `bootstrap` account and CreatePrimaryAdmin task
 
-* [ ] In normal mode:
+* [ ] When TeardownEligible is true (normal mode and both Winlogon cleanup and logon policy restore are verified):
 
   * [ ] `net user bootstrap /active:no` is called with RC checking.
   * [ ] The result is logged (success or warning).
   * [ ] The `\L2C\CreatePrimaryAdmin` task is deleted via `schtasks /Delete`, result logged.
-* [ ] In recovery mode:
+* [ ] Otherwise (recovery mode, or teardown blocked due to verification failure):
 
   * [ ] The `bootstrap` account remains active and the task is not deleted.
   * [ ] The log contains a clear entry that `bootstrap` and the task are preserved for manual intervention, as described in SECURITY.md.
@@ -338,7 +343,7 @@
 
 * [ ] In normal Stage B mode:
 
-  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are processed for cleanup when present; the script attempts to delete them only when Winlogon cleanup verification succeeded (`WinlogonSanitizedOk=$true`) and records a cleanup state (`removed`, `missing`, `error`, or `preserved`) for each.
+  * [ ] Both `.bootstrap.pw` and `.primaryadmin.pw` are processed for cleanup when present; the script attempts to delete them only when TeardownEligible is true (normal mode and both Winlogon cleanup and logon policy restore are verified) and records a cleanup state (`removed`, `missing`, `error`, or `preserved`) for each.
   * [ ] Cleanup states (`removed`, `missing`, `error`, `preserved`) for each file are recorded in the master log.
   * [ ] In the happy path, the most recent master log shows `bootstrap.pw cleanup state=removed` and `primaryadmin.pw cleanup state=removed`.
   * [ ] Any `cleanup state=error` is treated as an audit finding requiring follow-up to confirm secrets are not left on disk.
@@ -359,6 +364,7 @@
   * [ ] Stage B start with the mode label (normal or recovery).
   * [ ] Key steps (Winlogon reset, `.bootstrap.pw` cleanup).
   * [ ] Stage B completion (`finalize end`).
+  * [ ] If logon policy restore verification fails, the master log contains `OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)` and (when the current `rc` is `0`) `rc` is set to `6`.
 * [ ] OUTCOME line:
 
   * [ ] Formed in one of three formats: `SUCCESS`, `FAIL`, or `ABORTED` with a reason.
