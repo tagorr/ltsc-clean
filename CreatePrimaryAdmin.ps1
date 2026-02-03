@@ -697,6 +697,14 @@ try {
   }
   if ($wlAccessDenied) { $isRecovery = $true }  # force recovery early (for recovery-specific steps below)
 
+  Write-SetupLog 'FAILSAFE_MARKER_DELETE attempted hive=HKLM\\SOFTWARE\\L2C name=AutologonPrimed'
+  $res = Reg-Del 'HKLM\SOFTWARE\L2C' 'AutologonPrimed' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing
+  if ($res.Effective -eq 0 -or $res.Effective -eq 2) {
+    Write-SetupLog 'FAILSAFE_MARKER_DELETE ok hive=HKLM\\SOFTWARE\\L2C name=AutologonPrimed'
+  } else {
+    Write-SetupLog ("FAILSAFE_MARKER_DELETE failed hive=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc={0}" -f $res.Effective) 'WARN'
+  }
+
   $expectedDplbv = if ($isRecovery) { 0 } else { 2 }
   $policyModeLabel = if ($isRecovery) { 'recovery' } else { 'normal' }
   $plMsg = ("Logon policy restore: begin (mode={0} expected DisableCAD=0 DevicePasswordLessBuildVersion={1})" -f $policyModeLabel, $expectedDplbv)
