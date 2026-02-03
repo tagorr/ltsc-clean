@@ -20,6 +20,8 @@ set "REBOOT_FLAG_CONTENT=need-reboot"
 set "NEEDS_REBOOT=0"
 set "REBOOT_REQUESTED=0"
 set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=0"
+set "L2C_AUTOLOGON_ARMED=0"
+set "L2C_AUTOLOGON_DEGRADED=0"
 set "STAGEB_SKIPPED_GATE=0"
 set "STAGEB_NOT_SCHEDULED=0"
 set "FAILED=0"
@@ -757,6 +759,9 @@ if "%NEEDS_REBOOT%"=="1" (
     if defined MASTER_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR master_log=%MASTER_LOG_PATH%"
     set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=1"
   )
+  if "%L2C_AUTOLOGON_DEGRADED%"=="1" if not "%L2C_AUTOLOGON_ARMED%"=="1" (
+    call :log "[WARN] WARN_REBOOT_FLAG_NO_AUTOLOGON Reboot required, but autologon is not armed (degraded=1); Stage B will not run until manual login. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\\L2C\\CreatePrimaryAdmin."
+  )
 ) else (
 call :log "[INFO] No reboot required"
 )
@@ -814,6 +819,32 @@ if "%RC%"=="0" (
     exit /b %RC%
   )
   call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
+  call :log "[INFO] L2C_MARKER_WRITE_BEGIN key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
+  reg add "HKLM\SOFTWARE\L2C" /v AutologonPrimed /t REG_DWORD /d 1 /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if "%RC%"=="0" (
+    set "L2C_AUTOLOGON_ARMED=1"
+    set "L2C_AUTOLOGON_DEGRADED=0"
+    call :log "[INFO] L2C_MARKER_WRITE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
+    exit /b 0
+  )
+  call :log "[ERROR] L2C_MARKER_WRITE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
+  call :log "[ERROR] L2C_DEGRADED_ENTERED manual_login_required=1"
+  call :winlogon_rollback_autologon
+  set "L2C_AUTOLOGON_ARMED=0"
+  set "L2C_AUTOLOGON_DEGRADED=1"
+  call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_BEGIN DisableCAD=0 DevicePasswordLessBuildVersion=2"
+  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
+  )
+  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
+  )
+  call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_DONE"
   exit /b 0
 ) else (
   set "FAILED=1"
@@ -844,6 +875,7 @@ set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
   call :l2c_autologon_prime_failed_after_task %RC%
 )
+call :log "[INFO] L2C_AUTOLOGON_STATUS armed=%L2C_AUTOLOGON_ARMED% degraded=%L2C_AUTOLOGON_DEGRADED% marker=HKLM\\SOFTWARE\\L2C\\AutologonPrimed"
 exit /b 0
 
 :l2c_prime_winlogon_autologon
@@ -920,6 +952,18 @@ set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" if not "%RC%"=="2" (
   call :track_rc %RC%
   call :log "[WARN] Failed to delete Winlogon DefaultDomainName (RC=%RC%)"
+)
+
+call :log "[INFO] L2C_MARKER_DELETE_ATTEMPT key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed"
+reg delete "HKLM\SOFTWARE\L2C" /v AutologonPrimed /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  call :log "[INFO] L2C_MARKER_DELETE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed"
+) else if "%RC%"=="2" (
+  call :log "[INFO] L2C_MARKER_DELETE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed"
+) else (
+  call :track_rc %RC%
+  call :log "[WARN] L2C_MARKER_DELETE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
 )
 
 exit /b 0
