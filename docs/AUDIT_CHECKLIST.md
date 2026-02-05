@@ -169,6 +169,12 @@
 
   * [ ] Happens only when `FAILED==0`, `HAS_BOOTSTRAP_PW==1`, `L2C_BOOTSTRAP_PW_FORMAT_OK==1`, and a validated primary admin secret is present.
   * [ ] Task parameters: SYSTEM, Highest, OnLogon, path to `CreatePrimaryAdmin.ps1`; `/TR` contains no password or other secret arguments.
+  * [ ] Scheduled task tampering boundary (non-admin):
+    * [ ] No `Allow` ACE grants `Write`, `Modify`, `FullControl`, `Delete`, or `DeleteSubdirectoriesAndFiles` to `Everyone (S-1-1-0)`, `BUILTIN\Users (S-1-5-32-545)`, `Authenticated Users (S-1-5-11)`, or `INTERACTIVE (S-1-5-4)` on:
+      * [ ] `%WINDIR%\Setup\Scripts` (directory)
+      * [ ] `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1` (file)
+      * [ ] `%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin` (task definition file)
+    * [ ] Evidence: `%WINDIR%\Panther\SetupComplete.log` contains `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...`; on FAIL it includes `icacls` output for failing path(s).
 * [ ] On `schtasks /Create` error:
 
   * [ ] RC is tracked via `track_rc`.

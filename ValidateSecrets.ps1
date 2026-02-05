@@ -1,10 +1,25 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Secrets')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(ParameterSetName = 'Secrets', Mandatory = $true)]
     [string]$BootstrapPath,
 
-    [Parameter(Mandatory = $true)]
-    [string]$PrimaryAdminPath
+    [Parameter(ParameterSetName = 'Secrets', Mandatory = $true)]
+    [string]$PrimaryAdminPath,
+
+    [Parameter(ParameterSetName = 'AclBoundaryPreStageB', Mandatory = $true)]
+    [switch]$CheckAclBoundaryPreStageB,
+
+    [Parameter(ParameterSetName = 'AclBoundaryPostStageB', Mandatory = $true)]
+    [switch]$CheckAclBoundaryPostStageB,
+
+    [Parameter(ParameterSetName = 'AclBoundaryPreStageB')]
+    [string]$ScriptsDirPath = (Join-Path $env:WINDIR 'Setup\Scripts'),
+
+    [Parameter(ParameterSetName = 'AclBoundaryPreStageB')]
+    [string]$StageBScriptPath = (Join-Path $env:WINDIR 'Setup\Scripts\CreatePrimaryAdmin.ps1'),
+
+    [Parameter(ParameterSetName = 'AclBoundaryPostStageB')]
+    [string]$TaskDefinitionPath = (Join-Path $env:SystemRoot 'System32\Tasks\L2C\CreatePrimaryAdmin')
 )
 
 Set-StrictMode -Version Latest
@@ -73,11 +88,98 @@ function Test-SecretAcl {
     return $true
 }
 
+# ACL boundary flags (unsafe when set). Keep 4 reserved for internal error sentinel.
+[int]$FLAG_UNSAFE_SCRIPTS_DIR   = 8
+[int]$FLAG_UNSAFE_STAGEB_SCRIPT = 16
+[int]$FLAG_UNSAFE_TASK_FILE     = 32
+
+function Test-NonAdminTamperAclUnsafe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Leaf', 'Container')]
+        [string]$ExpectedType
+    )
+
+    $pathType = if ($ExpectedType -eq 'Container') { 'Container' } else { 'Leaf' }
+    if (-not (Test-Path -LiteralPath $Path -PathType $pathType)) {
+        Write-Error "[ACLBOUNDARY] Path missing or wrong type: $Path (expected $ExpectedType)" -ErrorAction Continue
+        return $true
+    }
+
+    $acl = $null
+    try {
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    } catch {
+        Write-Error "[ACLBOUNDARY] Get-Acl failed for ${Path}: $($_.Exception.Message)" -ErrorAction Continue
+        return $true
+    }
+
+    $riskySids = @(
+        'S-1-1-0',        # Everyone
+        'S-1-5-32-545',   # BUILTIN\Users
+        'S-1-5-11',       # Authenticated Users
+        'S-1-5-4'         # INTERACTIVE
+    )
+
+    $unsafeRights =
+        [System.Security.AccessControl.FileSystemRights]::Write -bor
+        [System.Security.AccessControl.FileSystemRights]::Modify -bor
+        [System.Security.AccessControl.FileSystemRights]::FullControl -bor
+        [System.Security.AccessControl.FileSystemRights]::Delete -bor
+        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
+
+    foreach ($rule in $acl.Access) {
+        if ($rule.AccessControlType -ne 'Allow') { continue }
+
+        $sid = $null
+        try {
+            $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
+        } catch {
+            continue
+        }
+
+        if ($riskySids -notcontains $sid) { continue }
+
+        if (($rule.FileSystemRights -band $unsafeRights) -ne 0) {
+            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} sid={1} rights={2}" -f $Path, $sid, $rule.FileSystemRights) -ErrorAction Continue
+            return $true
+        }
+    }
+
+    return $false
+}
+
 # Main logic: compute two flags and an exit code as a bitmask:
 # bit 0 (1)  bootstrapOk
 # bit 1 (2)  primaryOk
 
 try {
+    if ($PSCmdlet.ParameterSetName -eq 'AclBoundaryPreStageB') {
+        [int]$code = 0
+
+        if (Test-NonAdminTamperAclUnsafe -Path $ScriptsDirPath -ExpectedType Container) {
+            $code = $code -bor $FLAG_UNSAFE_SCRIPTS_DIR
+        }
+        if (Test-NonAdminTamperAclUnsafe -Path $StageBScriptPath -ExpectedType Leaf) {
+            $code = $code -bor $FLAG_UNSAFE_STAGEB_SCRIPT
+        }
+
+        exit $code
+    }
+
+    if ($PSCmdlet.ParameterSetName -eq 'AclBoundaryPostStageB') {
+        [int]$code = 0
+
+        if (Test-NonAdminTamperAclUnsafe -Path $TaskDefinitionPath -ExpectedType Leaf) {
+            $code = $code -bor $FLAG_UNSAFE_TASK_FILE
+        }
+
+        exit $code
+    }
+
     $bootstrapOk = Test-SecretAcl -Path $BootstrapPath
     $primaryOk   = Test-SecretAcl -Path $PrimaryAdminPath
 

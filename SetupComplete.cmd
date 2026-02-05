@@ -856,6 +856,50 @@ exit /b 0
 
 :l2c_stageb_schedule_and_prime
 REM Schedule Stage B executor first, then prime Winlogon autologon only on success (atomicity).
+REM [L2C] ACL boundary pre-check (non-admin tamper boundary): Scripts dir + Stage B script target
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
+  -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
+  -CheckAclBoundaryPreStageB >>"%LOG%" 2>&1
+set "RC=%ERRORLEVEL%"
+
+if "%RC%"=="4" (
+  call :track_rc %RC%
+  call :log "[ERROR] [ACLBOUNDARY] Pre-check validator internal error (rc=4); refusing to schedule Stage B"
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  exit /b 0
+)
+
+set "ACL_UNSAFE=0"
+
+set /a TMP=RC ^& 8
+if not "%TMP%"=="0" (
+  call :log "[ERROR] [ACLBOUNDARY] FAIL scripts_dir=%WINDIR%\Setup\Scripts rc=%RC%"
+  icacls "%WINDIR%\Setup\Scripts" >>"%LOG%" 2>&1
+  set "ACL_UNSAFE=1"
+)
+
+set /a TMP=RC ^& 16
+if not "%TMP%"=="0" (
+  call :log "[ERROR] [ACLBOUNDARY] FAIL stageb_script=%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1 rc=%RC%"
+  icacls "%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1" >>"%LOG%" 2>&1
+  set "ACL_UNSAFE=1"
+)
+
+if "%ACL_UNSAFE%"=="1" (
+  call :track_rc %RC%
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  set "ACL_UNSAFE="
+  set "TMP="
+  exit /b 0
+)
+
+call :log "[ACLBOUNDARY] PASS scripts_dir=%WINDIR%\Setup\Scripts"
+call :log "[ACLBOUNDARY] PASS stageb_script=%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1"
+set "ACL_UNSAFE="
+set "TMP="
+
 schtasks /Create /TN "\L2C\CreatePrimaryAdmin" ^
   /TR "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1\"" ^
   /SC ONLOGON /RU SYSTEM /RL HIGHEST /F >nul 2>&1
@@ -869,6 +913,36 @@ if not "%RC%"=="0" (
 ) else (
   call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
 )
+
+REM [L2C] ACL boundary post-check (non-admin tamper boundary): task definition file
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
+  -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
+  -CheckAclBoundaryPostStageB >>"%LOG%" 2>&1
+set "RC=%ERRORLEVEL%"
+
+if "%RC%"=="4" (
+  call :track_rc %RC%
+  call :log "[ERROR] [ACLBOUNDARY] Post-check validator internal error (rc=4); deleting task and refusing to prime Winlogon"
+  schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  exit /b 0
+)
+
+set /a TMP=RC ^& 32
+if not "%TMP%"=="0" (
+  call :track_rc %RC%
+  call :log "[ERROR] [ACLBOUNDARY] FAIL task_def=%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin rc=%RC% (deleting task; refusing to prime Winlogon)"
+  icacls "%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin" >>"%LOG%" 2>&1
+  schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  set "TMP="
+  exit /b 0
+)
+
+call :log "[ACLBOUNDARY] PASS task_def=%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin"
+set "TMP="
 
 call :l2c_prime_winlogon_autologon
 set "RC=%ERRORLEVEL%"
