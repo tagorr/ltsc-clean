@@ -870,6 +870,15 @@ if "%RC%"=="4" (
   exit /b 0
 )
 
+REM Fail closed on unexpected validator exit codes (treat as validator execution failure).
+if not "%RC%"=="0" if not "%RC%"=="8" if not "%RC%"=="16" if not "%RC%"=="24" (
+  call :track_rc %RC%
+  call :log "[ERROR] [ACLBOUNDARY] Pre-check validator failed with unexpected rc=%RC%; refusing to schedule Stage B"
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  exit /b 0
+)
+
 set "ACL_UNSAFE=0"
 
 set /a TMP=RC ^& 8
