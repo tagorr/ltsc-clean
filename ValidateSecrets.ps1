@@ -125,9 +125,10 @@ function Test-NonAdminTamperAclUnsafe {
     )
 
     $unsafeRights =
-        [System.Security.AccessControl.FileSystemRights]::Write -bor
-        [System.Security.AccessControl.FileSystemRights]::Modify -bor
-        [System.Security.AccessControl.FileSystemRights]::FullControl -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+        [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
         [System.Security.AccessControl.FileSystemRights]::Delete -bor
         [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
 
