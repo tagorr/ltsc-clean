@@ -92,6 +92,7 @@ function Test-SecretAcl {
 [int]$FLAG_UNSAFE_SCRIPTS_DIR   = 8
 [int]$FLAG_UNSAFE_STAGEB_SCRIPT = 16
 [int]$FLAG_UNSAFE_TASK_FILE     = 32
+[int]$FLAG_UNSAFE_TASK_DIR      = 64
 
 function Test-NonAdminTamperAclUnsafe {
     param(
@@ -124,6 +125,15 @@ function Test-NonAdminTamperAclUnsafe {
         'S-1-5-4'         # INTERACTIVE
     )
 
+    # Fallback match if IdentityReference.Translate(SID) fails.
+    # Keep it limited to exactly the same principals as $riskySids above.
+    $riskyNames = @(
+        'Everyone',
+        'BUILTIN\Users',
+        'NT AUTHORITY\Authenticated Users',
+        'NT AUTHORITY\INTERACTIVE'
+    )
+
     $unsafeRights =
         [System.Security.AccessControl.FileSystemRights]::WriteData -bor
         [System.Security.AccessControl.FileSystemRights]::AppendData -bor
@@ -134,20 +144,41 @@ function Test-NonAdminTamperAclUnsafe {
         [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
         [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
+    # Catch generic/high-level rights explicitly too.
+    $unsafeHighLevelRights =
+        [System.Security.AccessControl.FileSystemRights]::Write -bor
+        [System.Security.AccessControl.FileSystemRights]::Modify -bor
+        [System.Security.AccessControl.FileSystemRights]::FullControl -bor
+        [System.Security.AccessControl.FileSystemRights]::GenericWrite -bor
+        [System.Security.AccessControl.FileSystemRights]::GenericAll
+
     foreach ($rule in $acl.Access) {
         if ($rule.AccessControlType -ne 'Allow') { continue }
 
         $sid = $null
+        $name = $null
+        $rawId = $rule.IdentityReference.Value
+
         try {
             $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
         } catch {
-            continue
+            # If translation fails, fall back to raw identity string (either SID text or account name).
+            if ($rawId -match '^S-\d-\d+-.+') {
+                $sid = $rawId
+            } else {
+                $name = $rawId
+            }
         }
 
-        if ($riskySids -notcontains $sid) { continue }
+        $isRisky = $false
+        if ($sid -and ($riskySids -contains $sid)) { $isRisky = $true }
+        if (-not $isRisky -and $name -and ($riskyNames -contains $name)) { $isRisky = $true }
+        if (-not $isRisky) { continue }
 
-        if (($rule.FileSystemRights -band $unsafeRights) -ne 0) {
-            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} sid={1} rights={2}" -f $Path, $sid, $rule.FileSystemRights) -ErrorAction Continue
+        $rights = $rule.FileSystemRights
+        if ((($rights -band $unsafeRights) -ne 0) -or (($rights -band $unsafeHighLevelRights) -ne 0)) {
+            $idForLog = if ($sid) { $sid } else { $rawId }
+            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} id={1} rights={2}" -f $Path, $idForLog, $rights) -ErrorAction Continue
             return $true
         }
     }
@@ -178,6 +209,10 @@ try {
 
         if (Test-NonAdminTamperAclUnsafe -Path $TaskDefinitionPath -ExpectedType Leaf) {
             $code = $code -bor $FLAG_UNSAFE_TASK_FILE
+        }
+        $taskDirPath = Split-Path -Path $TaskDefinitionPath -Parent
+        if (Test-NonAdminTamperAclUnsafe -Path $taskDirPath -ExpectedType Container) {
+            $code = $code -bor $FLAG_UNSAFE_TASK_DIR
         }
 
         exit $code

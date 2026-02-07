@@ -262,6 +262,7 @@ exit /b %RC%
 
 :track_rc
 REM %1 = RC
+if "%~1"=="" exit /b 0
 set "RC=%~1"
 if "%RC%"=="0" exit /b 0
 if "%RC%"=="3010" exit /b 0
@@ -923,7 +924,7 @@ if not "%RC%"=="0" (
   call :log "[INFO] Scheduled \L2C\CreatePrimaryAdmin (SYSTEM, Highest, OnLogon)"
 )
 
-REM [L2C] ACL boundary post-check (non-admin tamper boundary): task definition file
+REM [L2C] ACL boundary post-check (non-admin tamper boundary): task definition file + parent dir
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
   -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
   -CheckAclBoundaryPostStageB >>"%LOG%" 2>&1
@@ -933,6 +934,9 @@ if "%RC%"=="4" (
   call :track_rc %RC%
   call :log "[ERROR] [ACLBOUNDARY] Post-check validator internal error (rc=4); deleting task and refusing to prime Winlogon"
   schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+  set "RC_DEL=%ERRORLEVEL%"
+  call if "%%RC_DEL%%"=="0" (call :log "[INFO] [ACLBOUNDARY] Task delete rc=%%RC_DEL%%") else (call :track_rc %%RC_DEL%% & call :log "[WARN] [ACLBOUNDARY] Task delete rc=%%RC_DEL%%")
+  set "RC_DEL="
   set "FAILED=1"
   set "STAGEB_NOT_SCHEDULED=1"
   set "TMP="
@@ -940,29 +944,51 @@ if "%RC%"=="4" (
 )
 
 REM Fail closed on unexpected validator exit codes (treat as validator execution failure).
-if not "%RC%"=="0" if not "%RC%"=="32" (
+if not "%RC%"=="0" if not "%RC%"=="32" if not "%RC%"=="64" if not "%RC%"=="96" (
   call :track_rc %RC%
   call :log "[ERROR] [ACLBOUNDARY] Post-check validator failed with unexpected rc=%RC%; deleting task and refusing to prime Winlogon"
   schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+  set "RC_DEL=%ERRORLEVEL%"
+  call if "%%RC_DEL%%"=="0" (call :log "[INFO] [ACLBOUNDARY] Task delete rc=%%RC_DEL%%") else (call :track_rc %%RC_DEL%% & call :log "[WARN] [ACLBOUNDARY] Task delete rc=%%RC_DEL%%")
+  set "RC_DEL="
   set "FAILED=1"
   set "STAGEB_NOT_SCHEDULED=1"
   set "TMP="
   exit /b 0
 )
 
+set "ACL_UNSAFE=0"
+
 set /a TMP=RC ^& 32
 if not "%TMP%"=="0" (
-  call :track_rc %RC%
   call :log "[ERROR] [ACLBOUNDARY] FAIL task_def=%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin rc=%RC% (deleting task; refusing to prime Winlogon)"
   icacls "%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin" >>"%LOG%" 2>&1
+  set "ACL_UNSAFE=1"
+)
+
+set /a TMP=RC ^& 64
+if not "%TMP%"=="0" (
+  call :log "[ERROR] [ACLBOUNDARY] FAIL task_dir=%SystemRoot%\System32\Tasks\L2C rc=%RC% (deleting task; refusing to prime Winlogon)"
+  icacls "%SystemRoot%\System32\Tasks\L2C" >>"%LOG%" 2>&1
+  set "ACL_UNSAFE=1"
+)
+
+if "%ACL_UNSAFE%"=="1" (
+  call :track_rc %RC%
   schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+  set "RC_DEL=%ERRORLEVEL%"
+  call if "%%RC_DEL%%"=="0" (call :log "[INFO] [ACLBOUNDARY] Task delete rc=%%RC_DEL%%") else (call :track_rc %%RC_DEL%% & call :log "[WARN] [ACLBOUNDARY] Task delete rc=%%RC_DEL%%")
+  set "RC_DEL="
   set "FAILED=1"
   set "STAGEB_NOT_SCHEDULED=1"
+  set "ACL_UNSAFE="
   set "TMP="
   exit /b 0
 )
 
 call :log "[ACLBOUNDARY] PASS task_def=%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin"
+call :log "[ACLBOUNDARY] PASS task_dir=%SystemRoot%\System32\Tasks\L2C"
+set "ACL_UNSAFE="
 set "TMP="
 
 call :l2c_prime_winlogon_autologon
@@ -970,7 +996,7 @@ set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
   call :l2c_autologon_prime_failed_after_task %RC%
 )
-call :log "[INFO] L2C_AUTOLOGON_STATUS armed=%L2C_AUTOLOGON_ARMED% degraded=%L2C_AUTOLOGON_DEGRADED% marker=HKLM\\SOFTWARE\\L2C\\AutologonPrimed"
+call :log "[INFO] L2C_AUTOLOGON_STATUS armed=%L2C_AUTOLOGON_ARMED% degraded=%L2C_AUTOLOGON_DEGRADED% marker=HKLM\SOFTWARE\L2C\AutologonPrimed"
 exit /b 0
 
 :l2c_prime_winlogon_autologon
