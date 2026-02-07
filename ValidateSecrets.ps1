@@ -130,7 +130,9 @@ function Test-NonAdminTamperAclUnsafe {
         [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
         [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
         [System.Security.AccessControl.FileSystemRights]::Delete -bor
-        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
+        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
     foreach ($rule in $acl.Access) {
         if ($rule.AccessControlType -ne 'Allow') { continue }
