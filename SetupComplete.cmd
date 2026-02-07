@@ -935,6 +935,18 @@ if "%RC%"=="4" (
   schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
   set "FAILED=1"
   set "STAGEB_NOT_SCHEDULED=1"
+  set "TMP="
+  exit /b 0
+)
+
+REM Fail closed on unexpected validator exit codes (treat as validator execution failure).
+if not "%RC%"=="0" if not "%RC%"=="32" (
+  call :track_rc %RC%
+  call :log "[ERROR] [ACLBOUNDARY] Post-check validator failed with unexpected rc=%RC%; deleting task and refusing to prime Winlogon"
+  schtasks /Delete /TN "\L2C\CreatePrimaryAdmin" /F >nul 2>&1
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  set "TMP="
   exit /b 0
 )
 
