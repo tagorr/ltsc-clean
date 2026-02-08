@@ -349,6 +349,7 @@
 
   * [ ] The `bootstrap` account remains active and the task is not deleted.
   * [ ] The log contains a clear entry that `bootstrap` and the task are preserved for manual intervention, as described in SECURITY.md.
+  * [ ] `%WINDIR%\Panther\SetupComplete.log` includes the Recovery banner tokens `RECOVERY_MODE_ACTIVE` and `OPERATOR_ACTION_REQUIRED`, and `README.md` defines the operator Recovery runbook and exit criteria.
 
 #### 6.5. Password source files cleanup (normal vs recovery)
 

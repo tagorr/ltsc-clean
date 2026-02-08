@@ -290,7 +290,37 @@ Recovery path:
   * logs that a reboot had been requested;
   * does not perform an automatic reboot;
   * leaves the flag in place for operator diagnostics;
-* logs `OUTCOME: Recovery` with explicit warnings and guidance for manual intervention.
+* writes a prominent Recovery banner to `%WINDIR%\Panther\SetupComplete.log` (exact line: `*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***`) with explicit warnings and guidance for manual intervention.
+
+#### Recovery runbook (operators)
+
+**A. How to detect Recovery**
+* Primary: search `%WINDIR%\Panther\SetupComplete.log` for the exact banner line `*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***` (tokens are also searchable).
+* Emitted in the same log file from both places: Stage A (`SetupComplete.cmd` when SetupComplete enters recovery mode, even if Stage B is never scheduled) and Stage B (`CreatePrimaryAdmin.ps1` when Stage B runs in recovery mode; early + end-of-Stage-B outcome area).
+* Secondary (existing anchors in the same log):
+  * `Stage B running in recovery mode (StageA RC=...)`
+  * `Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt`
+
+**B. What is retained in Recovery (and why)**
+* Retained: `bootstrap`, `%WINDIR%\Setup\Scripts\.bootstrap.pw`, `%WINDIR%\Setup\Scripts\.primaryadmin.pw` (and `\L2C\CreatePrimaryAdmin` if it had already been scheduled).
+* Why: this allows an operator to fix the root cause and retry Stage A / Stage B without losing the entry point or secrets.
+
+**C. What is suppressed/blocked**
+* Automatic reboot is suppressed in recovery (anchor: `Reboot flag present in recovery mode; not rebooting to allow operator fix`).
+* Teardown is blocked when verification fails (anchors include `HARD FAIL: ... refusing to teardown executor/bootstrap.`).
+
+**D. How to exit Recovery**
+* Recommended: fix the root cause (use the preceding `ERROR` / `HARD FAIL` lines), then rerun the existing pipeline via `\L2C\CreatePrimaryAdmin` (allow it to run again at the next interactive logon, typically: `bootstrap`).
+  * Note: in early Stage A recovery, `\L2C\CreatePrimaryAdmin` may not exist yet.
+* Emergency (high-trust): manually disable `bootstrap`, disable/delete `\L2C\CreatePrimaryAdmin`, delete both secret files, and verify Winlogon is in a safe state before allowing interactive sign-in.
+
+**E. Exit criteria (all true)**
+* `%WINDIR%\Setup\Scripts\.bootstrap.pw` is removed (not preserved).
+* `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is removed (not preserved).
+* `\L2C\CreatePrimaryAdmin` is removed/disabled per the normal path.
+* `bootstrap` is disabled per the normal path.
+* Winlogon is safe (`DefaultPassword` absent; `AutoAdminLogon=0`; `ForceAutoLogon=0`).
+* Final state is normal/success and the Recovery banner tokens are not present at the end of a successful run.
 
 Stage B logs the cleanup state for both secret files in the master log.
 
@@ -392,7 +422,7 @@ How violations show up:
 * Windows Update UI shows notify behavior; no drivers or other Microsoft products are auto offered.
 * Disabled services remain disabled after reboot.
 * DISM capability removals logged explicit outcomes (removed, not present, skipped due to missing/unparsable state, or hard-fail with `DISM_HARD_FAIL=1`).
-* `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: Success` entry for the normal path, or a clearly marked `OUTCOME: Recovery` entry when diagnostics are required.
+* `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: Success` entry for the normal path, or a clearly marked non-success `OUTCOME: ...` entry (for example, `OUTCOME: FAIL - Stage A failed (RC=...)`) when diagnostics are required.
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` are absent in the normal success path; if they are present you are either in recovery, after a Winlogon cleanup verification failure, or running the master manually.
 
 For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST.md` (end-to-end audit checklist for scripts and documentation).
