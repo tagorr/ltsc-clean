@@ -290,18 +290,19 @@ Recovery path:
   * logs that a reboot had been requested;
   * does not perform an automatic reboot;
   * leaves the flag in place for operator diagnostics;
-* writes a prominent Recovery banner to `%WINDIR%\Panther\SetupComplete.log` (tokens `RECOVERY_MODE_ACTIVE` and `OPERATOR_ACTION_REQUIRED`) with explicit warnings and guidance for manual intervention.
+* writes a prominent Recovery banner to `%WINDIR%\Panther\SetupComplete.log` (exact line: `*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***`) with explicit warnings and guidance for manual intervention.
 
 #### Recovery runbook (operators)
 
 **A. How to detect Recovery**
-* Primary: search `%WINDIR%\Panther\SetupComplete.log` for `RECOVERY_MODE_ACTIVE` and `OPERATOR_ACTION_REQUIRED`.
+* Primary: search `%WINDIR%\Panther\SetupComplete.log` for the exact banner line `*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***` (tokens are also searchable).
+* Emitted in the same log file from both places: Stage A (`SetupComplete.cmd` when SetupComplete enters recovery mode, even if Stage B is never scheduled) and Stage B (`CreatePrimaryAdmin.ps1` when Stage B runs in recovery mode; early + end-of-Stage-B outcome area).
 * Secondary (existing anchors in the same log):
   * `Stage B running in recovery mode (StageA RC=...)`
   * `Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt`
 
 **B. What is retained in Recovery (and why)**
-* Retained: `bootstrap`, scheduled task `\L2C\CreatePrimaryAdmin`, `%WINDIR%\Setup\Scripts\.bootstrap.pw`, `%WINDIR%\Setup\Scripts\.primaryadmin.pw`.
+* Retained: `bootstrap`, `%WINDIR%\Setup\Scripts\.bootstrap.pw`, `%WINDIR%\Setup\Scripts\.primaryadmin.pw` (and `\L2C\CreatePrimaryAdmin` if it had already been scheduled).
 * Why: this allows an operator to fix the root cause and retry Stage A / Stage B without losing the entry point or secrets.
 
 **C. What is suppressed/blocked**
@@ -310,6 +311,7 @@ Recovery path:
 
 **D. How to exit Recovery**
 * Recommended: fix the root cause (use the preceding `ERROR` / `HARD FAIL` lines), then rerun the existing pipeline via `\L2C\CreatePrimaryAdmin` (allow it to run again at the next interactive logon, typically: `bootstrap`).
+  * Note: in early Stage A recovery, `\L2C\CreatePrimaryAdmin` may not exist yet.
 * Emergency (high-trust): manually disable `bootstrap`, disable/delete `\L2C\CreatePrimaryAdmin`, delete both secret files, and verify Winlogon is in a safe state before allowing interactive sign-in.
 
 **E. Exit criteria (all true)**
