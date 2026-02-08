@@ -181,12 +181,16 @@ Non-admin boundary: `SetupComplete.cmd` validates that these objects do not gran
 * `%WINDIR%\Setup\Scripts` (directory)
 * `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1` (file)
 * `%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin` (task definition file)
+* `%SystemRoot%\System32\Tasks\L2C` (directory)
 
-Unsafe rights for this boundary are: `Write`, `Modify`, `FullControl`, `Delete`, and `DeleteSubdirectoriesAndFiles`.
+`SetupComplete.cmd` hardens `%SystemRoot%\System32\Tasks\L2C` before task creation and logs `[ACLBOUNDARY] Hardened task_dir=...`.
+
+Unsafe rights for this boundary are: `WriteData`, `AppendData`, `WriteAttributes`, `WriteExtendedAttributes`, `Delete`, `DeleteSubdirectoriesAndFiles`, `ChangePermissions`, and `TakeOwnership`, plus explicit `Write`/`Modify`/`FullControl` checks.
+Note: `icacls` or ACL displays may show additional rights such as `Synchronize` alongside Modify/FullControl. `Synchronize` alone is not the unsafe criterion; the boundary is enforced on write-like and control rights as implemented.
 
 Enforcement: `SetupComplete.cmd` invokes `ValidateSecrets.ps1` ACL boundary modes before and after task registration and fails closed when unsafe.
 
-Evidence: `%WINDIR%\Panther\SetupComplete.log` includes `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...`; on FAIL it includes `icacls` output for the failing path(s).
+Evidence: `%WINDIR%\Panther\SetupComplete.log` includes `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...` and `[ACLBOUNDARY] Hardened task_dir=...`; on FAIL it includes `icacls` output for the failing path(s). On post-check failure it logs `[ACLBOUNDARY] Task delete rc=...`.
 
 
 ## Logon policies: temporary relaxation and restore
