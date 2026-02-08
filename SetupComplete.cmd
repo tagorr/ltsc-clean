@@ -737,6 +737,9 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%
 REM === [L2C] Recovery gate (no extra registrations on failure) ===
 if "%FAILED%"=="1" (
   call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
+  call :log "[WARN] *** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***"
+  call :log "[WARN] Recovery active, operator action required. Teardown blocked; executor/bootstrap and secrets may be retained until manual resolution."
+  call :log "[WARN] See README.md Recovery runbook."
 )
 
 :: ------------ mark reboot requirement via panther flag ------------
