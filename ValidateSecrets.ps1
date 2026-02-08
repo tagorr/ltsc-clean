@@ -1,10 +1,25 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Secrets')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(ParameterSetName = 'Secrets', Mandatory = $true)]
     [string]$BootstrapPath,
 
-    [Parameter(Mandatory = $true)]
-    [string]$PrimaryAdminPath
+    [Parameter(ParameterSetName = 'Secrets', Mandatory = $true)]
+    [string]$PrimaryAdminPath,
+
+    [Parameter(ParameterSetName = 'AclBoundaryPreStageB', Mandatory = $true)]
+    [switch]$CheckAclBoundaryPreStageB,
+
+    [Parameter(ParameterSetName = 'AclBoundaryPostStageB', Mandatory = $true)]
+    [switch]$CheckAclBoundaryPostStageB,
+
+    [Parameter(ParameterSetName = 'AclBoundaryPreStageB')]
+    [string]$ScriptsDirPath = (Join-Path $env:WINDIR 'Setup\Scripts'),
+
+    [Parameter(ParameterSetName = 'AclBoundaryPreStageB')]
+    [string]$StageBScriptPath = (Join-Path $env:WINDIR 'Setup\Scripts\CreatePrimaryAdmin.ps1'),
+
+    [Parameter(ParameterSetName = 'AclBoundaryPostStageB')]
+    [string]$TaskDefinitionPath = (Join-Path $env:SystemRoot 'System32\Tasks\L2C\CreatePrimaryAdmin')
 )
 
 Set-StrictMode -Version Latest
@@ -16,61 +31,171 @@ function Test-SecretAcl {
         [string]$Path
     )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    function Fail([string]$Why) {
+        [Console]::Error.WriteLine(("[SECRETS] FAIL: path={0} reason={1}" -f $Path, $Why))
         return $false
     }
 
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return (Fail 'missing_or_not_leaf')
+    }
+
+    $acl = $null
     try {
         $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
     } catch {
-        return $false
+        return (Fail ('get_acl_failed: ' + $_.Exception.Message))
     }
 
     if (-not $acl.AreAccessRulesProtected) {
-        return $false
+        return (Fail 'acl_not_protected')
     }
 
-    $allowed = @('S-1-5-18', 'S-1-5-32-544')
+    $allowed = @('S-1-5-18', 'S-1-5-32-544') # SYSTEM, BUILTIN\Administrators
     $seen = @()
 
     foreach ($rule in $acl.Access) {
-        $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
+        $sid = $null
+        try {
+            $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
+        } catch {
+            return (Fail ('identity_translate_failed: ' + $rule.IdentityReference.Value + ' err=' + $_.Exception.Message))
+        }
+
         if ($allowed -notcontains $sid) {
-            return $false
+            return (Fail ('unexpected_ace_sid: ' + $sid))
         }
         if ($rule.AccessControlType -ne 'Allow') {
-            return $false
+            return (Fail ('unexpected_ace_type: ' + $rule.AccessControlType))
         }
         if (-not ($rule.FileSystemRights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl))) {
-            return $false
+            return (Fail ('not_fullcontrol: ' + $rule.FileSystemRights))
         }
+        if ($rule.IsInherited) {
+            return (Fail 'inherited_ace_present')
+        }
+
         $seen += $sid
     }
 
     if ($seen.Count -ne $allowed.Count) {
-        return $false
+        return (Fail ('ace_count_mismatch: seen=' + $seen.Count + ' expected=' + $allowed.Count))
     }
 
     $unique = $seen | Sort-Object -Unique
     if ($unique.Count -ne $allowed.Count) {
-        return $false
+        return (Fail ('ace_duplicate_or_missing: unique=' + $unique.Count + ' expected=' + $allowed.Count))
     }
 
     foreach ($sid in $allowed) {
         if ($unique -notcontains $sid) {
-            return $false
+            return (Fail ('missing_expected_sid: ' + $sid))
         }
     }
 
     $attrs = [System.IO.File]::GetAttributes($Path)
     if (-not ($attrs.HasFlag([System.IO.FileAttributes]::Hidden))) {
-        return $false
+        return (Fail ('missing_hidden attrs=' + $attrs))
     }
     if (-not ($attrs.HasFlag([System.IO.FileAttributes]::System))) {
-        return $false
+        return (Fail ('missing_system attrs=' + $attrs))
     }
 
     return $true
+}
+
+# ACL boundary flags (unsafe when set). Keep 4 reserved for internal error sentinel.
+[int]$FLAG_UNSAFE_SCRIPTS_DIR   = 8
+[int]$FLAG_UNSAFE_STAGEB_SCRIPT = 16
+[int]$FLAG_UNSAFE_TASK_FILE     = 32
+[int]$FLAG_UNSAFE_TASK_DIR      = 64
+
+function Test-NonAdminTamperAclUnsafe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Leaf', 'Container')]
+        [string]$ExpectedType
+    )
+
+    $pathType = if ($ExpectedType -eq 'Container') { 'Container' } else { 'Leaf' }
+    if (-not (Test-Path -LiteralPath $Path -PathType $pathType)) {
+        Write-Error "[ACLBOUNDARY] Path missing or wrong type: $Path (expected $ExpectedType)" -ErrorAction Continue
+        return $true
+    }
+
+    $acl = $null
+    try {
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    } catch {
+        Write-Error "[ACLBOUNDARY] Get-Acl failed for ${Path}: $($_.Exception.Message)" -ErrorAction Continue
+        return $true
+    }
+
+    $riskySids = @(
+        'S-1-1-0',        # Everyone
+        'S-1-5-32-545',   # BUILTIN\Users
+        'S-1-5-11',       # Authenticated Users
+        'S-1-5-4'         # INTERACTIVE
+    )
+
+    # Fallback match if IdentityReference.Translate(SID) fails.
+    # Keep it limited to exactly the same principals as $riskySids above.
+    $riskyNames = @(
+        'Everyone',
+        'BUILTIN\Users',
+        'NT AUTHORITY\Authenticated Users',
+        'NT AUTHORITY\INTERACTIVE'
+    )
+
+    $unsafeRights =
+        [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+        [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+        [System.Security.AccessControl.FileSystemRights]::Delete -bor
+        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+
+    foreach ($rule in $acl.Access) {
+        if ($rule.AccessControlType -ne 'Allow') { continue }
+
+        $sid = $null
+        $name = $null
+        $rawId = $rule.IdentityReference.Value
+
+        try {
+            $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
+        } catch {
+            # If translation fails, fall back to raw identity string (either SID text or account name).
+            if ($rawId -match '^S-\d-\d+-.+') {
+                $sid = $rawId
+            } else {
+                $name = $rawId
+            }
+        }
+
+        $isRisky = $false
+        if ($sid -and ($riskySids -contains $sid)) { $isRisky = $true }
+        if (-not $isRisky -and $name -and ($riskyNames -contains $name)) { $isRisky = $true }
+        if (-not $isRisky) { continue }
+
+        $rights = $rule.FileSystemRights
+        if ((($rights -band $unsafeRights) -ne 0) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Write) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Modify) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)) {
+
+            $idForLog = if ($sid) { $sid } else { $rawId }
+            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} id={1} rights={2}" -f $Path, $idForLog, $rights) -ErrorAction Continue
+            return $true
+        }
+    }
+
+    return $false
 }
 
 # Main logic: compute two flags and an exit code as a bitmask:
@@ -78,6 +203,33 @@ function Test-SecretAcl {
 # bit 1 (2)  primaryOk
 
 try {
+    if ($PSCmdlet.ParameterSetName -eq 'AclBoundaryPreStageB') {
+        [int]$code = 0
+
+        if (Test-NonAdminTamperAclUnsafe -Path $ScriptsDirPath -ExpectedType Container) {
+            $code = $code -bor $FLAG_UNSAFE_SCRIPTS_DIR
+        }
+        if (Test-NonAdminTamperAclUnsafe -Path $StageBScriptPath -ExpectedType Leaf) {
+            $code = $code -bor $FLAG_UNSAFE_STAGEB_SCRIPT
+        }
+
+        exit $code
+    }
+
+    if ($PSCmdlet.ParameterSetName -eq 'AclBoundaryPostStageB') {
+        [int]$code = 0
+
+        if (Test-NonAdminTamperAclUnsafe -Path $TaskDefinitionPath -ExpectedType Leaf) {
+            $code = $code -bor $FLAG_UNSAFE_TASK_FILE
+        }
+        $taskDirPath = Split-Path -Path $TaskDefinitionPath -Parent
+        if (Test-NonAdminTamperAclUnsafe -Path $taskDirPath -ExpectedType Container) {
+            $code = $code -bor $FLAG_UNSAFE_TASK_DIR
+        }
+
+        exit $code
+    }
+
     $bootstrapOk = Test-SecretAcl -Path $BootstrapPath
     $primaryOk   = Test-SecretAcl -Path $PrimaryAdminPath
 
@@ -88,6 +240,6 @@ try {
     exit $code
 }
 catch {
-    Write-Error "Internal error while validating secrets: $($_.Exception.Message)" -ErrorAction Continue
+    [Console]::Error.WriteLine(("Internal error while validating secrets: {0}" -f $_.Exception.Message))
     exit 4
 }
