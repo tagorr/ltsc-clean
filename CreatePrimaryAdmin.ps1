@@ -659,6 +659,9 @@ if ($StageA_Succeeded) {
 $isRecovery = -not $StageA_Succeeded
 if ($isRecovery) {
   Write-SetupLog ("Stage B running in recovery mode (StageA RC={0})" -f $StageA_RC) 'WARN'
+  Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
+  Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'
+  Write-SetupLog 'See README.md Recovery runbook.' 'WARN'
 } else {
   Write-SetupLog "Begin B: Autologon cleanup & policy restore"
 }
@@ -912,6 +915,11 @@ try {
   $sw.Dispose()
   $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
+  if ($isRecovery) {
+    Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
+    Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'
+    Write-SetupLog 'See README.md Recovery runbook.' 'WARN'
+  }
   if ($SecretCleanupError) {
     Write-SetupLog "End B (FAIL - secret cleanup error)" 'ERROR'
     if ($rc -eq 0) { $rc = 3 }
@@ -945,6 +953,11 @@ catch {
     $sw.Dispose()
   } catch {}
   Write-SetupLog ("OUTCOME: FAIL - {0}" -f $_.Exception.Message) 'ERROR'
+  if ($isRecovery) {
+    Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
+    Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'
+    Write-SetupLog 'See README.md Recovery runbook.' 'WARN'
+  }
   if ($rc -eq 0) { $rc = 2 }
 }
 
