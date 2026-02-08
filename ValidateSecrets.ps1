@@ -31,58 +31,74 @@ function Test-SecretAcl {
         [string]$Path
     )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    function Fail([string]$Why) {
+        [Console]::Error.WriteLine(("[SECRETS] FAIL: path={0} reason={1}" -f $Path, $Why))
         return $false
     }
 
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return (Fail 'missing_or_not_leaf')
+    }
+
+    $acl = $null
     try {
         $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
     } catch {
-        return $false
+        return (Fail ('get_acl_failed: ' + $_.Exception.Message))
     }
 
     if (-not $acl.AreAccessRulesProtected) {
-        return $false
+        return (Fail 'acl_not_protected')
     }
 
-    $allowed = @('S-1-5-18', 'S-1-5-32-544')
+    $allowed = @('S-1-5-18', 'S-1-5-32-544') # SYSTEM, BUILTIN\Administrators
     $seen = @()
 
     foreach ($rule in $acl.Access) {
-        $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
+        $sid = $null
+        try {
+            $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
+        } catch {
+            return (Fail ('identity_translate_failed: ' + $rule.IdentityReference.Value + ' err=' + $_.Exception.Message))
+        }
+
         if ($allowed -notcontains $sid) {
-            return $false
+            return (Fail ('unexpected_ace_sid: ' + $sid))
         }
         if ($rule.AccessControlType -ne 'Allow') {
-            return $false
+            return (Fail ('unexpected_ace_type: ' + $rule.AccessControlType))
         }
         if (-not ($rule.FileSystemRights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl))) {
-            return $false
+            return (Fail ('not_fullcontrol: ' + $rule.FileSystemRights))
         }
+        if ($rule.IsInherited) {
+            return (Fail 'inherited_ace_present')
+        }
+
         $seen += $sid
     }
 
     if ($seen.Count -ne $allowed.Count) {
-        return $false
+        return (Fail ('ace_count_mismatch: seen=' + $seen.Count + ' expected=' + $allowed.Count))
     }
 
     $unique = $seen | Sort-Object -Unique
     if ($unique.Count -ne $allowed.Count) {
-        return $false
+        return (Fail ('ace_duplicate_or_missing: unique=' + $unique.Count + ' expected=' + $allowed.Count))
     }
 
     foreach ($sid in $allowed) {
         if ($unique -notcontains $sid) {
-            return $false
+            return (Fail ('missing_expected_sid: ' + $sid))
         }
     }
 
     $attrs = [System.IO.File]::GetAttributes($Path)
     if (-not ($attrs.HasFlag([System.IO.FileAttributes]::Hidden))) {
-        return $false
+        return (Fail ('missing_hidden attrs=' + $attrs))
     }
     if (-not ($attrs.HasFlag([System.IO.FileAttributes]::System))) {
-        return $false
+        return (Fail ('missing_system attrs=' + $attrs))
     }
 
     return $true
@@ -144,14 +160,6 @@ function Test-NonAdminTamperAclUnsafe {
         [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
         [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
-    # Catch generic/high-level rights explicitly too.
-    $unsafeHighLevelRights =
-        [System.Security.AccessControl.FileSystemRights]::Write -bor
-        [System.Security.AccessControl.FileSystemRights]::Modify -bor
-        [System.Security.AccessControl.FileSystemRights]::FullControl -bor
-        [System.Security.AccessControl.FileSystemRights]::GenericWrite -bor
-        [System.Security.AccessControl.FileSystemRights]::GenericAll
-
     foreach ($rule in $acl.Access) {
         if ($rule.AccessControlType -ne 'Allow') { continue }
 
@@ -176,7 +184,11 @@ function Test-NonAdminTamperAclUnsafe {
         if (-not $isRisky) { continue }
 
         $rights = $rule.FileSystemRights
-        if ((($rights -band $unsafeRights) -ne 0) -or (($rights -band $unsafeHighLevelRights) -ne 0)) {
+        if ((($rights -band $unsafeRights) -ne 0) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Write) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Modify) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)) {
+
             $idForLog = if ($sid) { $sid } else { $rawId }
             Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} id={1} rights={2}" -f $Path, $idForLog, $rights) -ErrorAction Continue
             return $true
@@ -228,6 +240,6 @@ try {
     exit $code
 }
 catch {
-    Write-Error "Internal error while validating secrets: $($_.Exception.Message)" -ErrorAction Continue
+    [Console]::Error.WriteLine(("Internal error while validating secrets: {0}" -f $_.Exception.Message))
     exit 4
 }
