@@ -172,6 +172,26 @@ The primary admin account password is **never** stored in `DefaultPassword`. It 
 * Happy path: both secrets are provisioned correctly, the gate opens once, a single automatic `bootstrap` logon runs Stage B, the system migrates to `primaryadmin`, disables `bootstrap`, removes the secrets and scheduled task, restores logon policies, and, if the Panther flag was present, performs the tri-state decision (reboot, stale-clear without reboot, or conservative reboot on unknown).
 * TOCTOU and local administrators/SYSTEM: secret ACL and content checks happen at discrete points in the pipeline (ValidateSecrets.ps1 in SetupComplete, the gate logic in SetupComplete.cmd, and Stage A of CreatePrimaryAdmin.ps1). A local administrator or code running as SYSTEM can still modify `.bootstrap.pw` or `.primaryadmin.pw` between these steps. This is an accepted TOCTOU limitation: the baseline does not attempt to protect against an attacker who already has local administrator or SYSTEM privileges on the machine; its goal is to prevent misconfiguration and secret leakage on otherwise trusted hosts.
 
+## CreatePrimaryAdmin scheduled task tampering boundary (non-admin)
+
+The `\L2C\CreatePrimaryAdmin` task runs as `SYSTEM` so Stage A can apply secrets without passing passwords on task arguments. This baseline does **not** attempt to defend against attackers who already have local administrator or `SYSTEM` rights.
+
+Non-admin boundary: `SetupComplete.cmd` validates that these objects do not grant `Allow` write-like rights to `Everyone (S-1-1-0)`, `BUILTIN\Users (S-1-5-32-545)`, `Authenticated Users (S-1-5-11)`, or `INTERACTIVE (S-1-5-4)`:
+
+* `%WINDIR%\Setup\Scripts` (directory)
+* `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1` (file)
+* `%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin` (task definition file)
+* `%SystemRoot%\System32\Tasks\L2C` (directory)
+
+`SetupComplete.cmd` hardens `%SystemRoot%\System32\Tasks\L2C` before task creation and logs `[ACLBOUNDARY] Hardened task_dir=...`.
+
+Unsafe rights for this boundary are: `WriteData`, `AppendData`, `WriteAttributes`, `WriteExtendedAttributes`, `Delete`, `DeleteSubdirectoriesAndFiles`, `ChangePermissions`, and `TakeOwnership`, plus explicit `Write`/`Modify`/`FullControl` checks.
+Note: `icacls` or ACL displays may show additional rights such as `Synchronize` alongside Modify/FullControl. `Synchronize` alone is not the unsafe criterion; the boundary is enforced on write-like and control rights as implemented.
+
+Enforcement: `SetupComplete.cmd` invokes `ValidateSecrets.ps1` ACL boundary modes before and after task registration and fails closed when unsafe.
+
+Evidence: `%WINDIR%\Panther\SetupComplete.log` includes `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...` and `[ACLBOUNDARY] Hardened task_dir=...`; on FAIL it includes `icacls` output for the failing path(s). On post-check failure it logs `[ACLBOUNDARY] Task delete rc=...`.
+
 
 ## Logon policies: temporary relaxation and restore
 
