@@ -12,14 +12,31 @@ This baseline favors a quiet, predictable workstation with minimal background ne
 
 ## Intentional trade-offs
 
-* SmartScreen is disabled for Explorer and Edge.
-* Windows Defender is minimized using supported preferences. Cloud protection and sample submissions are off.
+* SmartScreen policy layers are disabled for Windows Shell and Edge.
+* Microsoft Defender local protections remain enabled, while cloud/reputation verdict paths and sample submission are disabled by policy.
 * Delivery Optimization is set to mode 0 (HTTP-only, no peer-to-peer).
 * Windows Update runs in notify-only mode. No drivers, no preview builds, no other Microsoft products, no OS upgrade offers.
 * WPAD is disabled via policies on WinINET and WinHTTP. The WinHTTP Auto-Proxy service is not forcibly disabled.
 * Edge first run experience is suppressed via policy (`HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1`) to reduce extra first-boot prompts and calls.
 * The baseline does not invoke `DISM /Online /Cleanup-Image /StartComponentCleanup` or `/ResetBase` automatically. Any aggressive component cleanup that removes rollback for installed updates is considered an optional, operator-driven hardening step and is not part of the core pipeline.
 * Several hardening steps rely on disabling optional Windows features and capabilities via DISM (for example SMB1, Telnet, Remote Assistance, Fax/Scan, PSR, Quick Assist, SNMP). Capability removals are gated by `dism /Online /Get-CapabilityInfo` with output captured to a temp file and parsed for the `State :` line (no `dism | findstr` pipelines); missing/unparsable state logs a WARN and skips removal. On LTSC images some of these components may be absent or non-selectable; in these cases `SetupComplete.cmd` logs known benign DISM return codes (`-2146498548/2148468748`, `-2146498541/2148468755`) as warnings, sets `HAS_DISM_WARN=1`, and continues. Operators should review `SetupComplete.log` to confirm that any missing components are acceptable for their environment. Unexpected DISM errors remain fatal, set `FAILED=1/DISM_HARD_FAIL=1`, and surface in the final exit code.
+
+### Defender and SmartScreen Baseline
+
+This baseline does not attempt to disable Microsoft Defender local endpoint protections. Local protections remain ON, while cloud/reputation-driven verdict paths and automatic sample submission are explicitly disabled via policy.
+
+SmartScreen is disabled for Windows Shell and the Edge policy layer to minimize silent outbound reputation/data flows. These settings are enforced via registry policy and orchestration in `SetupComplete.cmd`.
+
+### Edge Browser Removal and Update Suppression
+
+Edge browser removal runs early in `SetupComplete.cmd` as a best-effort guarantee layer. Edge SmartScreen policies are still set to disabled before removal, EdgeUpdate services/tasks are disabled best-effort to reduce browser resurrection, and WebView2 runtime is not removed.
+
+* Windows Shell SmartScreen: `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen=0`
+* Edge SmartScreen policies: `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenDnsRequestsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenForTrustedDownloadsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenPuaEnabled=0`
+* Defender local protections ON: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableIOAVProtection=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\PUAProtection=1`
+* Defender cloud/reputation/data OFF: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SubmitSamplesConsent=2`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\DisableBlockAtFirstSeen=1`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\LocalSettingOverrideSpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine\MpCloudBlockLevel=0`
+* Edge lifecycle: early best-effort uninstall via Edge `setup.exe --uninstall --system-level --force-uninstall`; EdgeUpdate services/tasks disabled best-effort; WebView2 not removed
+* UX hygiene: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\DisableEdgeDesktopShortcutCreation=1`
 
 ## Not a fit if you require
 
