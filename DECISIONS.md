@@ -521,6 +521,12 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal path; if they are present, you are either in a recovery scenario or running the master manually (see README for expected behavior).
 
+* Verification evidence in `%WINDIR%\Panther\SetupComplete.log` typically includes:
+  * SmartScreen and Defender policy writes, including Defender cloud-off/sample-submission-off settings.
+  * Edge SmartScreen policy writes before Edge browser removal.
+  * `:edge_remove` execution with uninstall RC logging and `msedge.exe` absence verification.
+  * Best-effort EdgeUpdate suppression attempts (services/tasks), including present/missing outcomes.
+
 ---
 
 ## 10. Change control and versioning

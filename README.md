@@ -516,7 +516,7 @@ Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_B
 
 See `SECURITY.md` for details. Highlights:
 
-* SmartScreen policy layers are disabled by design, and Defender uses a local-on / cloud-off posture by design.
+* SmartScreen policy layers are disabled by design, and Defender uses a local-on / cloud-off posture by design. This is an explicit, documented trade-off. Consumers of this baseline must accept the reduced protection surface.
 * The baseline does not run `DISM /Online /Cleanup-Image /StartComponentCleanup` or `/ResetBase` automatically. Operators may choose to run WinSxS cleanup (with or without `/ResetBase`) as a separate maintenance step on long-lived machines if they understand the trade-offs.
 * With WPAD disabled, proxies must be configured explicitly later.
 
