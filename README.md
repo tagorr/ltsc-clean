@@ -405,8 +405,8 @@ How violations show up:
 
 > The baseline does not disable `WinHttpAutoProxySvc`. WPAD is controlled via supported WinINET and WinHTTP keys.
 
-* Microsoft Edge controlled via policy (`EdgeUpdate\UpdateDefault=0`, optional `InstallDefault=0`). First-run wizard suppressed via `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1`. No uninstall and no scheduler tampering by default.
-* SmartScreen off for Explorer and Edge. Windows Defender minimized via supported preferences.
+* Microsoft Edge is policy-controlled (`EdgeUpdate\UpdateDefault=0`, optional `InstallDefault=0`) and then removed early in `SetupComplete.cmd` on a best-effort basis; EdgeUpdate services/tasks are suppressed best-effort to reduce resurrection risk. WebView2 is not removed. First-run wizard is suppressed and Edge desktop shortcut creation is disabled to avoid broken shortcut artifacts.
+* SmartScreen is disabled for Windows Shell and Edge policy layers. Microsoft Defender local protections remain enabled, while cloud/reputation verdict paths and sample submission are disabled by policy.
 * Diagnostics data level 0; CEIP and WER disabled.
 * Delivery Optimization set to mode 0 (HTTP only, no peer to peer).
 * Network quieting: WPAD off via WinINET and WinHTTP keys, LLMNR off, Teredo/6to4/ISATAP off.
@@ -418,7 +418,7 @@ How violations show up:
 
 * `%WINDIR%\Panther\SetupComplete.log` exists with no `[ERROR]` entries.
 * `netsh winhttp show proxy` reports direct access; no WPAD and no LLMNR.
-* Edge and OneDrive are controlled or blocked by policy.
+* Edge browser is removed early on a best-effort basis (WebView2 retained), and OneDrive is controlled by policy.
 * Windows Update UI shows notify behavior; no drivers or other Microsoft products are auto offered.
 * Disabled services remain disabled after reboot.
 * DISM capability removals logged explicit outcomes (removed, not present, skipped due to missing/unparsable state, or hard-fail with `DISM_HARD_FAIL=1`).
@@ -516,7 +516,7 @@ Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_B
 
 See `SECURITY.md` for details. Highlights:
 
-* SmartScreen is disabled and Defender is minimized by design.
+* SmartScreen policy layers are disabled by design, and Defender uses a local-on / cloud-off posture by design.
 * The baseline does not run `DISM /Online /Cleanup-Image /StartComponentCleanup` or `/ResetBase` automatically. Operators may choose to run WinSxS cleanup (with or without `/ResetBase`) as a separate maintenance step on long-lived machines if they understand the trade-offs.
 * With WPAD disabled, proxies must be configured explicitly later.
 

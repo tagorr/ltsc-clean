@@ -75,7 +75,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 | RDC Infrastructure    | FirstLogon   | SetupComplete           | `DISM /Disable-Feature` |
 
-| Edge hardening | Various places | SetupComplete           | EdgeUpdate policies (UpdateDefault=0, optional InstallDefault=0); no uninstall |
+| Edge hardening | Various places | SetupComplete           | Edge SmartScreen policies off; early best-effort browser uninstall; best-effort EdgeUpdate suppression; WebView2 kept |
 
 | Telemetry/WER        | Various places | SetupComplete           | Policies, services, tasks |
 
@@ -305,31 +305,27 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 ### 6.1 Microsoft Edge
 
-* Control Edge via **supported policies** only:
+* Apply Edge policy controls first:
 
   - `HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate\UpdateDefault=0`
 
   - (optional) `InstallDefault=0` to block new channel installs.
 
-* Suppress the Edge first run experience via policy: `HKLM\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience=1` so that launching Edge on the initial login does not show the interactive wizard.
+* Suppress first-run UX and prevent broken Edge shortcut artifacts (`HideFirstRunExperience`, plus disabling Edge desktop shortcut creation).
 
-* Do **not** remove Edge binaries and do **not** disable scheduled tasks by default. Those tactics are brittle across updates and are unnecessary when policies control updates/installs.
+* Remove the Edge browser early in `SetupComplete.cmd` as a best-effort guarantee layer, then verify `msedge.exe` absence with bounded retries.
 
-* Rationale: supported, predictable, and update-resilient behavior.
+* Suppress EdgeUpdate services/tasks best-effort to reduce browser resurrection; do not remove WebView2 runtime.
+
+* Rationale: keep the baseline quiet by default (no browser/reputation traffic), while keeping behavior deterministic and fail-soft.
 
 ### 6.2 SmartScreen and Windows Defender
 
-* SmartScreen is disabled for Explorer and for Edge as per profile requirements.
+* SmartScreen policy layers are disabled for Windows Shell and Edge.
 
-* Windows Defender is minimized using supported preferences:
+* Windows Defender keeps local endpoint protections enabled, while cloud/reputation-driven verdict paths and automatic sample submission are disabled by policy.
 
-  * No cloud protection and no sample submissions.
-
-  * Real-time, IOAV, behavior monitoring, and PUA features are off as per this baseline.
-
-  * We do not attempt to bypass Tamper Protection.
-
-* If later a local-only PUA detection is desired, `PUAProtection=1` can be considered. Current baseline uses `0`.
+* This is a deliberate quiet-baseline trade-off: preserve local protection while minimizing silent outbound reputation/data flows.
 
 ### 6.3 Telemetry, Diagnostics, and WER
 
@@ -479,7 +475,7 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * Do not disable WinHttpAutoProxySvc. WPAD is controlled by supported keys instead.
 
-* Do not manipulate undocumented Edge services. Policies and tasks are the supported path.
+* Do not remove WebView2 runtime as part of Edge browser suppression.
 
 * Do not write under HKCU from SYSTEM context. All configuration is under HKLM or via policies.
 
@@ -491,7 +487,7 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 ## 8. Risks and trade-offs
 
-* SmartScreen disabled and Defender minimized by design. This reduces protection surface and is a conscious trade-off for a silent profile. Consumers of the baseline must understand and accept the risk.
+* SmartScreen policy layers are disabled, and Defender uses a local-on / cloud-off posture by design. This is a conscious trade-off for a quiet profile and should be accepted explicitly by baseline consumers.
 
 * Operators who choose to run `DISM /ResetBase` post-install should understand it removes rollback for the currently installed updates.
 
@@ -503,11 +499,11 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * Log exists at `%WINDIR%\Panther\SetupComplete.log` with no `[ERROR]`. Warnings are understood.
 
-* Edge policies applied.
+* Edge policies applied; early best-effort Edge browser removal and best-effort EdgeUpdate suppression completed (WebView2 retained).
 
 * OneDrive sync policy applied.
 
-* Defender preferences applied as per baseline. SmartScreen disabled for Explorer and Edge.
+* Defender posture applied as per baseline (local protections on, cloud/reputation/sample submission off); SmartScreen policy layers disabled for Windows Shell and Edge.
 
 * WPAD disabled on WinINET and WinHTTP. `netsh winhttp show proxy` reports direct access.
 
