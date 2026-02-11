@@ -450,19 +450,32 @@ REM call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "InstallDefault" 
 call :log "[SECTION] Edge first run experience"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "HideFirstRunExperience" "REG_DWORD" "1"
 
+:: ------------ Edge SmartScreen (best-effort) ------------
+call :log "[SECTION] Edge SmartScreen (best-effort)"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenEnabled" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenDnsRequestsEnabled" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenForTrustedDownloadsEnabled" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenPuaEnabled" "REG_DWORD" "0"
+
 :: ------------ Internet Explorer First Run policy ------------
 call :log "[SECTION] IE First Run policy"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableFirstRunCustomize" "REG_DWORD" "1"
 call :log "[SECTION] SmartScreen & Defender"
 
-REM ------------ SmartScreen ^& Defender (preferences only) ------------
+REM ------------ SmartScreen ^& Defender (policy enforced) ------------
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableSmartScreen" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "SubmitSamplesConsent" "REG_DWORD" "2"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SpynetReporting" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SubmitSamplesConsent" "REG_DWORD" "2"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "DisableBlockAtFirstSeen" "REG_DWORD" "1"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "LocalSettingOverrideSpynetReporting" "REG_DWORD" "0"
+call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine" "MpCloudBlockLevel" "REG_DWORD" "0"
+
+:: ------------ Early Edge browser removal (guarantee layer) ------------
+call :edge_remove
 
 :: ------------ Telemetry / Diagnostics / WER ------------
 call :log "[SECTION] Telemetry, Diagnostics, WER"
@@ -1121,6 +1134,178 @@ if not "%RC%"=="0" (
   call :log "[WARN] Failed to delete scheduled task \L2C\CreatePrimaryAdmin (rc=%RC%)"
 )
 exit /b 0
+
+:edge_remove
+setlocal EnableExtensions
+call :log "[SECTION] Early Edge browser removal"
+set "EDGE_SETUP="
+set "EDGE_SETUP_X86="
+set "EDGE_SETUP_X64="
+set "EDGE_RC=0"
+set "EDGE_EXE_PRESENT=0"
+set "EDGE_UNINSTALL_KEY_PRESENT=0"
+set "EDGE_WEBVIEW2_UNINSTALL_PRESENT=0"
+set "EDGE_UNINSTALL_SIGNAL_KNOWN=1"
+set "EDGE_UNINSTALL_QUERY_RC=0"
+set "EDGE_TASK=\Microsoft\EdgeUpdate\MicrosoftEdgeUpdateTaskMachineCore"
+set "EDGE_VERIFY_ATTEMPT=1"
+
+call :log "[INFO] EdgeUpdate hardening begin (best-effort)."
+
+sc query edgeupdate >nul 2>&1
+if errorlevel 1 (
+  call :log "[INFO] EdgeUpdate service edgeupdate not present; skip disable."
+) else (
+  call :svc_disable "edgeupdate"
+  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { $s = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\edgeupdate' -Name Start -ErrorAction Stop).Start; if ($s -eq 4) { exit 0 } else { exit 1 } } catch { exit 2 }" >nul 2>&1
+  if errorlevel 2 (
+    call :log "[WARN] EdgeUpdate service edgeupdate disable verification failed (cannot read Start); continuing."
+  ) else if errorlevel 1 (
+    call :log "[WARN] EdgeUpdate service edgeupdate disable may have failed (Start!=4); continuing."
+  ) else (
+    call :log "[INFO] EdgeUpdate service edgeupdate disabled (best-effort)."
+  )
+)
+
+sc query edgeupdatem >nul 2>&1
+if errorlevel 1 (
+  call :log "[INFO] EdgeUpdate service edgeupdatem not present; skip disable."
+) else (
+  call :svc_disable "edgeupdatem"
+  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { $s = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\edgeupdatem' -Name Start -ErrorAction Stop).Start; if ($s -eq 4) { exit 0 } else { exit 1 } } catch { exit 2 }" >nul 2>&1
+  if errorlevel 2 (
+    call :log "[WARN] EdgeUpdate service edgeupdatem disable verification failed (cannot read Start); continuing."
+  ) else if errorlevel 1 (
+    call :log "[WARN] EdgeUpdate service edgeupdatem disable may have failed (Start!=4); continuing."
+  ) else (
+    call :log "[INFO] EdgeUpdate service edgeupdatem disabled (best-effort)."
+  )
+)
+
+schtasks /Query /TN "%EDGE_TASK%" >nul 2>&1
+if errorlevel 1 (
+  call :log "[INFO] EdgeUpdate task not present: %EDGE_TASK%"
+) else (
+  call :task_disable "%EDGE_TASK%"
+  schtasks /Query /TN "%EDGE_TASK%" /XML | findstr /I /C:"<Enabled>false</Enabled>" >nul 2>&1
+  if errorlevel 1 (
+    call :log "[WARN] EdgeUpdate task disable may have failed: %EDGE_TASK%; continuing."
+  ) else (
+    call :log "[INFO] EdgeUpdate task disabled: %EDGE_TASK%"
+  )
+)
+
+set "EDGE_TASK=\Microsoft\EdgeUpdate\MicrosoftEdgeUpdateTaskMachineUA"
+schtasks /Query /TN "%EDGE_TASK%" >nul 2>&1
+if errorlevel 1 (
+  call :log "[INFO] EdgeUpdate task not present: %EDGE_TASK%"
+) else (
+  call :task_disable "%EDGE_TASK%"
+  schtasks /Query /TN "%EDGE_TASK%" /XML | findstr /I /C:"<Enabled>false</Enabled>" >nul 2>&1
+  if errorlevel 1 (
+    call :log "[WARN] EdgeUpdate task disable may have failed: %EDGE_TASK%; continuing."
+  ) else (
+    call :log "[INFO] EdgeUpdate task disabled: %EDGE_TASK%"
+  )
+)
+set "EDGE_TASK="
+
+if defined ProgramFiles(x86) (
+  for /f "delims=" %%V in ('dir /b /ad /o-n "%ProgramFiles(x86)%\Microsoft\Edge\Application" 2^>nul') do (
+    if not defined EDGE_SETUP_X86 if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\%%V\Installer\setup.exe" set "EDGE_SETUP_X86=%ProgramFiles(x86)%\Microsoft\Edge\Application\%%V\Installer\setup.exe"
+  )
+)
+
+if not defined EDGE_SETUP_X86 if defined ProgramFiles (
+  for /f "delims=" %%V in ('dir /b /ad /o-n "%ProgramFiles%\Microsoft\Edge\Application" 2^>nul') do (
+    if not defined EDGE_SETUP_X64 if exist "%ProgramFiles%\Microsoft\Edge\Application\%%V\Installer\setup.exe" set "EDGE_SETUP_X64=%ProgramFiles%\Microsoft\Edge\Application\%%V\Installer\setup.exe"
+  )
+)
+
+if defined EDGE_SETUP_X86 (
+  set "EDGE_SETUP=%EDGE_SETUP_X86%"
+) else if defined EDGE_SETUP_X64 (
+  set "EDGE_SETUP=%EDGE_SETUP_X64%"
+)
+
+if defined EDGE_SETUP (
+  call :log "[INFO] Edge setup.exe selected: %EDGE_SETUP%"
+  call :log "[INFO] Running Edge uninstall with wait semantics."
+  start "" /wait "%EDGE_SETUP%" --uninstall --system-level --force-uninstall >nul 2>&1
+  set "EDGE_RC=%ERRORLEVEL%"
+  call :log "[INFO] Edge uninstall RC=%EDGE_RC%"
+  if not "%EDGE_RC%"=="0" (
+    call :log "[WARN] Edge browser removal returned RC=%EDGE_RC%; continuing (best-effort)."
+  )
+) else (
+  call :log "[WARN] Edge setup.exe not found under Program Files paths; skipping uninstall step."
+)
+
+:edge_verify_retry
+set "EDGE_EXE_PRESENT=0"
+if defined ProgramFiles(x86) (
+  if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
+    set "EDGE_EXE_PRESENT=1"
+    call :log "[INFO] Edge verification: msedge.exe still present at %ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe (attempt %EDGE_VERIFY_ATTEMPT%/3)."
+  ) else (
+    call :log "[INFO] Edge verification: msedge.exe absent at %ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+  )
+) else (
+  call :log "[INFO] Edge verification: ProgramFiles(x86) is undefined; x86 path check skipped."
+)
+
+if defined ProgramFiles (
+  if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
+    set "EDGE_EXE_PRESENT=1"
+    call :log "[INFO] Edge verification: msedge.exe still present at %ProgramFiles%\Microsoft\Edge\Application\msedge.exe (attempt %EDGE_VERIFY_ATTEMPT%/3)."
+  ) else (
+    call :log "[INFO] Edge verification: msedge.exe absent at %ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
+  )
+) else (
+  call :log "[INFO] Edge verification: ProgramFiles is undefined; x64 path check skipped."
+)
+
+if "%EDGE_EXE_PRESENT%"=="0" goto :edge_verify_done
+if "%EDGE_VERIFY_ATTEMPT%"=="3" goto :edge_verify_done
+call :log "[INFO] Edge verification retry pending (attempt %EDGE_VERIFY_ATTEMPT%/3); waiting 2 seconds."
+timeout /t 2 /nobreak >nul 2>&1
+set /a EDGE_VERIFY_ATTEMPT+=1 >nul 2>&1
+goto :edge_verify_retry
+
+:edge_verify_done
+if "%EDGE_EXE_PRESENT%"=="0" if not "%EDGE_VERIFY_ATTEMPT%"=="1" call :log "[INFO] Edge verification passed after retry attempt %EDGE_VERIFY_ATTEMPT%."
+
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$browser=$false;$wv2=$false;$paths=@('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*');foreach($p in $paths){$items=Get-ItemProperty -Path $p -ErrorAction SilentlyContinue;foreach($i in $items){if($i.DisplayName -eq 'Microsoft Edge'){$browser=$true};if($i.DisplayName -eq 'Microsoft Edge WebView2 Runtime'){$wv2=$true}}};if($browser -and $wv2){exit 12};if($browser){exit 10};if($wv2){exit 11};exit 0" >nul 2>&1
+set "EDGE_UNINSTALL_QUERY_RC=%ERRORLEVEL%"
+if "%EDGE_UNINSTALL_QUERY_RC%"=="10" set "EDGE_UNINSTALL_KEY_PRESENT=1"
+if "%EDGE_UNINSTALL_QUERY_RC%"=="11" set "EDGE_WEBVIEW2_UNINSTALL_PRESENT=1"
+if "%EDGE_UNINSTALL_QUERY_RC%"=="12" (
+  set "EDGE_UNINSTALL_KEY_PRESENT=1"
+  set "EDGE_WEBVIEW2_UNINSTALL_PRESENT=1"
+)
+if not "%EDGE_UNINSTALL_QUERY_RC%"=="0" if not "%EDGE_UNINSTALL_QUERY_RC%"=="10" if not "%EDGE_UNINSTALL_QUERY_RC%"=="11" if not "%EDGE_UNINSTALL_QUERY_RC%"=="12" (
+  set "EDGE_UNINSTALL_SIGNAL_KNOWN=0"
+  call :log "[WARN] Edge uninstall registry signal: exact-match query failed (RC=%EDGE_UNINSTALL_QUERY_RC%); signal=unknown, continuing (informational only)."
+)
+
+if "%EDGE_UNINSTALL_SIGNAL_KNOWN%"=="1" (
+  if "%EDGE_UNINSTALL_KEY_PRESENT%"=="1" (
+    call :log "[INFO] Edge uninstall registry signal: Browser uninstall entry present (DisplayName exact match: Microsoft Edge) (informational only)."
+  ) else (
+    call :log "[INFO] Edge uninstall registry signal: Browser uninstall entry absent (DisplayName exact match: Microsoft Edge) (informational only)."
+  )
+  if "%EDGE_WEBVIEW2_UNINSTALL_PRESENT%"=="1" call :log "[INFO] Edge uninstall registry signal: WebView2 uninstall entry present and ignored for browser-presence signal (informational only)."
+) else (
+  call :log "[INFO] Edge uninstall registry signal: unknown (informational only)."
+)
+
+if "%EDGE_EXE_PRESENT%"=="0" (
+  call :log "[INFO] Edge removal verification result: PASS (msedge.exe absent)."
+) else (
+  call :log "[WARN] Edge removal verification result: FAIL after %EDGE_VERIFY_ATTEMPT% attempts (msedge.exe still present); continuing (best-effort)."
+)
+
+endlocal & exit /b 0
 
 REM ===== Helpers (Telemetry hardening) =====
 :svc_disable
