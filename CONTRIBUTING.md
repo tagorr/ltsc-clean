@@ -58,6 +58,11 @@ Pick one deliberate gate failure and confirm the run stays fail-closed (no Stage
 - Confirm the `\L2C\CreatePrimaryAdmin` task is not registered and Winlogon autologon is not primed by SetupComplete.
 - Confirm secrets are preserved for operator investigation (recovery entrypoint remains available).
 
+Outcome interpretation (validator logs):
+
+- Secret ACL identity/SID resolution issues are normal validation failures (not `rc=4`) and may appear as `[SECRETS] FAIL: path=... reason=identity_translate_failed: raw=...`.
+- ACL boundary unresolved-identity failures are fail-closed and appear as `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed): ...` or `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed, domain_possible): ...` with an appended hint such as `hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.` or `hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.`
+
 ### Attach evidence to PRs (when relevant)
 
 Include small excerpts (or the full files when diagnosing) from:

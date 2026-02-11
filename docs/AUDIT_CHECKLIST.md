@@ -45,6 +45,7 @@
 
   * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors.
   * [ ] When the validator returns `4`, `SetupComplete.cmd` logs an explicit internal-failure message (rc=4), sets `FAILED=1`, keeps both ACL flags at `0`, and treats both secrets as invalid for gating.
+  * [ ] Evidence: identity/SID translation issues are handled as normal validation failures (not `rc=4`); `%WINDIR%\Panther\SetupComplete.log` may contain `[SECRETS] FAIL: path=... reason=identity_translate_failed: raw=...` and the gate remains closed via the 0–3 bitmask result.
   * [ ] There is a check for the existence of `.bootstrap.pw` and that the first line is non-empty (single-line secret; read via `set /p`, no trimming).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
   * [ ] `.primaryadmin.pw` is read via `set /p` (first line only) only when the ACL/attribute check succeeded, is non-empty as read, and respects the allowed character set/format (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`).
@@ -180,6 +181,7 @@
       * [ ] `%SystemRoot%\System32\Tasks\L2C` (directory)
     * [ ] Evidence: `%WINDIR%\Panther\SetupComplete.log` contains `[ACLBOUNDARY] Hardened task_dir=%SystemRoot%\System32\Tasks\L2C ...`.
     * [ ] Evidence: `%WINDIR%\Panther\SetupComplete.log` contains `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...`; on FAIL it includes `icacls` output for failing path(s). On post-check failure it logs `[ACLBOUNDARY] Task delete rc=...`.
+    * [ ] Evidence: on unresolved identity with unsafe Allow rights, `%WINDIR%\Panther\SetupComplete.log` can include `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed): path=... id=... rights=... hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.` or `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed, domain_possible): path=... id=... rights=... hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.` (`domain_possible` is a heuristic based on `id=X\Y` format, excluding built-in prefixes).
 * [ ] On `schtasks /Create` error:
 
   * [ ] RC is tracked via `track_rc`.
