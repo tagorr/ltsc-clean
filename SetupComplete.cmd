@@ -449,6 +449,7 @@ REM call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "InstallDefault" 
 :: ------------ Edge first run experience ------------
 call :log "[SECTION] Edge first run experience"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "HideFirstRunExperience" "REG_DWORD" "1"
+call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" "DisableEdgeDesktopShortcutCreation" "REG_DWORD" "1"
 
 :: ------------ Edge SmartScreen (best-effort) ------------
 call :log "[SECTION] Edge SmartScreen (best-effort)"
