@@ -688,6 +688,26 @@ if "%HAS_BOOTSTRAP_PW%"=="1" if not "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
   call :log "[ERROR] .bootstrap.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
 )
 
+REM Primary admin secret status (always logged)
+if exist "%L2C_PRIMARYADMIN_SECRET%" (
+  call :log "[INFO] .primaryadmin.pw present (path=%L2C_PRIMARYADMIN_SECRET%)."
+) else (
+  call :log "[WARN] .primaryadmin.pw missing (path=%L2C_PRIMARYADMIN_SECRET%)."
+)
+if not exist "%L2C_PRIMARYADMIN_SECRET%" (
+  call :log "[INFO] .primaryadmin.pw ACL/attributes check skipped (file missing)."
+) else (
+  if not defined L2C_PRIMARYADMIN_PW_ACL_OK (
+    call :log "[INFO] .primaryadmin.pw ACL/attributes status unknown (validation not run)."
+  ) else (
+    if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+      call :log "[INFO] .primaryadmin.pw ACL/attributes OK."
+    ) else (
+      call :log "[WARN] .primaryadmin.pw ACL/attributes BAD."
+    )
+  )
+)
+
 REM Primary admin secret SEC-2 gate: ACL/attributes must be valid before reading
 if "%FAILED%"=="0" (
   if exist "%L2C_PRIMARYADMIN_SECRET%" (
@@ -718,6 +738,8 @@ if "%FAILED%"=="0" (
       )
     )
   )
+) else (
+  call :log "[INFO] primary admin secret content load skipped because FAILED=1 (earlier failure)."
 )
 
 REM If we are still not in FAILED, require that primary admin secret has been successfully loaded

@@ -157,6 +157,8 @@
   * [ ] Invalid or missing `.primaryadmin.pw` logs an `[ERROR]`, sets `FAILED=1`, and blocks Stage B registration and autologon priming.
   * [ ] Stage B/autologon priming proceed only when both `.bootstrap.pw` and `.primaryadmin.pw` are valid and `FAILED==0`.
   * [ ] ACL/attribute flags from `ValidateSecrets.ps1` (`L2C_BOOTSTRAP_PW_ACL_OK`, `L2C_PRIMARYADMIN_PW_ACL_OK`) must be `1`; failures are logged and force `FAILED=1` before the primary admin password is read.
+  * [ ] `SetupComplete.log` always logs `.primaryadmin.pw` presence and SEC-2 ACL/attributes status (OK/BAD, or `skipped (file missing)` / `unknown (validation not run)`) even when `FAILED==1`.
+  * [ ] When `FAILED==1`, `SetupComplete.cmd` does not read `.primaryadmin.pw` content and the log includes an explicit INFO that primary admin secret content load was skipped due to earlier failure.
 * [ ] Winlogon autologon to `bootstrap`:
 
   * [ ] Runs only when `FAILED==0`, `HAS_BOOTSTRAP_PW=="1"`, `L2C_BOOTSTRAP_PW_FORMAT_OK==1`, and a valid primary admin secret is present.
@@ -499,6 +501,7 @@ For each document:
   * [ ] Autologon is not configured.
   * [ ] Stage B is not registered (`schtasks /Query /TN "\L2C\CreatePrimaryAdmin"` fails) and `primaryadmin` is not created.
   * [ ] Logs contain a clear ERROR so that the operator immediately sees what to investigate.
+  * [ ] Logs still include `.primaryadmin.pw` presence and SEC-2 ACL/attributes status lines, and an explicit INFO that primary admin secret content load was skipped because `FAILED==1`.
 * [ ] When `.primaryadmin.pw` is missing or invalid at the `SetupComplete` stage:
 
   * [ ] A clear ERROR is logged.
