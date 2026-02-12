@@ -25,6 +25,66 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Resolve-IdentityReferenceSafe {
+    param(
+        [Parameter(Mandatory = $true)]
+        $IdentityReference
+    )
+
+    $sid = $null
+    $raw = ''
+    $resolved = $false
+
+    try {
+        if ($null -ne $IdentityReference) {
+            try { $raw = [string]$IdentityReference } catch { $raw = '' }
+
+            if ($IdentityReference -is [System.Security.Principal.SecurityIdentifier]) {
+                try {
+                    $sid = $IdentityReference.Value
+                    $resolved = $true
+                } catch { }
+            } else {
+                try {
+                    $translated = $IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])
+                    if ($translated -is [System.Security.Principal.SecurityIdentifier]) {
+                        $sid = $translated.Value
+                        $resolved = $true
+                    }
+                } catch { }
+            }
+
+            if (-not $resolved) {
+                if ($raw -match '^S-1-') {
+                    $sid = $raw
+                    $resolved = $true
+                } elseif ($raw) {
+                    try {
+                        $nt = New-Object System.Security.Principal.NTAccount($raw)
+                        $translated2 = $nt.Translate([System.Security.Principal.SecurityIdentifier])
+                        if ($translated2 -is [System.Security.Principal.SecurityIdentifier]) {
+                            $sid = $translated2.Value
+                            $resolved = $true
+                        }
+                    } catch { }
+                }
+            }
+        }
+    } catch {
+        $sid = $null
+        $resolved = $false
+        if ($null -eq $raw) { $raw = '' }
+    }
+
+    if ($null -eq $raw) { $raw = '' }
+
+    return [pscustomobject]@{
+        Sid      = $sid
+        Raw      = $raw
+        Resolved = $resolved
+    }
+}
+
 function Test-SecretAcl {
     param(
         [Parameter(Mandatory = $true)]
@@ -55,12 +115,11 @@ function Test-SecretAcl {
     $seen = @()
 
     foreach ($rule in $acl.Access) {
-        $sid = $null
-        try {
-            $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
-        } catch {
-            return (Fail ('identity_translate_failed: ' + $rule.IdentityReference.Value + ' err=' + $_.Exception.Message))
+        $idInfo = Resolve-IdentityReferenceSafe -IdentityReference $rule.IdentityReference
+        if (-not $idInfo.Resolved) {
+            return (Fail ('identity_translate_failed: raw=' + $idInfo.Raw))
         }
+        $sid = $idInfo.Sid
 
         if ($allowed -notcontains $sid) {
             return (Fail ('unexpected_ace_sid: ' + $sid))
@@ -163,25 +222,14 @@ function Test-NonAdminTamperAclUnsafe {
     foreach ($rule in $acl.Access) {
         if ($rule.AccessControlType -ne 'Allow') { continue }
 
-        $sid = $null
-        $name = $null
-        $rawId = $rule.IdentityReference.Value
-
-        try {
-            $sid = ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])).Value
-        } catch {
-            # If translation fails, fall back to raw identity string (either SID text or account name).
-            if ($rawId -match '^S-\d-\d+-.+') {
-                $sid = $rawId
-            } else {
-                $name = $rawId
-            }
-        }
+        $idInfo = Resolve-IdentityReferenceSafe -IdentityReference $rule.IdentityReference
+        $sid = $idInfo.Sid
+        $rawId = $idInfo.Raw
 
         $isRisky = $false
-        if ($sid -and ($riskySids -contains $sid)) { $isRisky = $true }
-        if (-not $isRisky -and $name -and ($riskyNames -contains $name)) { $isRisky = $true }
-        if (-not $isRisky) { continue }
+        if ($idInfo.Resolved -and $sid -and ($riskySids -contains $sid)) { $isRisky = $true }
+        if (-not $isRisky -and (-not $idInfo.Resolved) -and $rawId -and ($riskyNames -contains $rawId)) { $isRisky = $true }
+        if ($idInfo.Resolved -and (-not $isRisky)) { continue }
 
         $rights = $rule.FileSystemRights
         if ((($rights -band $unsafeRights) -ne 0) -or
@@ -189,8 +237,28 @@ function Test-NonAdminTamperAclUnsafe {
             $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Modify) -or
             $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)) {
 
-            $idForLog = if ($sid) { $sid } else { $rawId }
-            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} id={1} rights={2}" -f $Path, $idForLog, $rights) -ErrorAction Continue
+            if (-not $idInfo.Resolved) {
+                $domainPossible = $false
+                if ($rawId -and ($rawId -like '*\*') -and
+                    ($rawId -notlike 'BUILTIN\*') -and
+                    ($rawId -notlike 'NT AUTHORITY\*') -and
+                    ($rawId -notlike 'NT SERVICE\*') -and
+                    ($rawId -notlike 'APPLICATION PACKAGE AUTHORITY\*')) {
+                    $domainPossible = $true
+                }
+
+                $token = '(identity_unresolved_fail_closed)'
+                $hint = 'hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.'
+                if ($domainPossible) {
+                    $token = '(identity_unresolved_fail_closed, domain_possible)'
+                    $hint = 'hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.'
+                }
+
+                Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE {0}: path={1} id={2} rights={3} {4}" -f $token, $Path, $rawId, $rights, $hint) -ErrorAction Continue
+                return $true
+            }
+
+            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} id={1} rights={2}" -f $Path, $sid, $rights) -ErrorAction Continue
             return $true
         }
     }
