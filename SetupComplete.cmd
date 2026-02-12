@@ -798,6 +798,12 @@ if not "%FINAL_RC%"=="0" (
   reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
 )
 
+if "%FINAL_RC%"=="0" (
+  call :log "[FINAL] SUCCESS"
+) else (
+  call :log "[FINAL] FAIL (FINAL_RC=%FINAL_RC%)"
+)
+
 call :log "[RC] returning %FINAL_RC%"
 exit /b %FINAL_RC%
 
