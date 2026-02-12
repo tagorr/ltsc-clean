@@ -126,7 +126,7 @@
 * [ ] Start and end logging:
 
   * [ ] `----- SetupComplete started -----`.
-  * [ ] A clear final entry indicating success or failure.
+  * [ ] A clear final entry indicating success or failure (for example: [FINAL] SUCCESS or [FINAL] FAIL (FINAL_RC=...)) emitted immediately before the final [RC] returning <code> line.
   * [ ] Final entry of the form `[RC] returning <code>` written via `:log`, where `<code>` equals:
         - `0` on success;
         - the first fatal DISM RC when present (`L2C_FIRST_BAD_RC`);
