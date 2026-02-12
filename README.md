@@ -200,6 +200,7 @@ When `[SECTION] Secret ACL validation (bootstrap=0, primaryadmin=0)` appears, bo
 Operator follow-up:
 - look for an `[ERROR]` line that reports an internal validator error (`rc=4`) or similar wording; in that case treat it as a validator problem and note that Stage B was intentionally not registered;
 - if present, `[SECRETS] FAIL: path=... reason=identity_translate_failed: raw=...` is a normal validation failure (not `rc=4`) and indicates an identity/SID resolution issue in the secret ACL checks;
+- ACL boundary unresolved-identity failures are fail-closed and appear as `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed): ...` or `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed, domain_possible): ...` with an appended hint such as `hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.` or `hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.`
 - if there is no internal validator error, inspect both secrets on disk for presence, correct ACL/Hidden+System attributes, and (for `.primaryadmin.pw`) the format rules below.
 
    Example `SetupComplete.log` excerpt (healthy gate):
