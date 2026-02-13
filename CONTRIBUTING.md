@@ -42,7 +42,7 @@ These are quick VM checks for PR validation (not a full audit). Use a clean VM o
   - Task name: `\L2C\CreatePrimaryAdmin`
   - It runs `CreatePrimaryAdmin.ps1` as SYSTEM on logon.
 - Validate the normal success end state (see `README.md` for details):
-  - `C:\ProgramData\l2c_master_<timestamp>.log` exists and contains `OUTCOME: Success`.
+  - `C:\ProgramData\l2c_master_<timestamp>.log` exists and contains `OUTCOME: SUCCESS`.
   - `bootstrap` is disabled.
   - The `\L2C\CreatePrimaryAdmin` scheduled task is removed.
   - Winlogon temporary values are cleaned up (for example `DefaultPassword` absent and autologon disabled).
