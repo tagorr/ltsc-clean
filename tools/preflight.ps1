@@ -144,9 +144,13 @@ function Test-ReadmeAnchors {
         'SetupComplete.cmd'
     ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
 
-    $textFilesResult = Get-TrackedTextFiles -RepoRoot $RepoRoot
-    $allTextFiles = @($textFilesResult.Files)
-    $fallbackFiles = @($allTextFiles | Where-Object { $preferredFiles -notcontains $_ })
+    $fallbackFiles = @(
+    $allTextFiles | Where-Object {
+        ($preferredFiles -notcontains $_) -and
+        (-not $_.StartsWith('tools\', [System.StringComparison]::OrdinalIgnoreCase)) -and
+        (-not $_.StartsWith('.agents\', [System.StringComparison]::OrdinalIgnoreCase))
+    }
+)
 
     $missing = New-Object System.Collections.Generic.List[string]
 
