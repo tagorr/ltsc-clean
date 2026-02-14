@@ -42,7 +42,7 @@ call :log "----- SetupComplete started -----"
 set "REQUIRED_EDITION=EnterpriseS"
 set "REQUIRED_DV=21H2"
 set "MIN_BUILD=19044"
-set "STRICT_DISPLAYVERSION=0"  :: 1 = abort on DV mismatch, 0 = warn and continue
+set "STRICT_DISPLAYVERSION=1"  :: 1 = abort on DV mismatch, 0 = warn and continue
 
 :: ------------ platform gate ------------
 
@@ -235,14 +235,17 @@ exit /b 0
 
 :gate_dv
 REM -- DisplayVersion gate; STRICT_DISPLAYVERSION=1 enforces REQUIRED_DV --
-if /I not "%STRICT_DISPLAYVERSION%"=="1" (
-  if defined REQUIRED_DV if /I not "%DV%"=="%REQUIRED_DV%" call :log "[WARN] DisplayVersion=%DV% (expected %REQUIRED_DV%). Proceeding."
-  exit /b 0
-)
 if not defined DV (
   for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v DisplayVersion 2^>nul') do if /I "%%A"=="DisplayVersion" set "DV=%%C"
 )
 set "DV=%DV:"=%"
+if not defined DV set "DV=<missing>"
+
+if /I not "%STRICT_DISPLAYVERSION%"=="1" (
+  if defined REQUIRED_DV if /I not "%DV%"=="%REQUIRED_DV%" call :log "[WARN] DisplayVersion=%DV% (expected %REQUIRED_DV%). Proceeding."
+  exit /b 0
+)
+
 if /I not "%DV%"=="%REQUIRED_DV%" (
   call :log "[ERROR] DisplayVersion=%DV% (expected %REQUIRED_DV%). Aborting."
   exit /b 1
