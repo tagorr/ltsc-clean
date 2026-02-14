@@ -34,10 +34,22 @@ This baseline expects the primary local admin password to be supplied explicitly
 - `AGENTS.md` - high-level interaction contracts and agent roles (ChatGPT, Codex CLI, Owner)
 - `docs/INTERACTION_CONTRACT.md` - Codex CLI interaction contract (shell choice, quoting rules, safety guardrails)
 - `docs/AUDIT_CHECKLIST.md` - end-to-end audit checklist for scripts and documentation
+- `tools/preflight.ps1` - static preflight checks (parse-only, anchor verification, observability guardrail)
+- `.agents/skills/preflight-checks/SKILL.md` - repo skill that runs the preflight checks before finalizing changes
 - `CONTRIBUTING.md` - PR rules, PowerShell style, and EOL requirements
 - `LICENSE` - MIT
 
 > `Autounattend.xml` in this repo is the canonical reference answer file; place it at the media root during the build. Forks may customize it, but must preserve the minimal contract: specialize `RunSynchronous` invokes `cmd /c "%WINDIR%\Setup\Scripts\PreOOBE.cmd"`.
+
+## Preflight checks
+
+Run from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\preflight.ps1
+```
+
+This verifies: parse-only PowerShell syntax checks for the three deployment helper scripts, required recovery/log anchor strings, and a lightweight observability guardrail over working tree changes. The Codex skill is at `.agents/skills/preflight-checks/SKILL.md`.
 
 ## Placement
 
