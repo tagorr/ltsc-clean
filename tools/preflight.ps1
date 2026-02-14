@@ -284,13 +284,30 @@ function Test-ObservabilityGuardrail {
         $diffArgs += $item
     }
 
-    $diffOutput = & git @diffArgs
+    $diffOutputUnstaged = & git @diffArgs
     if ($LASTEXITCODE -ne 0) {
         $result.Pass = $false
         Write-CheckLine -Name 'observability guardrail' -Pass $false
         Write-Host '  potential flow-control changes in monitored files (diff unavailable)'
         return $result
     }
+
+    $diffArgsCached = @('diff', '--cached', '--')
+    foreach ($item in $changedWatched) {
+        $diffArgsCached += $item
+    }
+
+    $diffOutputStaged = & git @diffArgsCached
+    if ($LASTEXITCODE -ne 0) {
+        $result.Pass = $false
+        Write-CheckLine -Name 'observability guardrail' -Pass $false
+        Write-Host '  potential flow-control changes in monitored files (diff unavailable)'
+        return $result
+    }
+
+    $diffOutput = @()
+    if ($diffOutputUnstaged) { $diffOutput += $diffOutputUnstaged }
+    if ($diffOutputStaged) { $diffOutput += $diffOutputStaged }
 
     $detected = New-Object System.Collections.Generic.List[string]
     $currentFile = $null
