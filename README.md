@@ -750,7 +750,7 @@ Default configuration:
 set "REQUIRED_EDITION=EnterpriseS"
 set "REQUIRED_DV=21H2"
 set "MIN_BUILD=19044"
-set "STRICT_DISPLAYVERSION=0"  :: 1 = hard fail when DV differs, 0 = warning and continue (best-effort)
+set "STRICT_DISPLAYVERSION=1"  :: 1 = hard fail when DV differs (default), 0 = warning and continue (opt-out)
 ```
 
 Behavior:
@@ -759,12 +759,13 @@ Behavior:
 * If `CurrentBuild` is less than `19044` the script logs an error, sets `FAILED=1`, and routes to the shared final RC block.
 * If `DisplayVersion` does not equal `21H2`:
 
-  * with `STRICT_DISPLAYVERSION=1` the script logs an error, sets `FAILED=1`, and routes to the shared final RC block;
-  * with `STRICT_DISPLAYVERSION=0` the script logs a warning and continues in best effort mode.
+  * with `STRICT_DISPLAYVERSION=1` (default) the script logs an error, sets `FAILED=1`, and routes to the shared final RC block;
+  * with `STRICT_DISPLAYVERSION=0` (opt-out) the script logs a warning and continues in best effort mode.
+* In `:gate_dv`, `DisplayVersion` is read before branching on `STRICT_DISPLAYVERSION`; if it cannot be read, `DV` is normalized to `<missing>` so WARN/ERROR logs are not blank.
 
 Regardless of failure source (platform gate, DISM, or other checks), `SetupComplete.cmd` aggregates a final RC (`L2C_FIRST_BAD_RC` if present, else `1` when `FAILED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code so operators always see a single tail marker in the log.
 
-For controlled production environments set `STRICT_DISPLAYVERSION=1`. For forks and experiments keep `0` and adjust `REQUIRED_*` to your target.
+Baseline behavior is fail-closed with `STRICT_DISPLAYVERSION=1`. For forks and experiments, opt out with `STRICT_DISPLAYVERSION=0` and adjust `REQUIRED_*` to your target.
 
 Most `SetupComplete.cmd` messages are written via the `:log` subroutine and include a live timestamp computed inside the script; this helps correlate with DISM and CBS logs and debug issues. A small number of lines are written without timestamps (for example some raw `echo` tags), and DISM’s own log format is tool-defined. The orchestration is CMD-first; PowerShell is used only for a small number of targeted helper calls (for example timestamp generation or reading specific values), not as a per-line wrapper around every command.
 
