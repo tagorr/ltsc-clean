@@ -85,9 +85,9 @@ Edge browser removal runs early in `SetupComplete.cmd` as a best-effort guarante
 
 ## Compatibility controls & safety
 
-**Default:** `STRICT_DISPLAYVERSION=0` (best‑effort). For production environments use `STRICT_DISPLAYVERSION=1`.
+**Default:** `STRICT_DISPLAYVERSION=1` (fail‑closed). Set `STRICT_DISPLAYVERSION=0` only as an explicit opt-out for best-effort compatibility.
 
-`STRICT_DISPLAYVERSION=0` allows execution to continue on nearby Windows versions. This is a deliberate portability trade-off with the risk that some steps may not apply or may behave differently due to component changes. For production in uncontrolled environments, enable `STRICT_DISPLAYVERSION=1` and pin `REQUIRED_*` to the target release.
+`STRICT_DISPLAYVERSION=0` allows execution to continue on nearby Windows versions. This is a deliberate portability trade-off with the risk that some steps may not apply or may behave differently due to component changes. In baseline fail-closed mode (`STRICT_DISPLAYVERSION=1`), `:gate_dv` reads `DisplayVersion` before the strictness branch and normalizes missing reads to `DV=<missing>` so mismatch logs stay explicit.
 
 ### Controlled reboot (Panther flag)
 

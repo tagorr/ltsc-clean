@@ -131,7 +131,9 @@
         - `0` on success;
         - the first fatal DISM RC when present (`L2C_FIRST_BAD_RC`);
         - or `1` when `FAILED==1` without a captured fatal RC.
-* [ ] Platform gate (EditionID, DisplayVersion, CurrentBuild) does not exit early: on mismatch it logs an ERROR, sets `FAILED=1`, and jumps to the shared final RC label (for example `l2c_final_rc`).
+* [ ] Platform gate (EditionID, DisplayVersion, CurrentBuild) does not exit early: EditionID/CurrentBuild mismatches log an ERROR, set `FAILED=1`, and jump to the shared final RC label (for example `l2c_final_rc`); DisplayVersion mismatch is fail-closed by default (`STRICT_DISPLAYVERSION=1`): it logs the ERROR and the run ends in the shared final RC tail.
+* [ ] DisplayVersion opt-out path is explicit: only when `STRICT_DISPLAYVERSION=0` does a DV mismatch log `[WARN] DisplayVersion=%DV% (expected %REQUIRED_DV%). Proceeding.` and continue.
+* [ ] `:gate_dv` reads `DisplayVersion` before branching on `STRICT_DISPLAYVERSION`, normalizes unreadable/missing values to `DV=<missing>`, and does not emit blank DV values in mismatch logs.
 * [ ] All failure scenarios, including platform mismatches, reach the final RC block and emit the tail line `[RC] returning <FINAL_RC>` in `SetupComplete.log`.
 * [ ] Single top-level exit path: the final RC block at the shared label logs `[RC] returning <FINAL_RC>` and `exit /b %FINAL_RC%`; no other top-level `exit /b` paths are used for script termination.
 
