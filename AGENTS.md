@@ -6,6 +6,12 @@
 
 `SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`.
 
+**Owner-controlled areas** (default: out of scope for agents)
+
+The allow-list in this document applies to agent-initiated edits by default. The Owner may explicitly authorize edits outside the allow-list for a specific task/PR, and such exceptions must be documented in the PR description (including the exact paths).
+Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not create, modify, or delete files in these areas unless the current task explicitly includes those paths in its allow-list.
+
+
 **Forbidden:**
 
 - Any edits by agents to files that are not listed in the “Allowed to edit” section above.
