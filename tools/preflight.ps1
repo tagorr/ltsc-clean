@@ -20,15 +20,31 @@ function Test-GitAvailable {
 }
 
 function Get-RepoRoot {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+
     if (Test-GitAvailable) {
-        $repoRoot = & git rev-parse --show-toplevel 2>$null
+        $repoRoot = & git -C $scriptDir rev-parse --show-toplevel 2>$null
         if ($LASTEXITCODE -eq 0 -and $repoRoot) {
-            return $repoRoot.TrimEnd("`r", "`n").Replace('/', '\')
+            $candidate = $repoRoot.TrimEnd("`r", "`n").Replace('/', '\').TrimEnd('\')
+            $scriptFullPath = (Resolve-Path -LiteralPath $PSCommandPath).Path
+
+            $isAncestor = $scriptFullPath.StartsWith(($candidate + '\'), [System.StringComparison]::OrdinalIgnoreCase)
+            $expectedScriptPath = Join-Path -Path $candidate -ChildPath 'tools\preflight.ps1'
+            $isExpectedScript = $false
+            if (Test-Path -LiteralPath $expectedScriptPath -PathType Leaf) {
+                $resolvedExpected = (Resolve-Path -LiteralPath $expectedScriptPath).Path
+                if ($resolvedExpected.Equals($scriptFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $isExpectedScript = $true
+                }
+            }
+
+            if ($isAncestor -or $isExpectedScript) {
+                return $candidate
+            }
         }
     }
 
-    $scriptPath = Split-Path -Parent $PSCommandPath
-    return (Resolve-Path -LiteralPath (Join-Path -Path $scriptPath -ChildPath '..')).Path
+    return (Resolve-Path -LiteralPath (Join-Path -Path $scriptDir -ChildPath '..')).Path
 }
 
 function Get-TrackedTextFiles {
@@ -59,17 +75,40 @@ function Get-TrackedTextFiles {
     }
 
     if ($files.Count -eq 0) {
-        $all = Get-ChildItem -LiteralPath $RepoRoot -Recurse -File
-        foreach ($entry in $all) {
-            $ext = $entry.Extension.ToLowerInvariant()
-            if ($extensions -notcontains $ext) {
-                continue
+        $excludeDirs = @('.git', '.codex_tmp', '.agents', 'tools')
+        $queue = New-Object System.Collections.Generic.Queue[string]
+        $queue.Enqueue($RepoRoot)
+
+        while ($queue.Count -gt 0) {
+            $dir = $queue.Dequeue()
+
+            $childDirs = Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue
+            foreach ($childDir in $childDirs) {
+                $skip = $false
+                foreach ($ex in $excludeDirs) {
+                    if ($childDir.Name.Equals($ex, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $skip = $true
+                        break
+                    }
+                }
+
+                if (-not $skip) {
+                    $queue.Enqueue($childDir.FullName)
+                }
             }
 
-            $fullPath = $entry.FullName
-            if ($fullPath.StartsWith($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $relative = $fullPath.Substring($RepoRoot.Length).TrimStart('\')
-                $files.Add($relative)
+            $dirFiles = Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue
+            foreach ($entry in $dirFiles) {
+                $ext = $entry.Extension.ToLowerInvariant()
+                if ($extensions -notcontains $ext) {
+                    continue
+                }
+
+                $fullPath = $entry.FullName
+                if ($fullPath.StartsWith($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $relative = $fullPath.Substring($RepoRoot.Length).TrimStart('\')
+                    $files.Add($relative)
+                }
             }
         }
     }
@@ -144,6 +183,17 @@ function Test-ReadmeAnchors {
         'SetupComplete.cmd'
     ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
 
+    $runtimeSources = @(
+        'CreatePrimaryAdmin.ps1',
+        'SetupComplete.cmd'
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+
+    $docsSources = @(
+        'README.md',
+        'DECISIONS.md',
+        'SECURITY.md'
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+
     $textFilesResult = Get-TrackedTextFiles -RepoRoot $RepoRoot
     $allTextFiles = @($textFilesResult.Files)
 
@@ -156,39 +206,77 @@ function Test-ReadmeAnchors {
 )
 
     $missing = New-Object System.Collections.Generic.List[string]
+    $docsOnly = New-Object System.Collections.Generic.List[string]
+    $outsideRuntime = New-Object System.Collections.Generic.List[string]
 
     foreach ($anchor in $anchors) {
-        $found = $false
+        $foundInRuntime = $false
+        $foundInDocs = $false
+        $foundInFallback = $false
 
-        foreach ($path in $preferredFiles) {
+        foreach ($path in $runtimeSources) {
             $content = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
             if ($content -and $content.Contains($anchor)) {
-                $found = $true
+                $foundInRuntime = $true
                 break
             }
         }
 
-        if (-not $found) {
-            foreach ($path in $fallbackFiles) {
+        if (-not $foundInRuntime) {
+            foreach ($path in $docsSources) {
                 $content = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
                 if ($content -and $content.Contains($anchor)) {
-                    $found = $true
+                    $foundInDocs = $true
                     break
                 }
             }
         }
 
-        if (-not $found) {
-            $missing.Add($anchor)
+        if (-not $foundInRuntime -and -not $foundInDocs) {
+            foreach ($path in $fallbackFiles) {
+                $content = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
+                if ($content -and $content.Contains($anchor)) {
+                    $foundInFallback = $true
+                    break
+                }
+            }
         }
+
+        if ($foundInRuntime) {
+            continue
+        }
+
+        if ($foundInDocs) {
+            $docsOnly.Add($anchor)
+            continue
+        }
+
+        if ($foundInFallback) {
+            $outsideRuntime.Add($anchor)
+            continue
+        }
+
+        $missing.Add($anchor)
     }
 
-    if ($missing.Count -eq 0) {
+    if ($missing.Count -eq 0 -and $docsOnly.Count -eq 0 -and $outsideRuntime.Count -eq 0) {
         Write-CheckLine -Name 'README anchors' -Pass $true
         return $true
     }
 
     Write-CheckLine -Name 'README anchors' -Pass $false
+    foreach ($anchor in $docsOnly) {
+        Write-Host ("  anchor found only in docs: {0}" -f $anchor)
+        Write-Host ("  searched preferred: {0}" -f (($preferredFiles | Sort-Object -Unique) -join ', '))
+        Write-Host ("  searched fallback ({0} files): {1}" -f $fallbackFiles.Count, $textFilesResult.Source)
+    }
+
+    foreach ($anchor in $outsideRuntime) {
+        Write-Host ("  anchor not found in runtime sources: {0}" -f $anchor)
+        Write-Host ("  searched preferred: {0}" -f (($preferredFiles | Sort-Object -Unique) -join ', '))
+        Write-Host ("  searched fallback ({0} files): {1}" -f $fallbackFiles.Count, $textFilesResult.Source)
+    }
+
     foreach ($anchor in $missing) {
         Write-Host ("  missing anchor: {0}" -f $anchor)
         Write-Host ("  searched preferred: {0}" -f (($preferredFiles | Sort-Object -Unique) -join ', '))
@@ -207,12 +295,28 @@ function Get-ChangedPathsFromPorcelainLine {
         return $null
     }
 
-    $pathPart = $Line.Substring(3)
-    if ($pathPart.Contains(' -> ')) {
-        $pathPart = $pathPart.Substring($pathPart.IndexOf(' -> ', [System.StringComparison]::Ordinal) + 4)
+    $pathPart = $Line.Substring(3).Trim()
+    if (-not $pathPart) {
+        return $null
     }
 
-    return $pathPart.Trim().Trim('"').Replace('/', '\')
+    if ($pathPart.Contains(' -> ')) {
+        $parts = $pathPart.Split(@(' -> '), 2, [System.StringSplitOptions]::None)
+        $oldPath = $parts[0].Trim().Trim('"').Replace('\', '/')
+        $newPath = $parts[1].Trim().Trim('"').Replace('\', '/')
+        return @{
+            OldPath = $oldPath
+            NewPath = $newPath
+            Paths   = @($oldPath, $newPath)
+        }
+    }
+
+    $single = $pathPart.Trim('"').Replace('\', '/')
+    return @{
+        OldPath = $null
+        NewPath = $single
+        Paths   = @($single)
+    }
 }
 
 function Test-ObservabilityGuardrail {
@@ -256,14 +360,6 @@ function Test-ObservabilityGuardrail {
         Write-Host ("  {0}" -f $line)
     }
 
-    $changedPaths = New-Object System.Collections.Generic.List[string]
-    foreach ($line in $status) {
-        $parsedPath = Get-ChangedPathsFromPorcelainLine -Line $line
-        if ($parsedPath) {
-            $changedPaths.Add($parsedPath)
-        }
-    }
-
     $watchFiles = @(
         'SetupComplete.cmd',
         'PreOOBE.cmd',
@@ -272,22 +368,49 @@ function Test-ObservabilityGuardrail {
         'ValidateSecrets.ps1'
     )
 
-    $changedWatched = @()
-    foreach ($path in ($changedPaths | Sort-Object -Unique)) {
-        $leaf = Split-Path -Leaf $path
-        if (($watchFiles -contains $path) -or ($watchFiles -contains $leaf)) {
-            $changedWatched += $leaf
+    $changedWatchedPathspecs = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $status) {
+        $parsed = Get-ChangedPathsFromPorcelainLine -Line $line
+        if (-not $parsed) {
+            continue
+        }
+
+        $paths = @($parsed.Paths)
+        if (-not $paths -or $paths.Count -eq 0) {
+            continue
+        }
+
+        $isWatched = $false
+        foreach ($p in $paths) {
+            $display = $p.Replace('/', '\')
+            $leaf = Split-Path -Leaf $display
+            if (($watchFiles -contains $display) -or ($watchFiles -contains $leaf)) {
+                $isWatched = $true
+                break
+            }
+        }
+
+        if (-not $isWatched) {
+            continue
+        }
+
+        if ($parsed.NewPath) {
+            $changedWatchedPathspecs.Add($parsed.NewPath)
+        }
+        if ($parsed.OldPath) {
+            $changedWatchedPathspecs.Add($parsed.OldPath)
         }
     }
-    $changedWatched = @($changedWatched | Sort-Object -Unique)
+    $changedWatchedPathspecs = @($changedWatchedPathspecs | Sort-Object -Unique)
+    $changedWatchedDisplay = @($changedWatchedPathspecs | ForEach-Object { $_.Replace('/', '\') })
 
-    if ($changedWatched.Count -eq 0) {
+    if ($changedWatchedPathspecs.Count -eq 0) {
         Write-CheckLine -Name 'observability guardrail' -Pass $true
         return $result
     }
 
     $diffArgs = @('diff', '--')
-    foreach ($item in $changedWatched) {
+    foreach ($item in $changedWatchedPathspecs) {
         $diffArgs += $item
     }
 
@@ -300,7 +423,7 @@ function Test-ObservabilityGuardrail {
     }
 
     $diffArgsCached = @('diff', '--cached', '--')
-    foreach ($item in $changedWatched) {
+    foreach ($item in $changedWatchedPathspecs) {
         $diffArgsCached += $item
     }
 
@@ -319,6 +442,8 @@ function Test-ObservabilityGuardrail {
     $detected = New-Object System.Collections.Generic.List[string]
     $currentFile = $null
     $currentExt = $null
+    $psInBlockComment = $false
+    $psHereTerminator = $null
 
     $cmdPatterns = @(
         @{ Name = 'if errorlevel'; Regex = '^if\s+errorlevel\b' },
@@ -337,8 +462,18 @@ function Test-ObservabilityGuardrail {
 
     foreach ($line in $diffOutput) {
         if ($line.StartsWith('diff --git ')) {
-            if ($line -match '^diff --git a\/.+? b\/(.+)$') {
-                $currentFile = $Matches[1].Replace('/', '\')
+            $psInBlockComment = $false
+            $psHereTerminator = $null
+
+            $bIndex = $line.IndexOf(' b/', [System.StringComparison]::Ordinal)
+            if ($bIndex -ge 0) {
+                $pathPart = $line.Substring($bIndex + 3).Trim()
+                if ($pathPart.StartsWith('"') -and $pathPart.EndsWith('"') -and $pathPart.Length -ge 2) {
+                    $pathPart = $pathPart.Substring(1, $pathPart.Length - 2)
+                }
+                $pathPart = $pathPart.Replace('\ ', ' ')
+
+                $currentFile = $pathPart.Replace('/', '\')
                 $currentExt = [System.IO.Path]::GetExtension($currentFile).ToLowerInvariant()
             } else {
                 $currentFile = $null
@@ -370,19 +505,38 @@ function Test-ObservabilityGuardrail {
             }
 
             if ($isCmd) {
-                if ($trimmedLower -eq 'rem' -or $trimmedLower.StartsWith('rem ')) { continue }
-                if ($trimmedLower.StartsWith('::')) { continue }
-                if ($trimmedLower -eq 'echo' -or $trimmedLower.StartsWith('echo ')) { continue }
+                $trimmedCmd = $trimmed
+                if ($trimmedCmd.StartsWith('@')) {
+                    $trimmedCmd = $trimmedCmd.Substring(1).TrimStart()
+                }
+                $trimmedLowerCmd = $trimmedCmd.ToLowerInvariant()
+
+                if ($trimmedLowerCmd -eq 'rem' -or $trimmedLowerCmd.StartsWith('rem ')) { continue }
+                if ($trimmedLowerCmd.StartsWith('::')) { continue }
+                if ($trimmedLowerCmd -eq 'echo' -or $trimmedLowerCmd.StartsWith('echo ')) { continue }
 
                 foreach ($pattern in $cmdPatterns) {
-                    if ($trimmedLower -match $pattern.Regex) {
+                    if ($trimmedLowerCmd -match $pattern.Regex) {
                         $detected.Add(("cmd:{0}" -f $pattern.Name))
                         break
                     }
                 }
             } else {
-                if ($trimmedLower.StartsWith('<#')) { continue }
-				if ($trimmedLower.StartsWith('#')) { continue }
+                if (-not $psInBlockComment -and $trimmed.Contains('<#')) { $psInBlockComment = $true }
+                if ($psInBlockComment) {
+                    if ($trimmed.Contains('#>')) { $psInBlockComment = $false }
+                    continue
+                }
+
+                if (-not $psHereTerminator) {
+                    if ($trimmed -eq '@"') { $psHereTerminator = '"@'; continue }
+                    if ($trimmed -eq "@'") { $psHereTerminator = "'@"; continue }
+                } else {
+                    if ($trimmed -eq $psHereTerminator) { $psHereTerminator = $null }
+                    continue
+                }
+
+                if ($trimmedLower.StartsWith('#')) { continue }
                 if ($trimmedLower.StartsWith('write-host')) { continue }
                 if ($trimmedLower.StartsWith('write-setuplog')) { continue }
 
@@ -399,7 +553,7 @@ function Test-ObservabilityGuardrail {
     if ($detected.Count -gt 0) {
         $result.Pass = $false
         Write-CheckLine -Name 'observability guardrail' -Pass $false
-        Write-Host ("  potential flow-control edits detected in: {0}" -f ($changedWatched -join ', '))
+        Write-Host ("  potential flow-control edits detected in: {0}" -f ($changedWatchedDisplay -join ', '))
         Write-Host ("  keyword hits: {0}" -f (($detected | Sort-Object -Unique) -join ', '))
     } else {
         Write-CheckLine -Name 'observability guardrail' -Pass $true
