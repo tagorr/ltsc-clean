@@ -144,6 +144,9 @@ function Test-ReadmeAnchors {
         'SetupComplete.cmd'
     ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
 
+    $textFilesResult = Get-TrackedTextFiles -RepoRoot $RepoRoot
+    $allTextFiles = @($textFilesResult.Files)
+
     $fallbackFiles = @(
     $allTextFiles | Where-Object {
         ($preferredFiles -notcontains $_) -and
