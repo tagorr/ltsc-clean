@@ -265,36 +265,27 @@ See section **5.1** below for details and a sample verification snippet.
 
 - **Edition** or **Build** mismatch → log **ERROR**, set `FAILED=1`, and jump to the shared final RC tail so `[RC] returning <code>` is still logged.
 
-- **DisplayVersion** mismatch → behavior is controlled by `STRICT_DISPLAYVERSION`:
+- **DisplayVersion** mismatch → behavior is controlled by `STRICT_DISPLAYVERSION` (default `1`, fail-closed):
 
   - `1` → log **ERROR**, set `FAILED=1`, and jump to the shared final RC tail;
 
-  - `0` → log **WARN** and **continue** (best‑effort).
+  - `0` → log **WARN** and **continue** (best‑effort opt-out).
+  - In `:gate_dv`, `DV` is read from the registry before branching on strictness; if unavailable it is normalized to `<missing>` so mismatch logs are never blank.
 
 ### 5.1 Platform gate - details and code
 
 ```bat
 
-if /i not "%ED%"=="%REQUIRED_EDITION%" (
-  call :log "[ERROR] EditionID=%ED% (expected %REQUIRED_EDITION%). Aborting."
+REM REQUIRED_DV/STRICT_DISPLAYVERSION set earlier.
+REM :gate_dv reads DV from registry (DV=<missing> if unreadable), then returns via exit /b 0|1.
+REM WARN (opt-out: STRICT_DISPLAYVERSION!=1; only if REQUIRED_DV defined):
+REM   [WARN] DisplayVersion=%DV% (expected %REQUIRED_DV%). Proceeding.
+REM ERROR (strict mismatch):
+REM   [ERROR] DisplayVersion=%DV% (expected %REQUIRED_DV%). Aborting.
+call :gate_dv
+if errorlevel 1 (
   set "FAILED=1"
   goto :l2c_final_rc
-)
-
-for /f "tokens=1" %%# in ("%CB%") do set /a BUILD=%%#
-
-if %BUILD% LSS %MIN_BUILD% (
-  call :log "[ERROR] CurrentBuild=%CBN% (expected >= %MBN%). Aborting."
-  set "FAILED=1"
-  goto :l2c_final_rc
-)
-
-if /i not "%DV%"=="%REQUIRED_DV%" (
-  if "%STRICT_DISPLAYVERSION%"=="1" (
-    call :log "[ERROR] DisplayVersion=%DV% (expected %REQUIRED_DV%). Aborting."
-    set "FAILED=1"
-    goto :l2c_final_rc
-  ) else call :log "[WARN] DV mismatch; proceeding"
 )
 
 ```
