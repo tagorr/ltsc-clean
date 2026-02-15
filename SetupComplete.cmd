@@ -1458,6 +1458,7 @@ if "%RC%"=="0" (
 
 :svc_done
 set "_svc="
+set "RC="
 exit /b 0
 
 :task_disable
@@ -1472,6 +1473,7 @@ if "%RC%"=="0" (
 )
 
 :task_done
+set "RC="
 exit /b 0
 
 :after_telemetry_hardening
