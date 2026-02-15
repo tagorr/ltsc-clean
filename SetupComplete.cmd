@@ -123,6 +123,75 @@ if errorlevel 1 (
 )
 goto :eof
 
+:l2c_defuser_quickaccess
+REM Best-effort. Loads Default user hive to HKU\DefUser and applies a few Explorer defaults.
+REM usage: call :l2c_defuser_quickaccess "%SystemDrive%\Users\Default\NTUSER.DAT"
+set "L2C_DEFUSER_QA_FAILED=0"
+
+reg load HKU\DefUser "%~1" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[WARN] DEFUSER_LOAD_FAILED rc=%RC% hive=HKU\\DefUser file=%~1"
+  goto :eof
+)
+
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowRecent   /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=ShowRecent value=0"
+)
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowFrequent /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=ShowFrequent value=0"
+)
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo     /t REG_DWORD /d 1 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=LaunchTo value=1"
+)
+
+reg unload HKU\DefUser >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_UNLOAD_FAILED rc=%RC% hive=HKU\\DefUser"
+)
+
+if "%L2C_DEFUSER_QA_FAILED%"=="0" (
+  call :log "[STEP] Default profile Quick Access configured (new users only)"
+) else (
+  call :log "[WARN] Default profile Quick Access tweaks incomplete (see prior warnings)"
+)
+set "L2C_DEFUSER_QA_FAILED="
+set "RC="
+goto :eof
+
+:l2c_temp_logon_tweaks
+REM Best-effort. Do not hard-fail if these cannot be applied.
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_TWEAK_FAILED rc=%RC% key=%SYS% name=DisableCAD value=1"
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_TWEAK_FAILED rc=%RC% key=%NGC% name=DevicePasswordLessBuildVersion value=0"
+set "RC="
+goto :eof
+
+:l2c_temp_logon_rollback
+REM Best-effort rollback. Do not alter FINAL_RC if rollback fails.
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_ROLLBACK_FAILED rc=%RC% key=%SYS% name=DisableCAD value=0"
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_ROLLBACK_FAILED rc=%RC% key=%NGC% name=DevicePasswordLessBuildVersion value=2"
+set "RC="
+goto :eof
+
 :disable_feature_if_enabled
 REM usage: call :disable_feature_if_enabled FeatureName LogName
 set "FN=%~1"
@@ -607,24 +676,21 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "DisableWebSearch
 call :log "[SECTION] Explorer Quick Access defaults"
 set "DEFNTUSER=%SystemDrive%\Users\Default\NTUSER.DAT"
 if exist "%DEFNTUSER%" (
-  reg load HKU\DefUser "%DEFNTUSER%" >nul 2>&1
-  if not errorlevel 1 (
-    reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowRecent   /t REG_DWORD /d 0 /f >nul 2>&1
-    reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowFrequent /t REG_DWORD /d 0 /f >nul 2>&1
-    reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo     /t REG_DWORD /d 1 /f >nul 2>&1
-    reg unload HKU\DefUser >nul 2>&1
-    call :log "[STEP] Default profile Quick Access configured (new users only)"
-  ) else (
-    call :log "[WARN] Could not load Default user hive for Quick Access tweaks"
-  )
+  call :l2c_defuser_quickaccess "%DEFNTUSER%"
 ) else (
   call :log "[INFO] Default user hive not found; skipping Quick Access tweaks"
 )
 
 :: ------------ Power settings ------------
 powercfg -h off >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] POWERCFG_HIBERNATE_OFF_FAILED rc=%RC%"
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] REGADD_HIBERBOOT_DISABLED_FAILED rc=%RC% key=HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power name=HiberbootEnabled value=0"
 powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] POWERCFG_SETACTIVE_FAILED rc=%RC% scheme=e9a42b02-d5df-448d-aa00-03f14749eb61"
 
 REM === [L2C] Winlogon bootstrap + CAD/NGC policies (idempotent) ===
 set "WL=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
@@ -755,12 +821,18 @@ set "L2C_PRIMARYADMIN_PASSWORD="
 REM Temporary logon policies
 if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   REM Temp logon relax, only if secret present
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+  call :l2c_temp_logon_tweaks
 ) else (
   call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
 )
 reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[ERROR] IgnoreShiftOverride set failed rc=%RC% key=%WL% name=IgnoreShiftOverride value=0"
+  call :track_rc %RC%
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
 REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
@@ -819,8 +891,7 @@ if "%FINAL_RC%"=="0" if "%FAILED%"=="1" set "FINAL_RC=1"
 
 REM if the final RC is not 0, roll back temporary logon policies
 if not "%FINAL_RC%"=="0" (
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+  call :l2c_temp_logon_rollback
 )
 
 if "%FINAL_RC%"=="0" (
