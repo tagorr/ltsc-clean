@@ -23,7 +23,7 @@ Thanks for your interest in contributing!
 
 ## Line endings (EOL)
 
-- Scripts `*.ps1`, `*.cmd`, `*.bat` **must use CRLF**.
+- Scripts `*.ps1`, `*.cmd` **must use CRLF**.
 - Markdown `*.md` **should use LF**.
 - This is enforced by `.gitattributes` and an EOL CI guard (`.github/workflows/eol-guard.yml`).
 
@@ -81,7 +81,7 @@ This repo is designed to be edited with Codex CLI under strict constraints.
 - Minimal diffs only. No reformatting outside the hunks required by the change.
 - Temporary helper scripts (if needed) must live under `<workspace>\.codex_tmp\` only.
 - Codex must not perform state-changing Git operations (commit, push, merge, checkout, restore). Read-only Git commands (for example `git status`, `git diff`) are OK when needed for situational awareness.
-- Preserve repository encoding and line endings (scripts CRLF, Markdown LF). UTF-8 without BOM, no NUL bytes.
+- Preserve repository encoding and line endings (scripts CRLF, Markdown LF). UTF-8 without BOM, no NUL bytes. CI enforces ASCII-only for tracked `*.cmd`/`*.ps1` ("ASCII Only Guard").
 - Prefer Windows-native tooling and pinned Windows PowerShell 5.1 execution rules as documented (avoid PowerShell 7+, avoid multi-layer quoting tricks).
 
 ## Shell rules (.cmd/.ps1) and minimal-diff

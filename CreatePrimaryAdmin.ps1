@@ -415,7 +415,7 @@ function Test-IsAlreadyMemberError([System.Management.Automation.ErrorRecord]$Er
   if ($msg -and ($msg -match '(?i)(?:\b1378\b|0x80070562)')) {
     if ($VerboseLog) {
       $msgOneLine = ($msg -replace '\s+', ' ').Trim()
-      if ($msgOneLine.Length -gt 180) { $msgOneLine = $msgOneLine.Substring(0,180) + '…' }
+      if ($msgOneLine.Length -gt 180) { $msgOneLine = $msgOneLine.Substring(0,180) + '[[...]]' }
 
       $fqidText = if ($fqid) { $fqid } else { '' }
       $etypeText = if ($etype) { $etype } else { '' }
