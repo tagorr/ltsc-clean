@@ -6,9 +6,10 @@
 
   * [ ] UTF-8 encoding without BOM.
   * [ ] CRLF line endings.
-* [ ] All CMD scripts (`*.cmd`, `*.bat`) use:
+  * [ ] ASCII-only content is enforced by CI ("ASCII Only Guard").
+* [ ] All CMD scripts (`*.cmd`) use:
 
-  * [ ] ANSI or UTF-8 without BOM (within CI constraints).
+  * [ ] UTF-8 without BOM (within CI constraints).
   * [ ] CRLF line endings.
 * [ ] All Markdown documentation (`*.md`) uses:
 
