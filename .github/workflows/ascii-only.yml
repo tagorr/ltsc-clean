@@ -1,0 +1,56 @@
+name: ASCII Only Guard
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  ascii-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce ASCII-only scripts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import sys
+
+
+          def safe_snippet(line_bytes):
+              first = next(i for i, b in enumerate(line_bytes) if b >= 0x80)
+              start = max(0, first - 20)
+              end = min(len(line_bytes), first + 40)
+              snippet = line_bytes[start:end].decode("ascii", "backslashreplace")
+              if start > 0:
+                  snippet = "..." + snippet
+              if end < len(line_bytes):
+                  snippet = snippet + "..."
+              return snippet
+
+
+          ls = subprocess.run(
+              ["git", "ls-files", "--", "*.cmd", "*.ps1"],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+          files = [line for line in ls.stdout.splitlines() if line]
+          matches = []
+
+          for relative_path in files:
+              with open(relative_path, "rb") as handle:
+                  for line_number, raw_line in enumerate(handle.read().splitlines(), start=1):
+                      if any(byte >= 0x80 for byte in raw_line):
+                          matches.append((relative_path, line_number, safe_snippet(raw_line)))
+
+          if matches:
+              print("Non-ASCII characters detected in .cmd/.ps1 files:")
+              for path, line, snippet in matches:
+                  print(f"{path}:{line}: {snippet}")
+              sys.exit(1)
+
+          print("ASCII-only check passed for .cmd/.ps1 files.")
+          PY
