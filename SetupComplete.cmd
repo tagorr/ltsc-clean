@@ -1037,6 +1037,7 @@ if not exist "%SystemRoot%\System32\Tasks\L2C" (
     call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=mkdir dir=%SystemRoot%\System32\Tasks\L2C"
     call :track_rc %RC%
     set "FAILED=1"
+    set "STAGEB_NOT_SCHEDULED=1"
     exit /b %RC%
   )
 )
@@ -1048,6 +1049,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=inheritance_r dir=%SystemRoot%\System32\Tasks\L2C"
   call :track_rc %RC%
   set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
   exit /b %RC%
 )
 icacls "%SystemRoot%\System32\Tasks\L2C" /remove:g "*S-1-5-11" "*S-1-5-32-545" >nul 2>&1
@@ -1056,6 +1058,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=remove_g dir=%SystemRoot%\System32\Tasks\L2C"
   call :track_rc %RC%
   set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
   exit /b %RC%
 )
 
@@ -1066,6 +1069,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=grant_r dir=%SystemRoot%\System32\Tasks\L2C"
   call :track_rc %RC%
   set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
   exit /b %RC%
 )
 
