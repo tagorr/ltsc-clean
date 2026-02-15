@@ -25,7 +25,7 @@ Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not
 * **Owner (maintainer/operator):** defines the scope for each change, runs Codex CLI locally, reviews diffs, applies changes, performs all state-changing Git actions (commit, push, PR, merge), and remains accountable for final behavior and security posture.
 * **ChatGPT:** helps draft prompts, audits, and documentation text. Has no direct access to the repo working copy, cannot run commands or Git actions, and must not claim that tests were executed.
 * **Codex CLI:** edits files in the local working copy within the allowed scope, produces minimal diffs, follows `docs/INTERACTION_CONTRACT.md`, does not perform state-changing Git actions, and does not expand scope without explicit instruction. Read-only Git commands (for example `git status`, `git diff`) are allowed when needed for situational awareness.
-* **CI (GitHub Actions):** runs automated checks on PRs (for example EOL/BOM/NUL guardrails) and reports status only. CI does not replace human review and does not modify repository content.
+* **CI (GitHub Actions):** runs automated checks on PRs (for example EOL/BOM/NUL guardrails and ASCII-only scripts via "ASCII Only Guard") and reports status only. CI does not replace human review and does not modify repository content.
 
 ## Invariants
 
@@ -34,8 +34,8 @@ Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not
 * Documentation must match actual behavior (paths, logs, steps). Details live in `README.md` and `DECISIONS.md`.
 * **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; do not add an extra `cmd.exe /c` wrapper inside emitted step commands (the harness already runs every step via `cmd.exe /c "<line>"`) (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Project PowerShell/CLI rules**.
 * Use `reg.exe` directly. Always inspect `$LASTEXITCODE` after each call. For `DELETE`, return codes `{0,2}` are treated as success.
-* In `.cmd/.bat` files, direct PowerShell syntax is **not allowed**. Use it only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
-* In `.cmd/.bat` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
+* In `.cmd` files, direct PowerShell syntax is **not allowed**. Use it only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
+* In `.cmd` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
 
 ## Codex CLI Contract
 
@@ -98,13 +98,13 @@ probe launcher path.
 
 ### Shell roles
 
-* Use CMD for `.cmd/.bat` semantics and simple commands where CMD parsing is safe.
+* Use CMD for `.cmd` semantics and simple commands where CMD parsing is safe.
 * Use Windows PowerShell 5.1 (full path) as the outer shell for brittle tasks (search, regex, quoting-heavy commands, structured parsing, pipelines/metacharacters), per `docs/INTERACTION_CONTRACT.md`.
 * Search defaults: use `git grep` scoped to explicit paths (tracked files by default); `rg` is optional only and must be constrained. Do not use `findstr` as a default search tool. If any probe needs branching on grep output, do it in Scripted mode and normalize `git grep` RC=1 explicitly (per `docs/INTERACTION_CONTRACT.md` → “Diagnostics and probes”).
 
 ### EOL/BOM policy
 
-* `*.md` stored with LF. `.cmd/.bat/.ps1` stored with CRLF.
+* `*.md` stored with LF. `.cmd/.ps1` stored with CRLF.
 * UTF-8 without BOM everywhere. Zero bytes are forbidden.
 * CI guard enforces the EOL policy in GitHub (CLGuard). Treat .gitattributes as the source of truth for LF vs CRLF expectations.
 * UTF-8 without BOM and “no NUL bytes” are required invariants; GitHub CI enforces them for a conservative set of tracked text-like files (see `.github/workflows/eol-guard.yml`). In-repo local hooks do not enforce them.

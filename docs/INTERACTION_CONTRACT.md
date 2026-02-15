@@ -256,7 +256,7 @@ The following are forbidden in this repository’s execution workflow:
 * Creating multiple temporary execution `.ps1` files for one investigation when one probe script would suffice
 * Building reusable tooling/frameworks under `.codex_tmp` (for example: `common.ps1`, `helper.ps1`, `*.psm1`, subfolders, or multi-file toolchains)
 * Growing a probe across retries into a larger multi-mode tool instead of keeping it a single-use probe
-* Introducing `EnableDelayedExpansion` in tracked `.cmd` / `.bat` scripts
+* Introducing `EnableDelayedExpansion` in tracked `.cmd` scripts
 
 
 ## File writes, encoding, and redirections
@@ -285,8 +285,8 @@ Capturing output (diagnostic logs):
 ### Encoding and EOL
 
 - Tracked Markdown (.md): UTF-8 without BOM, LF line endings.
-- Tracked scripts (.ps1, .cmd, .bat): UTF-8 without BOM, CRLF line endings.
-- Tracked scripts must be ASCII-only (no non-ASCII characters in file contents).
+- Tracked scripts (.ps1, .cmd): UTF-8 without BOM, CRLF line endings.
+- Tracked scripts must be ASCII-only (no non-ASCII characters in file contents). CI enforces this via GitHub Actions workflow "ASCII Only Guard" (`.github/workflows/ascii-only.yml`).
 - Temporary execution `.ps1` files under `.codex_tmp`: UTF-8 without BOM.
 - Temporary execution scripts under `.codex_tmp` do not require a specific line ending style (LF or CRLF is acceptable). Do not spend effort normalizing EOL for temporary scripts.
 

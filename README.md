@@ -548,7 +548,7 @@ MIT
 
 This repo enforces line endings:
 
-* Scripts: `*.ps1`, `*.cmd`, `*.bat` -> CRLF
+* Scripts: `*.ps1`, `*.cmd` -> CRLF
 * Markdown: `*.md` -> LF
 * Other text: auto detected via Git attributes
 
@@ -559,7 +559,6 @@ Enforcement:
    ```gitattributes
    *.ps1 text eol=crlf
    *.cmd text eol=crlf
-   *.bat text eol=crlf
    *.md  text eol=lf
    *     text=auto
    ```
@@ -568,8 +567,8 @@ Enforcement:
 
 What happens on PRs:
 
-* If a change introduces LF only lines in `*.ps1`, `*.cmd`, or `*.bat`, the workflow fails and merge is blocked until line endings are fixed.
-* CI also enforces: no UTF-8 BOM, no NUL bytes (for covered text-like tracked files), and Markdown `*.md` must be LF-only (no CR).
+* If a change introduces LF only lines in `*.ps1` or `*.cmd`, the workflow fails and merge is blocked until line endings are fixed.
+* CI also enforces: no UTF-8 BOM, no NUL bytes (for covered text-like tracked files), Markdown `*.md` must be LF-only (no CR), and tracked `*.cmd`/`*.ps1` must be ASCII-only ("ASCII Only Guard").
 
 See also `CONTRIBUTING.md` for editor tips and local checks, and the rationale in `DECISIONS.md`.
 
@@ -590,13 +589,13 @@ These rules apply only to:
 * interactive Windows PowerShell 5.1 commands (console "Run as administrator")
 * project PowerShell scripts (`.ps1`)
 
-These rules do not apply to batch scripts (`.cmd` and `.bat`) such as `SetupComplete.cmd` and `PreOOBE.cmd`. For `.cmd` and `.bat` use pure CMD syntax:
+These rules do not apply to batch scripts (`.cmd`) such as `SetupComplete.cmd` and `PreOOBE.cmd`. For `.cmd` use pure CMD syntax:
 
 * variables: `%VAR%` (and `!VAR!` when Delayed Expansion is enabled)
 * redirection and suppression: `>nul` for STDOUT, `2>nul` for STDERR, `>nul 2>&1` for both
 * control flow: `call :label`, `goto`, `if errorlevel`, `for /f`, and similar
 
-Note: the "no `>nul` and `2>nul`" constraint applies only to PowerShell context. In `.cmd` and `.bat` these are valid constructs.
+Note: the "no `>nul` and `2>nul`" constraint applies only to PowerShell context. In `.cmd` these are valid constructs.
 
 ### 0) General principle
 
@@ -644,7 +643,7 @@ Note: the "no `>nul` and `2>nul`" constraint applies only to PowerShell context.
 * Do not use provider style `HKLM:\...` paths in `reg.exe` commands.
 * Do not use smart quotes or non ASCII punctuation; stick to regular `'`, `"`, `-`, `/`.
 * Do not use PowerShell 7 features or syntax that is incompatible with 5.1.
-* In `.cmd` and `.bat` files PowerShell syntax (`$variable`, `| Out-Null`, cmdlets) is forbidden unless wrapped via `powershell.exe ...`.
+* In `.cmd` files PowerShell syntax (`$variable`, `| Out-Null`, cmdlets) is forbidden unless wrapped via `powershell.exe ...`.
 
 ### Calling PowerShell from CMD scripts (when needed)
 

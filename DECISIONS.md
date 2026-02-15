@@ -632,11 +632,11 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 **Date:** 2025-10-13
 
-**Context.** Windows script hosts (`*.ps1/*.cmd/*.bat`) expect CRLF line endings. Markdown and most tooling are LF-friendly. Mixed/incorrect EOLs caused CI and runtime issues.
+**Context.** Windows script hosts (`*.ps1/*.cmd`) expect CRLF line endings. Markdown and most tooling are LF-friendly. Mixed/incorrect EOLs caused CI and runtime issues.
 
 **Decision.**
 
-- `.ps1/.cmd/.bat` → CRLF via `.gitattributes` and a CI guard (`.github/workflows/eol-guard.yml`).
+- `.ps1/.cmd` → CRLF via `.gitattributes` and a CI guard (`.github/workflows/eol-guard.yml`).
 
 - `.md` → LF.
 
@@ -654,7 +654,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 ### ADR: No Delayed Expansion in .cmd
 
-- Decision: `EnableDelayedExpansion` is forbidden in `.cmd/.bat`.
+- Decision: `EnableDelayedExpansion` is forbidden in `.cmd`.
 
 - Rationale: escaping pitfalls with `!`, unpredictable parsing in localized environments; simpler RC handling.
 
