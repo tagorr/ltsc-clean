@@ -831,7 +831,8 @@ if not "%RC%"=="0" (
   call :log "[ERROR] IgnoreShiftOverride set failed rc=%RC% key=%WL% name=IgnoreShiftOverride value=0"
   call :track_rc %RC%
   set "FAILED=1"
-  goto :l2c_final_rc
+  set "STAGEB_NOT_SCHEDULED=1"
+  goto :l2c_recovery_and_reboot
 )
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
@@ -845,6 +846,7 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%
   set "STAGEB_NOT_SCHEDULED=1"
 )
 
+:l2c_recovery_and_reboot
 REM === [L2C] Recovery gate (no extra registrations on failure) ===
 if "%FAILED%"=="1" (
   call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
