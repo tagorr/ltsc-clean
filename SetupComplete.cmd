@@ -1030,14 +1030,44 @@ set "ACL_UNSAFE="
 set "TMP="
 
 REM [L2C] Harden task container ACL to prevent inheriting AU:FW from \Tasks (non-admin tamper boundary).
-if not exist "%SystemRoot%\System32\Tasks\L2C" mkdir "%SystemRoot%\System32\Tasks\L2C" >nul 2>&1
+if not exist "%SystemRoot%\System32\Tasks\L2C" (
+  mkdir "%SystemRoot%\System32\Tasks\L2C" >nul 2>&1
+  set "RC=%ERRORLEVEL%"
+  if not "%RC%"=="0" (
+    call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=mkdir dir=%SystemRoot%\System32\Tasks\L2C"
+    call :track_rc %RC%
+    set "FAILED=1"
+    goto :l2c_final_rc
+  )
+)
 
 REM Break inheritance but COPY inherited ACEs first (language-neutral via SIDs), then remove risky principals.
 icacls "%SystemRoot%\System32\Tasks\L2C" /inheritance:r >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=inheritance_r dir=%SystemRoot%\System32\Tasks\L2C"
+  call :track_rc %RC%
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 icacls "%SystemRoot%\System32\Tasks\L2C" /remove:g "*S-1-5-11" "*S-1-5-32-545" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=remove_g dir=%SystemRoot%\System32\Tasks\L2C"
+  call :track_rc %RC%
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 
 REM Ensure SYSTEM and Administrators have FullControl explicitly.
 icacls "%SystemRoot%\System32\Tasks\L2C" /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=grant_r dir=%SystemRoot%\System32\Tasks\L2C"
+  call :track_rc %RC%
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
 
 call :log "[ACLBOUNDARY] Hardened task_dir=%SystemRoot%\System32\Tasks\L2C (inheritance removed; AU/Users removed; SYSTEM/Admins granted F)"
 
@@ -1416,8 +1446,15 @@ REM Usage: call :svc_disable "ServiceName"
 set "_svc=%~1"
 sc query "%_svc%" >nul 2>&1 || goto :svc_done
 sc stop  "%_svc%" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] SERVICE_STOP_FAILED rc=%RC% service=%_svc%"
 sc config "%_svc%" start= disabled >nul 2>&1
->>"%WINDIR%\Panther\SetupComplete.log" echo [OK] Service "%_svc%" -> Disabled
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  call :log "[OK] Service ""%_svc%"" -> Disabled"
+) else (
+  call :log "[WARN] SERVICE_DISABLE_FAILED rc=%RC% service=%_svc%"
+)
 
 :svc_done
 set "_svc="
@@ -1427,7 +1464,12 @@ exit /b 0
 REM Usage: call :task_disable "\Path\To\Task"
 schtasks /Query /TN "%~1" >nul 2>&1 || goto :task_done
 schtasks /Change /TN "%~1" /Disable >nul 2>&1
->>"%WINDIR%\Panther\SetupComplete.log" echo [OK] Task "%~1" -> Disabled
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  call :log "[OK] Task ""%~1"" -> Disabled"
+) else (
+  call :log "[WARN] TASK_DISABLE_FAILED rc=%RC% task=%~1"
+)
 
 :task_done
 exit /b 0
