@@ -1037,7 +1037,7 @@ if not exist "%SystemRoot%\System32\Tasks\L2C" (
     call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=mkdir dir=%SystemRoot%\System32\Tasks\L2C"
     call :track_rc %RC%
     set "FAILED=1"
-    goto :l2c_final_rc
+    exit /b %RC%
   )
 )
 
@@ -1048,7 +1048,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=inheritance_r dir=%SystemRoot%\System32\Tasks\L2C"
   call :track_rc %RC%
   set "FAILED=1"
-  goto :l2c_final_rc
+  exit /b %RC%
 )
 icacls "%SystemRoot%\System32\Tasks\L2C" /remove:g "*S-1-5-11" "*S-1-5-32-545" >nul 2>&1
 set "RC=%ERRORLEVEL%"
@@ -1056,7 +1056,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=remove_g dir=%SystemRoot%\System32\Tasks\L2C"
   call :track_rc %RC%
   set "FAILED=1"
-  goto :l2c_final_rc
+  exit /b %RC%
 )
 
 REM Ensure SYSTEM and Administrators have FullControl explicitly.
@@ -1066,7 +1066,7 @@ if not "%RC%"=="0" (
   call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=grant_r dir=%SystemRoot%\System32\Tasks\L2C"
   call :track_rc %RC%
   set "FAILED=1"
-  goto :l2c_final_rc
+  exit /b %RC%
 )
 
 call :log "[ACLBOUNDARY] Hardened task_dir=%SystemRoot%\System32\Tasks\L2C (inheritance removed; AU/Users removed; SYSTEM/Admins granted F)"
