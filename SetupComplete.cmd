@@ -910,70 +910,71 @@ REM Handle the result of setting Winlogon DefaultPassword.
 REM Input: ERRORLEVEL from the PowerShell command.
 REM Use the global WL and FAILED.
 
+if errorlevel 1 goto :winlogon_defaultpassword_failed
 set "RC=%ERRORLEVEL%"
 call :track_rc %RC%
 
-if "%RC%"=="0" (
-  reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon AutoAdminLogon setup failed (RC=%RC%)"
-    exit /b %RC%
-  )
+reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_autoadminlogon_failed
 
-  reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon ForceAutoLogon setup failed (RC=%RC%)"
-    exit /b %RC%
-  )
+reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_forceautologon_failed
 
-  reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon AutoLogonCount setup failed (RC=%RC%)"
-    exit /b %RC%
-  )
-  call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
-  call :log "[INFO] L2C_MARKER_WRITE_BEGIN key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
-  reg add "HKLM\SOFTWARE\L2C" /v AutologonPrimed /t REG_DWORD /d 1 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if "%RC%"=="0" (
-    set "L2C_AUTOLOGON_ARMED=1"
-    set "L2C_AUTOLOGON_DEGRADED=0"
-    call :log "[INFO] L2C_MARKER_WRITE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
-    exit /b 0
-  )
-  call :log "[ERROR] L2C_MARKER_WRITE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
-  call :log "[ERROR] L2C_DEGRADED_ENTERED manual_login_required=1"
-  call :winlogon_rollback_autologon
-  set "L2C_AUTOLOGON_ARMED=0"
-  set "L2C_AUTOLOGON_DEGRADED=1"
-  call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_BEGIN DisableCAD=0 DevicePasswordLessBuildVersion=2"
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
-  )
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
-  )
-  call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_DONE"
-  exit /b 0
-) else (
-  set "FAILED=1"
-  call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
-  exit /b %RC%
-)
+reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_autologoncount_failed
 
+call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
+call :log "[INFO] L2C_MARKER_WRITE_BEGIN key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
+reg add "HKLM\SOFTWARE\L2C" /v AutologonPrimed /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_marker_write_failed
+set "L2C_AUTOLOGON_ARMED=1"
+set "L2C_AUTOLOGON_DEGRADED=0"
+call :log "[INFO] L2C_MARKER_WRITE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
+exit /b 0
+
+:winlogon_defaultpassword_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_autoadminlogon_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon AutoAdminLogon setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_forceautologon_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon ForceAutoLogon setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_autologoncount_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon AutoLogonCount setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_marker_write_failed
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] L2C_MARKER_WRITE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
+call :log "[ERROR] L2C_DEGRADED_ENTERED manual_login_required=1"
+call :winlogon_rollback_autologon
+set "L2C_AUTOLOGON_ARMED=0"
+set "L2C_AUTOLOGON_DEGRADED=1"
+call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_BEGIN DisableCAD=0 DevicePasswordLessBuildVersion=2"
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
+call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_DONE"
 exit /b 0
 
 :l2c_stageb_schedule_and_prime
@@ -1034,46 +1035,18 @@ set "TMP="
 REM [L2C] Harden task container ACL to prevent inheriting AU:FW from \Tasks (non-admin tamper boundary).
 if not exist "%SystemRoot%\System32\Tasks\L2C" (
   mkdir "%SystemRoot%\System32\Tasks\L2C" >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=mkdir dir=%SystemRoot%\System32\Tasks\L2C"
-    call :track_rc %RC%
-    set "FAILED=1"
-    set "STAGEB_NOT_SCHEDULED=1"
-    exit /b %RC%
-  )
+  if errorlevel 1 goto :l2c_taskdir_harden_failed_mkdir
 )
 
 REM Break inheritance but COPY inherited ACEs first (language-neutral via SIDs), then remove risky principals.
 icacls "%SystemRoot%\System32\Tasks\L2C" /inheritance:r >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=inheritance_r dir=%SystemRoot%\System32\Tasks\L2C"
-  call :track_rc %RC%
-  set "FAILED=1"
-  set "STAGEB_NOT_SCHEDULED=1"
-  exit /b %RC%
-)
+if errorlevel 1 goto :l2c_taskdir_harden_failed_inheritance_r
 icacls "%SystemRoot%\System32\Tasks\L2C" /remove:g "*S-1-5-11" "*S-1-5-32-545" >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=remove_g dir=%SystemRoot%\System32\Tasks\L2C"
-  call :track_rc %RC%
-  set "FAILED=1"
-  set "STAGEB_NOT_SCHEDULED=1"
-  exit /b %RC%
-)
+if errorlevel 1 goto :l2c_taskdir_harden_failed_remove_g
 
 REM Ensure SYSTEM and Administrators have FullControl explicitly.
 icacls "%SystemRoot%\System32\Tasks\L2C" /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=grant_r dir=%SystemRoot%\System32\Tasks\L2C"
-  call :track_rc %RC%
-  set "FAILED=1"
-  set "STAGEB_NOT_SCHEDULED=1"
-  exit /b %RC%
-)
+if errorlevel 1 goto :l2c_taskdir_harden_failed_grant_r
 
 call :log "[ACLBOUNDARY] Hardened task_dir=%SystemRoot%\System32\Tasks\L2C (inheritance removed; AU/Users removed; SYSTEM/Admins granted F)"
 
@@ -1157,6 +1130,38 @@ if not "%RC%"=="0" (
 )
 call :log "[INFO] L2C_AUTOLOGON_STATUS armed=%L2C_AUTOLOGON_ARMED% degraded=%L2C_AUTOLOGON_DEGRADED% marker=HKLM\SOFTWARE\L2C\AutologonPrimed"
 exit /b 0
+
+:l2c_taskdir_harden_failed_mkdir
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=mkdir dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
+
+:l2c_taskdir_harden_failed_inheritance_r
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=inheritance_r dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
+
+:l2c_taskdir_harden_failed_remove_g
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=remove_g dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
+
+:l2c_taskdir_harden_failed_grant_r
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=grant_r dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
 
 :l2c_prime_winlogon_autologon
 REM Prime Winlogon autologon. Assumes Stage B task already exists.
@@ -1499,12 +1504,7 @@ REM check if rule exists
 netsh advfirewall firewall show rule name="%RULE%" >nul 2>&1
 if errorlevel 1 (
   netsh advfirewall firewall add rule name="%RULE%" dir=out action=block program="%SystemRoot%\System32\svchost.exe" service=diagtrack enable=yes profile=any >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    endlocal
-    call :log "[ERROR] Failed to add firewall rule (%RC%)."
-    exit /b %RC%
-  )
+  if errorlevel 1 goto :fw_block_diagtrack_add_failed
   endlocal
   call :log "[OK] Firewall rule added: %RULE%"
   exit /b 0
@@ -1513,6 +1513,12 @@ if errorlevel 1 (
   call :log "[OK] Firewall rule already present: %RULE%"
   exit /b 0
 )
+
+:fw_block_diagtrack_add_failed
+set "RC=%ERRORLEVEL%"
+endlocal & set "RC=%RC%"
+call :log "[ERROR] Failed to add firewall rule (%RC%)."
+exit /b %RC%
 
 :master_log_warn_reboot_flag_no_executor
 set "MASTER_LOG_PATH="
