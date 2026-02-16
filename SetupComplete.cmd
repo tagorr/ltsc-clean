@@ -1,7 +1,6 @@
 @echo off
 REM SPDX-License-Identifier: MIT
 REM Windows 10 LTSC 2021 - Clean ^& Quiet Baseline (Official Tools Only)
-REM Generated: 2025-09-15
 setlocal EnableExtensions
 
 :: ------------ logging ------------
