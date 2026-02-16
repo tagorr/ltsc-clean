@@ -193,29 +193,14 @@ When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs r
 
   The Stage B master log aggregates Stage A/B steps, secret cleanup states, and Panther flag handling, including whether the reboot flag was consumed for reboot, cleared as stale, or suppressed.
 
-* Script header in `SetupComplete.cmd` (compact):
+* `SetupComplete.cmd` header (invariants):
 
-  ```bat
+  The header of `SetupComplete.cmd` is intentionally minimal and may evolve. Treat the file itself as the source of truth. The stable invariants are:
 
-  @echo off
-
-  REM SPDX-License-Identifier: MIT
-
-  REM Copyright (c) 2025 tagor-sian
-
-  REM Source: https://github.com/tagor-sian/win10-ltsc-2021-clean-quiet-baseline
-
-  REM Project: Windows 10 LTSC 2021 - Clean & Quiet Baseline (Official Tools Only)
-
-  setlocal EnableExtensions
-
-  set "LOG=%WINDIR%\Panther\SetupComplete.log"
-
-  set "FAILED=0"
-
-  goto :main
-
-  ```
+  - `@echo off`
+  - `REM SPDX-License-Identifier: MIT`
+  - a project banner line that includes `Windows 10 LTSC 2021` and `Clean ^& Quiet Baseline`
+  - `setlocal EnableExtensions`
 
 ---
 
