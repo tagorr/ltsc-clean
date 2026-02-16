@@ -121,9 +121,11 @@ git add --renormalize
 * ✅ EOL checked; no LF-only lines in scripts.
 * ✅ PowerShell 5.1 style rules respected.
 * ✅ Docs updated if behavior or policies changed (`README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`).
+* ✅ Doc references validated: any referenced repo paths in docs still exist (no drift from renames/moves).
 * ✅ PR title and commits use conventional prefixes.
 
 ## CI and checks
 
 * The EOL guard runs on every PR. See the Checks tab for logs.
 * If it fails, fix line endings and push to the same branch; the check will re-run automatically.
+* Docs link validation is manual (no automated link checker): when editing docs, verify that referenced repo paths (for example `AGENTS.md`, `docs/INTERACTION_CONTRACT.md`, `.github/workflows/eol-guard.yml`) still exist and match the current tree.
