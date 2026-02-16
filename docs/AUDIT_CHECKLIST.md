@@ -185,7 +185,7 @@
       * [ ] `%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin` (task definition file)
       * [ ] `%SystemRoot%\System32\Tasks\L2C` (directory)
     * [ ] Evidence: `%WINDIR%\Panther\SetupComplete.log` contains `[ACLBOUNDARY] Hardened task_dir=%SystemRoot%\System32\Tasks\L2C ...`.
-    * [ ] Evidence: `%WINDIR%\Panther\SetupComplete.log` contains `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...`; on FAIL it includes `icacls` output for failing path(s). On post-check failure it logs `[ACLBOUNDARY] Task delete rc=...`.
+    * [ ] Evidence: `%WINDIR%\Panther\SetupComplete.log` contains `[ACLBOUNDARY] PASS ...` / `[ACLBOUNDARY] FAIL ...`; on FAIL it includes structured evidence like `[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=... step=... dir=...` and may include `icacls` output depending on failure mode. On post-check failure it logs `[ACLBOUNDARY] Task delete rc=...`.
     * [ ] Evidence: on unresolved identity with unsafe Allow rights, `%WINDIR%\Panther\SetupComplete.log` can include `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed): path=... id=... rights=... hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.` or `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed, domain_possible): path=... id=... rights=... hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.` (`domain_possible` is a heuristic based on `id=X\Y` format, excluding built-in prefixes).
 * [ ] On `schtasks /Create` error:
 

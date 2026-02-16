@@ -123,6 +123,75 @@ if errorlevel 1 (
 )
 goto :eof
 
+:l2c_defuser_quickaccess
+REM Best-effort. Loads Default user hive to HKU\DefUser and applies a few Explorer defaults.
+REM usage: call :l2c_defuser_quickaccess "%SystemDrive%\Users\Default\NTUSER.DAT"
+set "L2C_DEFUSER_QA_FAILED=0"
+
+reg load HKU\DefUser "%~1" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[WARN] DEFUSER_LOAD_FAILED rc=%RC% hive=HKU\\DefUser file=%~1"
+  goto :eof
+)
+
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowRecent   /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=ShowRecent value=0"
+)
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowFrequent /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=ShowFrequent value=0"
+)
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo     /t REG_DWORD /d 1 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=LaunchTo value=1"
+)
+
+reg unload HKU\DefUser >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  set "L2C_DEFUSER_QA_FAILED=1"
+  call :log "[WARN] DEFUSER_UNLOAD_FAILED rc=%RC% hive=HKU\\DefUser"
+)
+
+if "%L2C_DEFUSER_QA_FAILED%"=="0" (
+  call :log "[STEP] Default profile Quick Access configured (new users only)"
+) else (
+  call :log "[WARN] Default profile Quick Access tweaks incomplete (see prior warnings)"
+)
+set "L2C_DEFUSER_QA_FAILED="
+set "RC="
+goto :eof
+
+:l2c_temp_logon_tweaks
+REM Best-effort. Do not hard-fail if these cannot be applied.
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_TWEAK_FAILED rc=%RC% key=%SYS% name=DisableCAD value=1"
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_TWEAK_FAILED rc=%RC% key=%NGC% name=DevicePasswordLessBuildVersion value=0"
+set "RC="
+goto :eof
+
+:l2c_temp_logon_rollback
+REM Best-effort rollback. Do not alter FINAL_RC if rollback fails.
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_ROLLBACK_FAILED rc=%RC% key=%SYS% name=DisableCAD value=0"
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_ROLLBACK_FAILED rc=%RC% key=%NGC% name=DevicePasswordLessBuildVersion value=2"
+set "RC="
+goto :eof
+
 :disable_feature_if_enabled
 REM usage: call :disable_feature_if_enabled FeatureName LogName
 set "FN=%~1"
@@ -607,24 +676,21 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "DisableWebSearch
 call :log "[SECTION] Explorer Quick Access defaults"
 set "DEFNTUSER=%SystemDrive%\Users\Default\NTUSER.DAT"
 if exist "%DEFNTUSER%" (
-  reg load HKU\DefUser "%DEFNTUSER%" >nul 2>&1
-  if not errorlevel 1 (
-    reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowRecent   /t REG_DWORD /d 0 /f >nul 2>&1
-    reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowFrequent /t REG_DWORD /d 0 /f >nul 2>&1
-    reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo     /t REG_DWORD /d 1 /f >nul 2>&1
-    reg unload HKU\DefUser >nul 2>&1
-    call :log "[STEP] Default profile Quick Access configured (new users only)"
-  ) else (
-    call :log "[WARN] Could not load Default user hive for Quick Access tweaks"
-  )
+  call :l2c_defuser_quickaccess "%DEFNTUSER%"
 ) else (
   call :log "[INFO] Default user hive not found; skipping Quick Access tweaks"
 )
 
 :: ------------ Power settings ------------
 powercfg -h off >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] POWERCFG_HIBERNATE_OFF_FAILED rc=%RC%"
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] REGADD_HIBERBOOT_DISABLED_FAILED rc=%RC% key=HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power name=HiberbootEnabled value=0"
 powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] POWERCFG_SETACTIVE_FAILED rc=%RC% scheme=e9a42b02-d5df-448d-aa00-03f14749eb61"
 
 REM === [L2C] Winlogon bootstrap + CAD/NGC policies (idempotent) ===
 set "WL=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
@@ -755,12 +821,19 @@ set "L2C_PRIMARYADMIN_PASSWORD="
 REM Temporary logon policies
 if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
   REM Temp logon relax, only if secret present
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f >nul 2>&1
+  call :l2c_temp_logon_tweaks
 ) else (
   call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
 )
 reg add "%WL%" /v IgnoreShiftOverride /t REG_SZ /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[ERROR] IgnoreShiftOverride set failed rc=%RC% key=%WL% name=IgnoreShiftOverride value=0"
+  call :track_rc %RC%
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  goto :l2c_recovery_and_reboot
+)
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
 REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
@@ -773,6 +846,7 @@ if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%
   set "STAGEB_NOT_SCHEDULED=1"
 )
 
+:l2c_recovery_and_reboot
 REM === [L2C] Recovery gate (no extra registrations on failure) ===
 if "%FAILED%"=="1" (
   call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
@@ -819,8 +893,7 @@ if "%FINAL_RC%"=="0" if "%FAILED%"=="1" set "FINAL_RC=1"
 
 REM if the final RC is not 0, roll back temporary logon policies
 if not "%FINAL_RC%"=="0" (
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+  call :l2c_temp_logon_rollback
 )
 
 if "%FINAL_RC%"=="0" (
@@ -837,70 +910,71 @@ REM Handle the result of setting Winlogon DefaultPassword.
 REM Input: ERRORLEVEL from the PowerShell command.
 REM Use the global WL and FAILED.
 
+if errorlevel 1 goto :winlogon_defaultpassword_failed
 set "RC=%ERRORLEVEL%"
 call :track_rc %RC%
 
-if "%RC%"=="0" (
-  reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon AutoAdminLogon setup failed (RC=%RC%)"
-    exit /b %RC%
-  )
+reg add "%WL%" /v AutoAdminLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_autoadminlogon_failed
 
-  reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon ForceAutoLogon setup failed (RC=%RC%)"
-    exit /b %RC%
-  )
+reg add "%WL%" /v ForceAutoLogon     /t REG_SZ    /d 1 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_forceautologon_failed
 
-  reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Winlogon AutoLogonCount setup failed (RC=%RC%)"
-    exit /b %RC%
-  )
-  call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
-  call :log "[INFO] L2C_MARKER_WRITE_BEGIN key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
-  reg add "HKLM\SOFTWARE\L2C" /v AutologonPrimed /t REG_DWORD /d 1 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if "%RC%"=="0" (
-    set "L2C_AUTOLOGON_ARMED=1"
-    set "L2C_AUTOLOGON_DEGRADED=0"
-    call :log "[INFO] L2C_MARKER_WRITE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
-    exit /b 0
-  )
-  call :log "[ERROR] L2C_MARKER_WRITE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
-  call :log "[ERROR] L2C_DEGRADED_ENTERED manual_login_required=1"
-  call :winlogon_rollback_autologon
-  set "L2C_AUTOLOGON_ARMED=0"
-  set "L2C_AUTOLOGON_DEGRADED=1"
-  call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_BEGIN DisableCAD=0 DevicePasswordLessBuildVersion=2"
-  reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
-  )
-  reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
-  )
-  call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_DONE"
-  exit /b 0
-) else (
-  set "FAILED=1"
-  call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
-  exit /b %RC%
-)
+reg add "%WL%" /v AutoLogonCount     /t REG_DWORD /d 2 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_autologoncount_failed
 
+call :log "[INFO] Winlogon autologon primed for 'bootstrap'"
+call :log "[INFO] L2C_MARKER_WRITE_BEGIN key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
+reg add "HKLM\SOFTWARE\L2C" /v AutologonPrimed /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 goto :winlogon_marker_write_failed
+set "L2C_AUTOLOGON_ARMED=1"
+set "L2C_AUTOLOGON_DEGRADED=0"
+call :log "[INFO] L2C_MARKER_WRITE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed value=1"
+exit /b 0
+
+:winlogon_defaultpassword_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon DefaultPassword setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_autoadminlogon_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon AutoAdminLogon setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_forceautologon_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon ForceAutoLogon setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_autologoncount_failed
+set "RC=%ERRORLEVEL%"
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Winlogon AutoLogonCount setup failed (RC=%RC%)"
+exit /b %RC%
+
+:winlogon_marker_write_failed
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] L2C_MARKER_WRITE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
+call :log "[ERROR] L2C_DEGRADED_ENTERED manual_login_required=1"
+call :winlogon_rollback_autologon
+set "L2C_AUTOLOGON_ARMED=0"
+set "L2C_AUTOLOGON_DEGRADED=1"
+call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_BEGIN DisableCAD=0 DevicePasswordLessBuildVersion=2"
+reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 0 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
+reg add "%NGC%" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 2 /f >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_WARN rc=%RC%"
+call :log "[INFO] L2C_TEMP_LOGON_TWEAKS_ROLLBACK_DONE"
 exit /b 0
 
 :l2c_stageb_schedule_and_prime
@@ -959,14 +1033,20 @@ set "ACL_UNSAFE="
 set "TMP="
 
 REM [L2C] Harden task container ACL to prevent inheriting AU:FW from \Tasks (non-admin tamper boundary).
-if not exist "%SystemRoot%\System32\Tasks\L2C" mkdir "%SystemRoot%\System32\Tasks\L2C" >nul 2>&1
+if not exist "%SystemRoot%\System32\Tasks\L2C" (
+  mkdir "%SystemRoot%\System32\Tasks\L2C" >nul 2>&1
+  if errorlevel 1 goto :l2c_taskdir_harden_failed_mkdir
+)
 
 REM Break inheritance but COPY inherited ACEs first (language-neutral via SIDs), then remove risky principals.
 icacls "%SystemRoot%\System32\Tasks\L2C" /inheritance:r >nul 2>&1
+if errorlevel 1 goto :l2c_taskdir_harden_failed_inheritance_r
 icacls "%SystemRoot%\System32\Tasks\L2C" /remove:g "*S-1-5-11" "*S-1-5-32-545" >nul 2>&1
+if errorlevel 1 goto :l2c_taskdir_harden_failed_remove_g
 
 REM Ensure SYSTEM and Administrators have FullControl explicitly.
 icacls "%SystemRoot%\System32\Tasks\L2C" /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" >nul 2>&1
+if errorlevel 1 goto :l2c_taskdir_harden_failed_grant_r
 
 call :log "[ACLBOUNDARY] Hardened task_dir=%SystemRoot%\System32\Tasks\L2C (inheritance removed; AU/Users removed; SYSTEM/Admins granted F)"
 
@@ -1050,6 +1130,38 @@ if not "%RC%"=="0" (
 )
 call :log "[INFO] L2C_AUTOLOGON_STATUS armed=%L2C_AUTOLOGON_ARMED% degraded=%L2C_AUTOLOGON_DEGRADED% marker=HKLM\SOFTWARE\L2C\AutologonPrimed"
 exit /b 0
+
+:l2c_taskdir_harden_failed_mkdir
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=mkdir dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
+
+:l2c_taskdir_harden_failed_inheritance_r
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=inheritance_r dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
+
+:l2c_taskdir_harden_failed_remove_g
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=remove_g dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
+
+:l2c_taskdir_harden_failed_grant_r
+set "RC=%ERRORLEVEL%"
+call :log "[ERROR] ACLBOUNDARY_TASKDIR_HARDEN_FAILED rc=%RC% step=grant_r dir=%SystemRoot%\System32\Tasks\L2C"
+call :track_rc %RC%
+set "FAILED=1"
+set "STAGEB_NOT_SCHEDULED=1"
+exit /b %RC%
 
 :l2c_prime_winlogon_autologon
 REM Prime Winlogon autologon. Assumes Stage B task already exists.
@@ -1345,20 +1457,34 @@ REM Usage: call :svc_disable "ServiceName"
 set "_svc=%~1"
 sc query "%_svc%" >nul 2>&1 || goto :svc_done
 sc stop  "%_svc%" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" call :log "[WARN] SERVICE_STOP_FAILED rc=%RC% service=%_svc%"
 sc config "%_svc%" start= disabled >nul 2>&1
->>"%WINDIR%\Panther\SetupComplete.log" echo [OK] Service "%_svc%" -> Disabled
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  call :log "[OK] Service ""%_svc%"" -> Disabled"
+) else (
+  call :log "[WARN] SERVICE_DISABLE_FAILED rc=%RC% service=%_svc%"
+)
 
 :svc_done
 set "_svc="
+set "RC="
 exit /b 0
 
 :task_disable
 REM Usage: call :task_disable "\Path\To\Task"
 schtasks /Query /TN "%~1" >nul 2>&1 || goto :task_done
 schtasks /Change /TN "%~1" /Disable >nul 2>&1
->>"%WINDIR%\Panther\SetupComplete.log" echo [OK] Task "%~1" -> Disabled
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  call :log "[OK] Task ""%~1"" -> Disabled"
+) else (
+  call :log "[WARN] TASK_DISABLE_FAILED rc=%RC% task=%~1"
+)
 
 :task_done
+set "RC="
 exit /b 0
 
 :after_telemetry_hardening
@@ -1378,12 +1504,7 @@ REM check if rule exists
 netsh advfirewall firewall show rule name="%RULE%" >nul 2>&1
 if errorlevel 1 (
   netsh advfirewall firewall add rule name="%RULE%" dir=out action=block program="%SystemRoot%\System32\svchost.exe" service=diagtrack enable=yes profile=any >nul 2>&1
-  set "RC=%ERRORLEVEL%"
-  if not "%RC%"=="0" (
-    endlocal
-    call :log "[ERROR] Failed to add firewall rule (%RC%)."
-    exit /b %RC%
-  )
+  if errorlevel 1 goto :fw_block_diagtrack_add_failed
   endlocal
   call :log "[OK] Firewall rule added: %RULE%"
   exit /b 0
@@ -1392,6 +1513,12 @@ if errorlevel 1 (
   call :log "[OK] Firewall rule already present: %RULE%"
   exit /b 0
 )
+
+:fw_block_diagtrack_add_failed
+set "RC=%ERRORLEVEL%"
+endlocal & set "RC=%RC%"
+call :log "[ERROR] Failed to add firewall rule (%RC%)."
+exit /b %RC%
 
 :master_log_warn_reboot_flag_no_executor
 set "MASTER_LOG_PATH="
