@@ -714,10 +714,16 @@ if "%RC%"=="4" (
   set "FAILED=1"
   call :log "[ERROR] Secret validator internal failure (rc=4); treating both secrets as invalid"
 ) else (
-  set /a TMP=RC ^& 1
-  set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
-  set /a TMP=RC ^& 2
-  set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
+  if not "%RC%"=="0" if not "%RC%"=="1" if not "%RC%"=="2" if not "%RC%"=="3" (
+    call :track_rc %RC%
+    set "FAILED=1"
+    call :log "[ERROR] Secret validator returned unexpected rc=%RC%, treating both secrets as invalid and closing the gate."
+  ) else (
+    set /a TMP=RC ^& 1
+    set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
+    set /a TMP=RC ^& 2
+    set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
+  )
 )
 
 set "TMP="
