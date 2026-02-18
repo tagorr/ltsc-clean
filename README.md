@@ -86,7 +86,7 @@ Use the current-run logs as your single source of truth. Start from the symptom 
    This tells you whether `ValidateSecrets.ps1` accepted the ACL/attribute shape for each secret in the current run.
 3. Scan for any `[ERROR]` / `[WARN]` lines near that section that mention:
 
-   - secret validator internal error (`rc=4`) or similar “internal failure” wording;
+   - secret validator internal error (`rc=4`) or an unexpected validator exit code (logged as `[ERROR]` with the numeric rc);
    - recovery / gate closed due to invalid or missing `.bootstrap.pw` or `.primaryadmin.pw`;
    - malformed primary admin secret (empty first line or unsupported characters).
 4. Confirm whether Stage B was ever registered:
@@ -96,7 +96,7 @@ Use the current-run logs as your single source of truth. Start from the symptom 
 
 High-level interpretation:
 - `bootstrap=1, primaryadmin=1` and task scheduled → Stage B should run on first logon; if it didn’t, check task presence manually.
-- any `0` flag or an internal validator error (`rc=4`) → `SetupComplete.cmd` stayed fail‑closed and did not schedule Stage B.
+- any `0` flag or an internal validator error (`rc=4`) → `SetupComplete.cmd` stayed fail-closed and did not schedule Stage B.
 
 ### Symptom: Stage B ran, but the system is not in the expected final state
 
@@ -171,7 +171,7 @@ Interpretation:
      * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
      * the whitelist is intentionally narrow (only the codes above); any other non-zero DISM return code is treated as a hard failure that blocks unattended provisioning until an operator reviews `SetupComplete.log` and `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` and extends the whitelist deliberately only if the new code is confirmed benign;
     * probes capability state via `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English` with output captured to a temp file and parsed for the `State :` line (no `dism | findstr` pipelines); if the `State :` line is missing/unparsable it logs a WARN and skips removal, and if the probe produces a fatal DISM RC (`DISM_HARD_FAIL=1`) it logs an ERROR and skips subsequent capability removals;
-    * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0–3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration);
+    * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0–3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration); any other validator exit code is treated as unexpected/out-of-contract and fatal: `SetupComplete.cmd` logs an `[ERROR]` with the rc, calls `:track_rc` so `FINAL_RC` can reflect it when it is the first bad rc, sets `FAILED=1`, and keeps both ACL flags at `0`.
     * always logs `.primaryadmin.pw` status in `SetupComplete.log` (present/missing; SEC-2 ACL/attributes `OK`/`BAD`, or `skipped (file missing)` / `unknown (validation not run)`); when `FAILED=1` it does not read `.primaryadmin.pw` contents and logs that the content load was skipped due to earlier failure;
     * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid; validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists (non-empty first line), the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
        * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition;
@@ -208,10 +208,10 @@ If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but AutoAdmi
 
 #### When both ACL flags are 0 (bootstrap=0, primaryadmin=0)
 
-When `[SECTION] Secret ACL validation (bootstrap=0, primaryadmin=0)` appears, both secrets failed validation in this run. This can mean missing files, incorrect ACL/attributes, or an internal validator failure (`rc=4`) that causes a fail‑closed result.
+When `[SECTION] Secret ACL validation (bootstrap=0, primaryadmin=0)` appears, both secrets failed validation in this run. This can mean missing files, incorrect ACL/attributes, or an internal validator failure (`rc=4`) that causes a fail-closed result.
 
 Operator follow-up:
-- look for an `[ERROR]` line that reports an internal validator error (`rc=4`) or similar wording; in that case treat it as a validator problem and note that Stage B was intentionally not registered;
+- look for an `[ERROR]` line that reports an internal validator error (`rc=4`); in that case treat it as a validator execution problem and note that Stage B was intentionally not registered;
 - if present, `[SECRETS] FAIL: path=... reason=identity_translate_failed: raw=...` is a normal validation failure (not `rc=4`) and indicates an identity/SID resolution issue in the secret ACL checks;
 - ACL boundary unresolved-identity failures are fail-closed and appear as `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed): ...` or `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed, domain_possible): ...` with an appended hint such as `hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.` or `hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.`
 - if there is no internal validator error, inspect both secrets on disk for presence, correct ACL/Hidden+System attributes, and (for `.primaryadmin.pw`) the format rules below.
@@ -815,7 +815,7 @@ PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePri
 
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
    * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, anything else is failure;
-   * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate; when the validator returns `4` (internal error) `SetupComplete.cmd` logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration);
+   * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate; when the validator returns `4` (internal error) `SetupComplete.cmd` logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration).
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid, validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
 
      * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`);
