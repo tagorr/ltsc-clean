@@ -713,18 +713,26 @@ set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
 if "%RC%"=="4" (
   set "FAILED=1"
   call :log "[ERROR] Secret validator internal failure (rc=4); treating both secrets as invalid"
-) else (
-  if not "%RC%"=="0" if not "%RC%"=="1" if not "%RC%"=="2" if not "%RC%"=="3" (
-    call :track_rc %RC%
-    set "FAILED=1"
-    call :log "[ERROR] Secret validator returned unexpected rc=%RC%, treating both secrets as invalid and closing the gate."
-  ) else (
-    set /a TMP=RC ^& 1
-    set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
-    set /a TMP=RC ^& 2
-    set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
-  )
+  goto :l2c_secrets_rc_done
 )
+
+if "%RC%"=="0" goto :l2c_secrets_rc_decode
+if "%RC%"=="1" goto :l2c_secrets_rc_decode
+if "%RC%"=="2" goto :l2c_secrets_rc_decode
+if "%RC%"=="3" goto :l2c_secrets_rc_decode
+
+call :track_rc %RC%
+set "FAILED=1"
+call :log "[ERROR] Secret validator returned unexpected rc=%RC%, treating both secrets as invalid and closing the gate."
+goto :l2c_secrets_rc_done
+
+:l2c_secrets_rc_decode
+set /a TMP=RC ^& 1
+set /a L2C_BOOTSTRAP_PW_ACL_OK=TMP
+set /a TMP=RC ^& 2
+set /a L2C_PRIMARYADMIN_PW_ACL_OK=TMP / 2
+
+:l2c_secrets_rc_done
 
 set "TMP="
 call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%, primaryadmin=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
