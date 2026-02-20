@@ -330,6 +330,13 @@ try {
             } catch {
                 $cleanupMessage = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
                 Write-BootstrapLog ("BOOTSTRAP_SECRET_DELETE_FAILED: operator action required. Failed to delete '{0}': {1}. Secret may remain on disk with incorrect permissions." -f $pwPath, $cleanupMessage) 'ERROR'
+                $markerPath = Join-Path $env:WINDIR 'Panther\preoobe_warnings.flag'
+                try {
+                    [System.IO.File]::WriteAllText($markerPath, 'BOOTSTRAP_SECRET_DELETE_FAILED')
+                } catch {
+                    $markerErr = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+                    Write-BootstrapLog ("Failed to write PreOOBE anomaly marker (non-blocking). marker={0} err={1}" -f $markerPath, $markerErr) 'WARN'
+                }
             }
         }
 
