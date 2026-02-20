@@ -169,6 +169,12 @@ try {
 
     Write-BootstrapLog ("Starting bootstrap for local admin '{0}'" -f $u)
 
+    $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
+    if (Test-Path -LiteralPath $pwPath) {
+        Write-BootstrapLog ("BOOTSTRAP_SECRET_ALREADY_EXISTS: refusing to overwrite existing secret file '{0}'" -f $pwPath) 'ERROR'
+        throw "BOOTSTRAP_SECRET_ALREADY_EXISTS: Secret file already exists at '$pwPath'."
+    }
+
     # Require LocalAccounts cmdlets (avoid secret-on-CLI)
     try {
         Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop
@@ -258,8 +264,6 @@ try {
         throw
     }
 
-    $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
-
     # Ensure folder exists
     $folder = Split-Path $pwPath -Parent
     Write-BootstrapLog ("Ensuring folder '{0}' exists for .bootstrap.pw" -f $folder)
@@ -270,18 +274,30 @@ try {
     $secretFileCreated = $false
     $attemptedSecureCreate = $false
     try {
-        if (Test-Path -LiteralPath $pwPath) {
-            Write-BootstrapLog ("BOOTSTRAP_SECRET_ALREADY_EXISTS: refusing to overwrite existing secret file '{0}'" -f $pwPath) 'ERROR'
-            throw "BOOTSTRAP_SECRET_ALREADY_EXISTS: Secret file already exists at '$pwPath'."
-        }
-
         Write-BootstrapLog ("Creating bootstrap password file securely at '{0}'" -f $pwPath)
         $sec = New-BootstrapSecretFileSecurity
 
         $stream = $null
         try {
             $attemptedSecureCreate = $true
-            $stream = New-BootstrapSecretFileStream -Path $pwPath -FileSecurity $sec
+            try {
+                $stream = New-BootstrapSecretFileStream -Path $pwPath -FileSecurity $sec
+            } catch {
+                $alreadyExists = $false
+                $cur = $_.Exception
+                while ($null -ne $cur) {
+                    $hr = $null
+                    try { $hr = $cur.HResult } catch { $hr = $null }
+                    if ($hr -eq -2147024716 -or $hr -eq -2147024713) { $alreadyExists = $true; break }
+                    $cur = $cur.InnerException
+                }
+                if ($alreadyExists) {
+                    $attemptedSecureCreate = $false
+                    Write-BootstrapLog ("BOOTSTRAP_SECRET_ALREADY_EXISTS: refusing to overwrite existing secret file '{0}'" -f $pwPath) 'ERROR'
+                    throw "BOOTSTRAP_SECRET_ALREADY_EXISTS: Secret file already exists at '$pwPath'."
+                }
+                throw
+            }
             $secretFileCreated = $true
 
             # Write as UTF-8 without BOM and no newline noise
