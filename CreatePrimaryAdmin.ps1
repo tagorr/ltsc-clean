@@ -918,7 +918,7 @@ try {
   if ($outcomeLine -eq 'OUTCOME: SUCCESS') {
     $preOobeMarker = Join-Path $env:WINDIR 'Panther\preoobe_warnings.flag'
     if (Test-Path -LiteralPath $preOobeMarker) {
-      Write-SetupLog ("[WARN] PreOOBE anomalies detected during install, review PreOOBE log (non-blocking). marker={0}" -f $preOobeMarker) 'WARN'
+      Write-SetupLog ("PreOOBE anomalies detected during install, review PreOOBE log (non-blocking). marker={0}" -f $preOobeMarker) 'WARN'
       try {
         Remove-Item -LiteralPath $preOobeMarker -Force -ErrorAction Stop
       } catch {

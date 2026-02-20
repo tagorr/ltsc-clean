@@ -349,10 +349,8 @@ catch {
     $exitCode = 1
     if ($_.Exception -and $_.Exception.Message) {
         Write-BootstrapLog ("BootstrapLocalAdmin.ps1 failed: {0}" -f $_.Exception.Message) 'ERROR'
-        Write-Error $_.Exception.Message
     } else {
         Write-BootstrapLog ("BootstrapLocalAdmin.ps1 failed: {0}" -f $_) 'ERROR'
-        Write-Error $_
     }
 }
 
