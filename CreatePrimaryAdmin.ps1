@@ -915,6 +915,17 @@ try {
   $sw.Dispose()
   $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
+  if ($outcomeLine -eq 'OUTCOME: SUCCESS') {
+    $preOobeMarker = Join-Path $env:WINDIR 'Panther\preoobe_warnings.flag'
+    if (Test-Path -LiteralPath $preOobeMarker) {
+      Write-SetupLog ("PreOOBE anomalies detected during install, review PreOOBE log (non-blocking). marker={0}" -f $preOobeMarker) 'WARN'
+      try {
+        Remove-Item -LiteralPath $preOobeMarker -Force -ErrorAction Stop
+      } catch {
+        Write-SetupLog ("[WARN] Failed to delete PreOOBE anomaly marker (non-blocking). marker={0} err={1}" -f $preOobeMarker, $_.Exception.Message) 'WARN'
+      }
+    }
+  }
   if ($isRecovery) {
     Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
     Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'

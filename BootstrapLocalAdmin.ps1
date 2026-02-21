@@ -30,12 +30,147 @@ function Write-BootstrapLog {
     Write-Host ("[BOOTSTRAP] [{0}] {1}" -f $Level, $Message)
 }
 
+function New-BootstrapSecretFileSecurity {
+    $sec = New-Object System.Security.AccessControl.FileSecurity
+    $sec.SetAccessRuleProtection($true, $false)
+
+    $systemSid = [System.Security.Principal.SecurityIdentifier]'S-1-5-18'
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]'S-1-5-32-544'
+
+    $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule $systemSid,'FullControl','Allow'
+    $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsSid,'FullControl','Allow'
+
+    [void]$sec.AddAccessRule($ruleSystem)
+    [void]$sec.AddAccessRule($ruleAdmins)
+
+    return $sec
+}
+
+function New-BootstrapSecretFileStream {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Path,
+
+        [Parameter(Mandatory = $true)]
+        [System.Security.AccessControl.FileSecurity] $FileSecurity
+    )
+
+    $ctor = [System.IO.FileStream].GetConstructor([Type[]]@(
+        [string],
+        [System.IO.FileMode],
+        [System.Security.AccessControl.FileSystemRights],
+        [System.IO.FileShare],
+        [int],
+        [System.IO.FileOptions],
+        [System.Security.AccessControl.FileSecurity]
+    ))
+
+    if ($null -eq $ctor) {
+        throw "BOOTSTRAP_SECRET_SECURE_CREATE_UNAVAILABLE: FileStream create-with-DACL API unavailable in this runtime; refusing to write secret insecurely."
+    }
+
+    # CreateNew fails if the file already exists; security is applied at creation time.
+    return $ctor.Invoke(@(
+        $Path,
+        [System.IO.FileMode]::CreateNew,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        [System.IO.FileShare]::None,
+        4096,
+        [System.IO.FileOptions]::None,
+        $FileSecurity
+    ))
+}
+
+function Assert-BootstrapSecretFileAcl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Path
+    )
+
+    $acl = Get-Acl -LiteralPath $Path
+
+    # Fail closed: missing/null DACL can be overly permissive (effectively "allow everyone").
+    try {
+        $sddl = $acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+    } catch {
+        throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: failed to read DACL SDDL form (Access section)."
+    }
+    if ([string]::IsNullOrEmpty($sddl) -or ($sddl.IndexOf('D:', [System.StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+        throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: missing/null DACL detected (no D: component in SDDL)."
+    }
+
+    if (-not $acl.AreAccessRulesProtected) {
+        throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: inheritance is not disabled (AreAccessRulesProtected=false)."
+    }
+
+    $requiredSids = @('S-1-5-18', 'S-1-5-32-544')
+    $requiredSet = @{}
+    foreach ($sid in $requiredSids) { $requiredSet[$sid] = $true }
+
+    $allowedRightsBySid = @{}
+
+    $rulesAll = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    if ($null -eq $rulesAll -or $rulesAll.Count -eq 0) {
+        throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: DACL rule enumeration returned empty; refusing to accept degenerate ACL."
+    }
+
+    foreach ($r in $rulesAll) {
+        $sidValue = $r.IdentityReference.Value
+
+        if ($r.IsInherited) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: inherited ACE present for SID '$sidValue'."
+        }
+
+        if ($r.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Deny) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: deny ACE present for SID '$sidValue'."
+        }
+        if ($r.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: non-Allow ACE present for SID '$sidValue'."
+        }
+
+        if ($r.InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]::None) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: SID '$sidValue' has non-None InheritanceFlags."
+        }
+
+        if ($r.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: SID '$sidValue' has non-None PropagationFlags."
+        }
+
+        # Strict: no principals beyond SYSTEM + local Administrators.
+        if (-not $requiredSet.ContainsKey($sidValue)) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: unexpected principal SID '$sidValue' present in DACL."
+        }
+
+        # Merge rights across multiple ACEs for required principals.
+        if ($allowedRightsBySid.ContainsKey($sidValue)) {
+            $allowedRightsBySid[$sidValue] = ($allowedRightsBySid[$sidValue] -bor $r.FileSystemRights)
+        } else {
+            $allowedRightsBySid[$sidValue] = $r.FileSystemRights
+        }
+    }
+
+    foreach ($sid in $requiredSids) {
+        if (-not $allowedRightsBySid.ContainsKey($sid)) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: required principal SID '$sid' missing from DACL."
+        }
+        if ( ($allowedRightsBySid[$sid] -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl ) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: required principal SID '$sid' does not include FullControl."
+        }
+    }
+}
+
 $exitCode = 0
 
 try {
     $u = 'bootstrap'
 
     Write-BootstrapLog ("Starting bootstrap for local admin '{0}'" -f $u)
+
+    $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
+    if (Test-Path -LiteralPath $pwPath) {
+        Write-BootstrapLog ("BOOTSTRAP_SECRET_ALREADY_EXISTS: refusing to overwrite existing secret file '{0}'" -f $pwPath) 'ERROR'
+        throw "BOOTSTRAP_SECRET_ALREADY_EXISTS: Secret file already exists at '$pwPath'."
+    }
 
     # Require LocalAccounts cmdlets (avoid secret-on-CLI)
     try {
@@ -126,8 +261,6 @@ try {
         throw
     }
 
-    $pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'
-
     # Ensure folder exists
     $folder = Split-Path $pwPath -Parent
     Write-BootstrapLog ("Ensuring folder '{0}' exists for .bootstrap.pw" -f $folder)
@@ -135,55 +268,77 @@ try {
         New-Item -ItemType Directory -Path $folder -Force | Out-Null
     }
 
-    # Write as UTF-8 without BOM and no newline noise
-    Write-BootstrapLog ("Writing bootstrap password file to '{0}'" -f $pwPath)
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($pwPath, $PasswordPlain, $utf8NoBom)
-
-    # Reset ACL: SYSTEM:(F), Administrators:(F) only, locale-agnostic
+    $secretFileCreated = $false
+    $attemptedSecureCreate = $false
     try {
-        Write-BootstrapLog ("Applying ACL to '{0}' (SYSTEM + Administrators, no inheritance)" -f $pwPath)
+        Write-BootstrapLog ("Creating bootstrap password file securely at '{0}'" -f $pwPath)
+        $sec = New-BootstrapSecretFileSecurity
 
-        $acl = Get-Acl -LiteralPath $pwPath
-        $acl.SetAccessRuleProtection($true, $false)
-        $acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
-
-        $ruleSystem = New-Object System.Security.AccessControl.FileSystemAccessRule 'NT AUTHORITY\SYSTEM','FullControl','Allow'
+        $stream = $null
         try {
-            $adminsNtAccount = $adminsSid.Translate([System.Security.Principal.NTAccount])
-        } catch {
-            Write-BootstrapLog ("Failed to translate Administrators SID '{0}' to NTAccount for ACL: {1}" -f $adminsSid.Value, $_.Exception.Message) 'ERROR'
-            throw
-        }
-        $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule $adminsNtAccount,'FullControl','Allow'
-
-        [void]$acl.AddAccessRule($ruleSystem)
-        [void]$acl.AddAccessRule($ruleAdmins)
-
-        Set-Acl -LiteralPath $pwPath -AclObject $acl
-
-        Write-BootstrapLog ("ACL applied to '{0}' successfully" -f $pwPath)
-    } catch {
-        Write-BootstrapLog ("Failed to apply ACL to '{0}': {1}" -f $pwPath, $_.Exception.Message) 'ERROR'
-        try {
-            if (Test-Path -LiteralPath $pwPath) {
-                Write-BootstrapLog ("Attempting to delete '{0}' after ACL failure" -f $pwPath) 'WARN'
-                Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
-                Write-BootstrapLog ("Deleted '{0}' after ACL failure" -f $pwPath) 'WARN'
-            } else {
-                Write-BootstrapLog ("Password file '{0}' does not exist at ACL failure; nothing to delete" -f $pwPath) 'WARN'
+            $attemptedSecureCreate = $true
+            try {
+                $stream = New-BootstrapSecretFileStream -Path $pwPath -FileSecurity $sec
+            } catch {
+                $alreadyExists = $false
+                $cur = $_.Exception
+                while ($null -ne $cur) {
+                    $hr = $null
+                    try { $hr = $cur.HResult } catch { $hr = $null }
+                    if ($hr -eq -2147024816 -or $hr -eq -2147024713) { $alreadyExists = $true; break }
+                    $cur = $cur.InnerException
+                }
+                if ($alreadyExists) {
+                    $attemptedSecureCreate = $false
+                    Write-BootstrapLog ("BOOTSTRAP_SECRET_ALREADY_EXISTS: refusing to overwrite existing secret file '{0}'" -f $pwPath) 'ERROR'
+                    throw "BOOTSTRAP_SECRET_ALREADY_EXISTS: Secret file already exists at '$pwPath'."
+                }
+                throw
             }
-        } catch {
-            $cleanupMessage = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
-            Write-BootstrapLog ("Failed to delete '{0}' after ACL failure: {1}" -f $pwPath, $cleanupMessage) 'ERROR'
+            $secretFileCreated = $true
+
+            # Write as UTF-8 without BOM and no newline noise
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            $bytesToWrite = $utf8NoBom.GetBytes($PasswordPlain)
+            $stream.Write($bytesToWrite, 0, $bytesToWrite.Length)
+            $stream.Flush()
         }
+        finally {
+            if ($null -ne $stream) {
+                $stream.Dispose()
+            }
+        }
+
+        Assert-BootstrapSecretFileAcl -Path $pwPath
+
+        # Hide as system/hidden
+        Write-BootstrapLog ("Setting Hidden+System attributes on '{0}'" -f $pwPath)
+        $item = Get-Item $pwPath
+        $item.Attributes = 'Hidden','System','Archive'
+    } catch {
+        $failureMessage = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+        Write-BootstrapLog ("Failed while creating/writing/verifying bootstrap secret file '{0}': {1}" -f $pwPath, $failureMessage) 'ERROR'
+
+        if ($secretFileCreated -and (Test-Path -LiteralPath $pwPath)) {
+            try {
+                Write-BootstrapLog ("Attempting to delete '{0}' after bootstrap secret failure" -f $pwPath) 'WARN'
+                Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
+                Write-BootstrapLog ("Deleted '{0}' after bootstrap secret failure" -f $pwPath) 'WARN'
+            } catch {
+                $cleanupMessage = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+                Write-BootstrapLog ("BOOTSTRAP_SECRET_DELETE_FAILED: operator action required. Failed to delete '{0}': {1}. Secret may remain on disk with incorrect permissions." -f $pwPath, $cleanupMessage) 'ERROR'
+                $markerPath = Join-Path $env:WINDIR 'Panther\preoobe_warnings.flag'
+                try {
+                    [System.IO.File]::WriteAllText($markerPath, 'BOOTSTRAP_SECRET_DELETE_FAILED')
+                } catch {
+                    $markerErr = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+                    Write-BootstrapLog ("Failed to write PreOOBE anomaly marker (non-blocking). marker={0} err={1}" -f $markerPath, $markerErr) 'WARN'
+                }
+            }
+        }
+
         throw
     }
-
-    # Hide as system/hidden
-    Write-BootstrapLog ("Setting Hidden+System attributes on '{0}'" -f $pwPath)
-    $item = Get-Item $pwPath
-    $item.Attributes = 'Hidden','System','Archive'
 
     Write-BootstrapLog "Bootstrap lifecycle completed successfully"
 }
@@ -191,10 +346,8 @@ catch {
     $exitCode = 1
     if ($_.Exception -and $_.Exception.Message) {
         Write-BootstrapLog ("BootstrapLocalAdmin.ps1 failed: {0}" -f $_.Exception.Message) 'ERROR'
-        Write-Error $_.Exception.Message
     } else {
         Write-BootstrapLog ("BootstrapLocalAdmin.ps1 failed: {0}" -f $_) 'ERROR'
-        Write-Error $_
     }
 }
 
