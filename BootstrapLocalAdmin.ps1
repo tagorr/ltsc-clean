@@ -159,16 +159,6 @@ function Assert-BootstrapSecretFileAcl {
     }
 }
 
-    foreach ($sid in $requiredSids) {
-        if (-not $allowedRightsBySid.ContainsKey($sid)) {
-            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: required principal SID '$sid' missing from DACL."
-        }
-        if ( ($allowedRightsBySid[$sid] -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl ) {
-            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: required principal SID '$sid' does not include FullControl."
-        }
-    }
-}
-
 $exitCode = 0
 
 try {
