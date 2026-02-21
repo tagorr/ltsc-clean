@@ -210,12 +210,12 @@
 * [ ] When `NEEDS_REBOOT==1`:
 
   * [ ] `[INFO] Reboot required` is logged.
-  * [ ] `:flag_reboot` creates `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) with predictable content (for example `need-reboot`).
-  * [ ] If `%REBOOT_FLAG%` already exists at SetupComplete start, a WARN is logged and the flag is preserved as a sticky marker; later, if `NEEDS_REBOOT` is still `0` but the flag exists, `NEEDS_REBOOT` is set to `1` so the flag is re-written during the final evaluation.
-* [ ] If `STAGEB_NOT_SCHEDULED==1` when the flag is written, `SetupComplete.log` includes `[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR ...` and SetupComplete writes a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry containing a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for triage.
+  * [ ] `:flag_reboot` signals `%REBOOT_FLAG%` (`%WINDIR%\Panther\_needs_reboot.flag`) via write + verify: logs `REBOOT_FLAG_SIGNAL_BEGIN`, then either `REBOOT_FLAG_SIGNAL_OK` (including `already_present=1` fast-path when the marker already matches) or `REBOOT_FLAG_SIGNAL_FAIL` with `reason`/`observed_class`; on FAIL it sets `FAILED=1` and tracks RC `9001` (fail-closed) without terminating SetupComplete early.
+  * [ ] If `%REBOOT_FLAG%` already exists at SetupComplete start, a WARN is logged and the flag is preserved as a sticky marker; later, if `NEEDS_REBOOT` is still `0` but the flag exists, `NEEDS_REBOOT` is set to `1` so the marker is signaled during the final evaluation (fast-path may avoid rewriting if already correct).
+* [ ] If `STAGEB_NOT_SCHEDULED==1` when the reboot marker is successfully signaled (`REBOOT_FLAG_SIGNAL_OK==1`), `SetupComplete.log` includes `[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR ...` and SetupComplete writes a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry containing a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for triage.
 * [ ] Component cleanup and reboot
   * [ ] No `shutdown.exe` calls are present inside `SetupComplete.cmd`.
-  * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is created with predictable content.
+  * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is signaled via `:flag_reboot` with write + verify (`REBOOT_FLAG_SIGNAL_*` logs); signaling failures fail closed (non-zero final RC).
   * [ ] Stage B evaluates the tri-state pending reboot probe when the flag exists in normal mode; it reboots on `true`/`unknown` and clears a stale flag without reboot on `false`.
   * [ ] In recovery mode or when Stage B fails, the flag is left in place as a marker for manual follow-up and no automatic reboot is triggered by Stage B.
 
