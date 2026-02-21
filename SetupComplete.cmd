@@ -1578,9 +1578,12 @@ if not defined REBOOT_FLAG_CONTENT (
 
 REM Fast-path: already correct and readable
 if not exist "%REBOOT_FLAG%" goto :reboot_flag_write_attempt
-if exist "%REBOOT_FLAG%\NUL" (
+
+REM Directory detection (NUL-trick is unreliable in this environment)
+dir /ad "%REBOOT_FLAG%" 2>nul | find "<DIR>" >nul
+if not errorlevel 1 (
   set "REBOOT_FLAG_REASON=directory"
-  set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+  set "REBOOT_FLAG_OBSERVED_CLASS=directory"
   goto :reboot_flag_fail
 )
 
@@ -1597,14 +1600,25 @@ exit /b 0
 
 :reboot_flag_write_attempt
 
+REM Preflight: if marker path is a directory, fail explicitly before any write/read
+dir /ad "%REBOOT_FLAG%" 2>nul | find "<DIR>" >nul
+if not errorlevel 1 (
+  set "REBOOT_FLAG_REASON=directory"
+  set "REBOOT_FLAG_OBSERVED_CLASS=directory"
+  set "REBOOT_FLAG_WRITE_RC="
+  set "REBOOT_FLAG_READ_RC="
+  goto :reboot_flag_fail
+)
+
 REM Write attempt (write_rc is diagnostic-only)
 > "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
 set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
 
 REM Verify: marker must not be a directory
-if exist "%REBOOT_FLAG%\NUL" (
+dir /ad "%REBOOT_FLAG%" 2>nul | find "<DIR>" >nul
+if not errorlevel 1 (
   set "REBOOT_FLAG_REASON=directory"
-  set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+  set "REBOOT_FLAG_OBSERVED_CLASS=directory"
   goto :reboot_flag_fail
 )
 
