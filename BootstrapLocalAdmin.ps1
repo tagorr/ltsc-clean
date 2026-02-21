@@ -288,7 +288,7 @@ try {
                 while ($null -ne $cur) {
                     $hr = $null
                     try { $hr = $cur.HResult } catch { $hr = $null }
-                    if ($hr -eq -2147024716 -or $hr -eq -2147024713) { $alreadyExists = $true; break }
+                    if ($hr -eq -2147024816 -or $hr -eq -2147024713) { $alreadyExists = $true; break }
                     $cur = $cur.InnerException
                 }
                 if ($alreadyExists) {
@@ -322,7 +322,7 @@ try {
         $failureMessage = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
         Write-BootstrapLog ("Failed while creating/writing/verifying bootstrap secret file '{0}': {1}" -f $pwPath, $failureMessage) 'ERROR'
 
-        if (($attemptedSecureCreate -or $secretFileCreated) -and (Test-Path -LiteralPath $pwPath)) {
+        if ($secretFileCreated -and (Test-Path -LiteralPath $pwPath)) {
             try {
                 Write-BootstrapLog ("Attempting to delete '{0}' after bootstrap secret failure" -f $pwPath) 'WARN'
                 Remove-Item -LiteralPath $pwPath -Force -ErrorAction Stop
