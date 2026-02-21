@@ -117,4 +117,9 @@ if not "%PSRC%"=="0" (
 ) else (
   call :log [OK] BootstrapLocalAdmin.ps1 rc=0
 )
+
+REM Non-blocking marker for later Stage B observability (PreOOBE anomalies)
+if exist "%WINDIR%\Panther\preoobe_warnings.flag" (
+  call :log [WARN] PreOOBE anomaly marker detected: %WINDIR%\Panther\preoobe_warnings.flag
+)
 endlocal & exit /b %FAILED%

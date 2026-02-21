@@ -41,10 +41,10 @@
 
   * [ ] `.bootstrap.pw` is created at the expected path (`%WINDIR%\Setup\Scripts\.bootstrap.pw`).
   * [ ] Content is a single non-empty line (UTF-8 without BOM).
-  * [ ] File ACL is restricted (SYSTEM + Administrators only), inheritance disabled, Hidden + System attributes set.
+  * [ ] File ACL is restricted (SYSTEM + Administrators only; fail closed if any inherited ACEs are present, any Deny ACEs are present, or any explicit ACE references a SID other than S-1-5-18 or S-1-5-32-544; does not rely on `ACE count == 2`; multiple explicit Allow ACEs for the required SIDs are acceptable as long as each required SID effectively has FullControl), inheritance disabled, Hidden + System attributes set.
 * [ ] In `SetupComplete.cmd`:
 
-  * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors, and any other out-of-contract exit code is treated as an unexpected validator execution failure (fail closed with `FAILED=1`, `bootstrap=0, primaryadmin=0`, and `:track_rc` capturing the rc for `FINAL_RC` aggregation when it is the first bad rc).
+  * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0-3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors, and any other out-of-contract exit code is treated as an unexpected validator execution failure (fail closed with `FAILED=1`, `bootstrap=0, primaryadmin=0`, and `:track_rc_secrets` capturing the rc verbatim for `FINAL_RC` aggregation when it is the first bad rc, including preserving 3010/1641 if encountered).
   * [ ] When the validator returns `4`, `SetupComplete.cmd` logs an explicit internal-failure message (rc=4), sets `FAILED=1`, keeps both ACL flags at `0`, and treats both secrets as invalid for gating.
   * [ ] Identity/SID translation issues are handled as normal validation failures (not `rc=4`).
   * [ ] There is a check for the existence of `.bootstrap.pw` and that the first line is non-empty (single-line secret; read via `set /p`, no trimming).
@@ -82,7 +82,7 @@
     * [ ] Stage B still performs the required cleanup (according to the normal/recovery policy).
   * [ ] For `primaryadmin`, the password value never appears in task XML, command lines, or the baseline's own logs.
   * [ ] With Audit Process Creation + command-line logging enabled, Security 4688 events do not show the `primaryadmin` password on any process command line.
-* [ ] Negative test: build an ISO that forces `.bootstrap.pw` ACL hardening to fail (for example by breaking `Set-Acl`), confirm `PreOOBE.log` shows the ACL failure and the delete attempt (success / nothing to delete / failure), verify the run does not leave `.bootstrap.pw` silently with weak ACLs, and observe that `ValidateSecrets`/`SetupComplete` treat the missing/empty secret as `bootstrap=0` so the gate stays closed and Stage B is not registered.
+* [ ] Negative test: build an ISO that forces `.bootstrap.pw` ACL hardening to fail (for example by forcing the ACL verification step to fail), confirm `PreOOBE.log` shows the ACL failure and the delete attempt (success / nothing to delete / failure), verify the run does not leave `.bootstrap.pw` silently with weak ACLs, and observe that `ValidateSecrets`/`SetupComplete` treat the missing/empty secret as `bootstrap=0` so the gate stays closed and Stage B is not registered.
 
 ---
 
@@ -93,6 +93,7 @@
   * [ ] Launches `BootstrapLocalAdmin.ps1` in the expected way.
   * [ ] Does not modify Winlogon or logon policies if this is forbidden by design.
   * [ ] Redirects stdout and stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log` (no separate bootstrap log file).
+  * [ ] If `%WINDIR%\Panther\preoobe_warnings.flag` exists, a non-blocking WARN is logged indicating the marker was detected.
 * [ ] `BootstrapLocalAdmin.ps1`:
 
   * [ ] Runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` (same defensive posture as `CreatePrimaryAdmin.ps1`).
@@ -103,6 +104,7 @@
   * [ ] Emits `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines in `%WINDIR%\Panther\PreOOBE.log` for key lifecycle steps (account creation, password set/activate, Administrators membership, `.bootstrap.pw` write/ACL/attributes).
   * [ ] Bootstrap log entries do not include the password or derived secret values (technical actions/errors only).
   * [ ] Does not leave extra handlers or resources (including tasks that are not described in the design).
+  * [ ] On `BOOTSTRAP_SECRET_DELETE_FAILED`, it best-effort creates/updates `%WINDIR%\Panther\preoobe_warnings.flag` with the token `BOOTSTRAP_SECRET_DELETE_FAILED` (observability only; does not change failure path).
 
 ---
 
@@ -389,6 +391,7 @@
   * [ ] Formed in one of three formats: `SUCCESS`, `FAIL`, or `ABORTED` with a reason.
   * [ ] Written to the same file in the same encoding.
   * [ ] Logged via `Write-SetupLog` with `INFO` or `ERROR` level depending on the outcome.
+  * [ ] After `OUTCOME: SUCCESS` is logged, Stage B checks `%WINDIR%\Panther\preoobe_warnings.flag`; if present it logs a non-blocking WARN and attempts best-effort deletion (WARN on delete failure).
   * [ ] Secret cleanup error case emits `OUTCOME: FAIL - secret cleanup error (bootstrap/primaryadmin secrets not removed)`, logs `End B (FAIL - secret cleanup error)` at `ERROR` level, sets `StageB_Succeeded=$false`, and returns `rc=3` when no previous failure code was set.
 * [ ] If Stage B fails before finalization:
 
