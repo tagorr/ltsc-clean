@@ -104,11 +104,8 @@ function Assert-BootstrapSecretFileAcl {
     }
 
     $requiredSids = @('S-1-5-18', 'S-1-5-32-544')
-    $forbiddenBroadSids = @{
-        'S-1-1-0' = $true      # Everyone
-        'S-1-5-11' = $true     # Authenticated Users
-        'S-1-5-32-545' = $true # BUILTIN\Users
-    }
+    $requiredSet = @{}
+    foreach ($sid in $requiredSids) { $requiredSet[$sid] = $true }
 
     $allowedRightsBySid = @{}
 
@@ -122,10 +119,6 @@ function Assert-BootstrapSecretFileAcl {
 
         if ($r.IsInherited) {
             throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: inherited ACE present for SID '$sidValue'."
-        }
-
-        if ($forbiddenBroadSids.ContainsKey($sidValue)) {
-            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: forbidden broad principal SID '$sidValue' present in DACL."
         }
 
         if ($r.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Deny) {
@@ -143,14 +136,28 @@ function Assert-BootstrapSecretFileAcl {
             throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: SID '$sidValue' has non-None PropagationFlags."
         }
 
-        if ($requiredSids -contains $sidValue) {
-            if ($allowedRightsBySid.ContainsKey($sidValue)) {
-                $allowedRightsBySid[$sidValue] = ($allowedRightsBySid[$sidValue] -bor $r.FileSystemRights)
-            } else {
-                $allowedRightsBySid[$sidValue] = $r.FileSystemRights
-            }
+        # Strict: no principals beyond SYSTEM + local Administrators.
+        if (-not $requiredSet.ContainsKey($sidValue)) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: unexpected principal SID '$sidValue' present in DACL."
+        }
+
+        # Merge rights across multiple ACEs for required principals.
+        if ($allowedRightsBySid.ContainsKey($sidValue)) {
+            $allowedRightsBySid[$sidValue] = ($allowedRightsBySid[$sidValue] -bor $r.FileSystemRights)
+        } else {
+            $allowedRightsBySid[$sidValue] = $r.FileSystemRights
         }
     }
+
+    foreach ($sid in $requiredSids) {
+        if (-not $allowedRightsBySid.ContainsKey($sid)) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: required principal SID '$sid' missing from DACL."
+        }
+        if ( ($allowedRightsBySid[$sid] -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl ) {
+            throw "BOOTSTRAP_SECRET_ACL_VERIFY_FAILED: required principal SID '$sid' does not include FullControl."
+        }
+    }
+}
 
     foreach ($sid in $requiredSids) {
         if (-not $allowedRightsBySid.ContainsKey($sid)) {
