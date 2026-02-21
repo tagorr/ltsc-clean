@@ -889,19 +889,12 @@ if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
 if "%NEEDS_REBOOT%"=="1" (
   call :log "[INFO] Reboot required"
   set "REBOOT_REQUESTED=1"
-  echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%"
-  if "%REBOOT_REQUESTED%"=="1" if "%STAGEB_NOT_SCHEDULED%"=="1" if not "%WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED%"=="1" (
-    call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline."
-    call :master_log_warn_reboot_flag_no_executor
-    if defined MASTER_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR master_log=%MASTER_LOG_PATH%"
-    set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=1"
-  )
-  if "%L2C_AUTOLOGON_DEGRADED%"=="1" if not "%L2C_AUTOLOGON_ARMED%"=="1" (
-    call :log "[WARN] WARN_REBOOT_FLAG_NO_AUTOLOGON Reboot required, but autologon is not armed (degraded=1); Stage B will not run until manual login. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\\L2C\\CreatePrimaryAdmin."
-  )
+  call :flag_reboot
 ) else (
 call :log "[INFO] No reboot required"
 )
+
+if "%NEEDS_REBOOT%"=="1" call :l2c_reboot_flag_warns
 
 :l2c_final_rc
 call :log "----- SetupComplete finished -----"
@@ -1551,7 +1544,106 @@ if not defined MASTER_LOG_TS exit /b 0
 >> "%MASTER_LOG_PATH%" echo [%MASTER_LOG_TS%] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline.
 exit /b 0
 
+:l2c_reboot_flag_warns
+if not "%NEEDS_REBOOT%"=="1" exit /b 0
+
+if "%REBOOT_FLAG_SIGNAL_OK%"=="1" if "%REBOOT_REQUESTED%"=="1" if "%STAGEB_NOT_SCHEDULED%"=="1" if not "%WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED%"=="1" (
+  call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline."
+  call :master_log_warn_reboot_flag_no_executor
+  if defined MASTER_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR master_log=%MASTER_LOG_PATH%"
+  set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=1"
+)
+if "%REBOOT_FLAG_SIGNAL_OK%"=="1" if "%L2C_AUTOLOGON_DEGRADED%"=="1" if not "%L2C_AUTOLOGON_ARMED%"=="1" (
+  call :log "[WARN] WARN_REBOOT_FLAG_NO_AUTOLOGON Reboot required, but autologon is not armed (degraded=1); Stage B will not run until manual login. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\\L2C\\CreatePrimaryAdmin."
+)
+exit /b 0
+
 :flag_reboot
 set "REBOOT_REQUESTED=1"
-2>nul (echo %REBOOT_FLAG_CONTENT%>"%REBOOT_FLAG%")
+set "REBOOT_FLAG_SIGNAL_OK=0"
+set "REBOOT_FLAG_WRITE_RC="
+set "REBOOT_FLAG_READ_RC="
+set "REBOOT_FLAG_REASON="
+set "REBOOT_FLAG_OBSERVED_CLASS="
+set "REBOOT_FLAG_OBSERVED="
+
+call :log "[INFO] REBOOT_FLAG_SIGNAL_BEGIN marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT%"
+
+REM Guard: expected content must be defined
+if not defined REBOOT_FLAG_CONTENT (
+  set "REBOOT_FLAG_REASON=content_undefined"
+  set "REBOOT_FLAG_OBSERVED_CLASS=unset"
+  goto :reboot_flag_fail
+)
+
+REM Fast-path: already correct and readable
+if not exist "%REBOOT_FLAG%" goto :reboot_flag_write_attempt
+if exist "%REBOOT_FLAG%\NUL" (
+  set "REBOOT_FLAG_REASON=directory"
+  set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+  goto :reboot_flag_fail
+)
+
+set "REBOOT_FLAG_OBSERVED="
+set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG%"
+set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
+
+if not "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_write_attempt
+if /I not "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" goto :reboot_flag_write_attempt
+
+set "REBOOT_FLAG_SIGNAL_OK=1"
+call :log "[INFO] REBOOT_FLAG_SIGNAL_OK already_present=1 marker=%REBOOT_FLAG% value=%REBOOT_FLAG_CONTENT%"
+exit /b 0
+
+:reboot_flag_write_attempt
+
+REM Write attempt (write_rc is diagnostic-only)
+> "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
+set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
+
+REM Verify: marker must not be a directory
+if exist "%REBOOT_FLAG%\NUL" (
+  set "REBOOT_FLAG_REASON=directory"
+  set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+  goto :reboot_flag_fail
+)
+
+REM Verify: marker must exist
+if not exist "%REBOOT_FLAG%" (
+  set "REBOOT_FLAG_REASON=missing"
+  set "REBOOT_FLAG_OBSERVED_CLASS=unset"
+  goto :reboot_flag_fail
+)
+
+REM Verify: read first line
+set "REBOOT_FLAG_OBSERVED="
+set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG%"
+set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
+
+if not "%REBOOT_FLAG_READ_RC%"=="0" (
+  set "REBOOT_FLAG_REASON=read_failed"
+  set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+  goto :reboot_flag_fail
+)
+
+if "%REBOOT_FLAG_OBSERVED%"=="" (
+  set "REBOOT_FLAG_REASON=empty"
+  set "REBOOT_FLAG_OBSERVED_CLASS=empty"
+  goto :reboot_flag_fail
+)
+
+if /I not "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" (
+  set "REBOOT_FLAG_REASON=mismatch"
+  set "REBOOT_FLAG_OBSERVED_CLASS=mismatch"
+  goto :reboot_flag_fail
+)
+
+set "REBOOT_FLAG_SIGNAL_OK=1"
+call :log "[INFO] REBOOT_FLAG_SIGNAL_OK marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC% read_rc=%REBOOT_FLAG_READ_RC%"
+exit /b 0
+
+:reboot_flag_fail
+call :log "[ERROR] REBOOT_FLAG_SIGNAL_FAIL reason=%REBOOT_FLAG_REASON% marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% observed_class=%REBOOT_FLAG_OBSERVED_CLASS% write_rc=%REBOOT_FLAG_WRITE_RC% read_rc=%REBOOT_FLAG_READ_RC%"
+set "FAILED=1"
+call :track_rc 9001
 exit /b 0
