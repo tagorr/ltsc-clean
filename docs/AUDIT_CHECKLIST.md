@@ -41,7 +41,7 @@
 
   * [ ] `.bootstrap.pw` is created at the expected path (`%WINDIR%\Setup\Scripts\.bootstrap.pw`).
   * [ ] Content is a single non-empty line (UTF-8 without BOM).
-  * [ ] File ACL is restricted (SYSTEM + Administrators only), inheritance disabled, Hidden + System attributes set.
+  * [ ] File ACL is restricted (SYSTEM + Administrators only; fail closed if any inherited ACEs are present, any Deny ACEs are present, or any explicit ACE references a SID other than S-1-5-18 or S-1-5-32-544; does not rely on `ACE count == 2`; multiple explicit Allow ACEs for the required SIDs are acceptable as long as each required SID effectively has FullControl), inheritance disabled, Hidden + System attributes set.
 * [ ] In `SetupComplete.cmd`:
 
   * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0-3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors, and any other out-of-contract exit code is treated as an unexpected validator execution failure (fail closed with `FAILED=1`, `bootstrap=0, primaryadmin=0`, and `:track_rc_secrets` capturing the rc verbatim for `FINAL_RC` aggregation when it is the first bad rc, including preserving 3010/1641 if encountered).
