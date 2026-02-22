@@ -1591,7 +1591,11 @@ set "REBOOT_FLAG_OBSERVED="
 set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG%"
 set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
 
-if not "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_write_attempt
+if "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_read_ok
+set "REBOOT_FLAG_REASON=read_failed"
+set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+goto :reboot_flag_fail
+:reboot_flag_read_ok
 if /I not "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" goto :reboot_flag_write_attempt
 
 set "REBOOT_FLAG_SIGNAL_OK=1"
@@ -1610,9 +1614,39 @@ if not errorlevel 1 (
   goto :reboot_flag_fail
 )
 
-REM Write attempt (write_rc is diagnostic-only)
+REM Write attempts (write_rc is diagnostic-only)
+REM IMPORTANT: Avoid multi-line (...) blocks here. cmd.exe expands variables at parse-time inside blocks,
+REM which can corrupt retry logic without delayed expansion (forbidden).
+
+REM Attempt #1
 > "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
 set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
+if not "%REBOOT_FLAG_WRITE_RC%"=="0" call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=1 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
+if "%REBOOT_FLAG_WRITE_RC%"=="0" goto :reboot_flag_write_ok
+
+REM Retry #2
+> "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
+set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
+if not "%REBOOT_FLAG_WRITE_RC%"=="0" call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=2 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
+if "%REBOOT_FLAG_WRITE_RC%"=="0" echo DIAG_WRITE_RETRY_OK attempt=2 marker=%REBOOT_FLAG%
+if "%REBOOT_FLAG_WRITE_RC%"=="0" goto :reboot_flag_write_ok
+
+REM Retry #3
+> "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
+set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
+if "%REBOOT_FLAG_WRITE_RC%"=="0" echo DIAG_WRITE_RETRY_OK attempt=3 marker=%REBOOT_FLAG%
+if "%REBOOT_FLAG_WRITE_RC%"=="0" goto :reboot_flag_write_ok
+
+call :log "[ERROR] REBOOT_FLAG_WRITE_FAILED marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC%"
+cmd.exe /d /c "dir /a ""%REBOOT_FLAG%"" 2>&1"
+cmd.exe /d /c "attrib ""%REBOOT_FLAG%"" 2>&1"
+cmd.exe /d /c "icacls ""%REBOOT_FLAG%"" 2>&1"
+cmd.exe /d /c "icacls ""%SystemRoot%\Panther"" 2>&1"
+set "REBOOT_FLAG_REASON=write_failed"
+set "REBOOT_FLAG_OBSERVED_CLASS=unwritable"
+goto :reboot_flag_fail
+
+:reboot_flag_write_ok
 
 REM Verify: marker must not be a directory
 dir /ad "%REBOOT_FLAG%" 2>nul | find "<DIR>" >nul
@@ -1657,7 +1691,10 @@ call :log "[INFO] REBOOT_FLAG_SIGNAL_OK marker=%REBOOT_FLAG% expected=%REBOOT_FL
 exit /b 0
 
 :reboot_flag_fail
-call :log "[ERROR] REBOOT_FLAG_SIGNAL_FAIL reason=%REBOOT_FLAG_REASON% marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% observed_class=%REBOOT_FLAG_OBSERVED_CLASS% write_rc=%REBOOT_FLAG_WRITE_RC% read_rc=%REBOOT_FLAG_READ_RC%"
+REM Freeze RCs before any further commands so logs cannot accidentally drift
+set "REBOOT_FLAG_WRITE_RC_FINAL=%REBOOT_FLAG_WRITE_RC%"
+set "REBOOT_FLAG_READ_RC_FINAL=%REBOOT_FLAG_READ_RC%"
+call :log "[ERROR] REBOOT_FLAG_SIGNAL_FAIL reason=%REBOOT_FLAG_REASON% marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% observed_class=%REBOOT_FLAG_OBSERVED_CLASS% write_rc=%REBOOT_FLAG_WRITE_RC_FINAL% read_rc=%REBOOT_FLAG_READ_RC_FINAL%"
 set "FAILED=1"
 call :track_rc 9001
 exit /b 0
