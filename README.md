@@ -68,9 +68,9 @@ This verifies: parse-only PowerShell syntax checks for the three deployment help
 * Runtime logs:
 
   1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status; captures stdout/stderr from `BootstrapLocalAdmin.ps1` as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines
-  2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (mixed producers; many logger-written lines are ISO-8601; some lines are un-timestamped); includes secret gate results, Stage B registration decisions, and reboot-flag evaluation (for example the "Pre-existing Panther reboot flag found..." WARN)
+  2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (mixed producers; many logger-written lines are ISO-8601; some lines are un-timestamped); includes secret gate results, Stage B registration decisions, and reboot-flag evaluation (`REBOOT_FLAG_SIGNAL_BEGIN` / `REBOOT_FLAG_SIGNAL_OK` / `REBOOT_FLAG_SIGNAL_FAIL`; for example the "Pre-existing Panther reboot flag found..." WARN)
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
-  4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale); when Stage B is not scheduled, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage
+  4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale); when Stage B is not scheduled and the reboot marker was successfully signaled, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage
 
 ## Operator triage and recovery
 
@@ -184,26 +184,26 @@ Interpretation:
    * Stage B registration is skipped whenever any gate input fails; `SetupComplete.cmd` logs `[INFO] Stage B registration skipped due to gate (FAILED=..., HAS_BOOTSTRAP_PW=..., L2C_BOOTSTRAP_PW_FORMAT_OK=..., L2C_HAS_PRIMARYADMIN_SECRET=..., L2C_BOOTSTRAP_PW_ACL_OK=..., L2C_PRIMARYADMIN_PW_ACL_OK=...)` and does not register the task. `HAS_BOOTSTRAP_PW` indicates present + non-empty first line; format validity is `L2C_BOOTSTRAP_PW_FORMAT_OK`.
    * if the primary admin secret is missing or invalid, ACL/attribute checks fail, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task; the script exits with a non-zero RC, leaving the system in a SetupComplete recovery state.
    * when `FAILED=1` (regardless of whether set by servicing, secret/ACL validation, task creation, or Winlogon priming), the recovery gate logs `SetupComplete entered recovery mode; skipping extra registrations` and suppresses extra registrations (including Stage B scheduling/priming).
-   * after the Stage B gateway, evaluates reboot requirement and writes `%WINDIR%\Panther\_needs_reboot.flag` only when a reboot is required (`NEEDS_REBOOT=1`) or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; if the flag already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (it is not deleted on entry); the script does not scan prior `SetupComplete.log` history.
+   * after the Stage B gateway, evaluates reboot requirement and signals it via `:flag_reboot` (write + verify) by creating `%WINDIR%\Panther\_needs_reboot.flag` only when a reboot is required (`NEEDS_REBOOT=1`) or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; the marker is a single-line ASCII (7-bit) token (`need-reboot` by default; `force-reboot` when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`) written with CRLF (no BOM) and verified by reading the first line only (PowerShell/.NET writer; process-boundary TYPE capture + first-line-only parsing). I/O failure classification is not based on `%ERRORLEVEL%` from CMD < / > redirections. Terminal verify-time failures abort retries immediately (no FAIL→OK logs in a single run). If the flag already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (it is not deleted on entry); the script does not scan prior `SetupComplete.log` history. If signaling cannot be verified, SetupComplete fails closed (`FAILED=1`, tracked RC `9001`).
    * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
 
 #### Safe rerun semantics for SetupComplete.cmd
 
 If you manually rerun `SetupComplete.cmd`:
-- it does not scan historical `SetupComplete.log` for older `3010/1641` markers; it decides whether to write `%WINDIR%\Panther\_needs_reboot.flag` based only on the current run’s servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`;
+- it does not scan historical `SetupComplete.log` for older `3010/1641` markers; it decides whether to signal reboot via `%WINDIR%\Panther\_needs_reboot.flag` (write + verify) based only on the current run’s servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`;
 - if `%WINDIR%\Panther\_needs_reboot.flag` already exists at `SetupComplete.cmd` start, `SetupComplete.cmd` logs a WARN and preserves it as a sticky pending reboot marker (reruns do not delete it).
 - it re-runs secret validation and logs the current ACL/attribute status; bootstrap format failures emit an explicit `[ERROR]`, and gate-skip logs include `L2C_BOOTSTRAP_PW_FORMAT_OK`.
 
 A rerun does not undo a previously successful Stage B. If Stage B has already deleted the secrets, `SetupComplete.cmd` may see them as missing and stay on a recovery-style path, but it does not invalidate the existing primary admin account or re-enable bootstrap in a way that breaks assumptions.
 
-If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_EXECUTOR`
+If `SetupComplete.cmd` successfully signals `%WINDIR%\Panther\_needs_reboot.flag` (`REBOOT_FLAG_SIGNAL_OK=1`) but Stage B was not scheduled (for example, when the gate is closed or task creation fails), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_EXECUTOR`
 with the marker/value/executor_task fields (plus machine-readable `skipped_gate` / `not_scheduled`).
 The operator instruction is that automatic reboot will NOT happen; manual reboot required after fixing gate or scheduling; then rerun pipeline. Example:
 `[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%WINDIR%\Panther\_needs_reboot.flag (value=need-reboot). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=1 not_scheduled=1). Manual reboot required after fixing gate or scheduling, then rerun pipeline.`
 In that case, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage.
 SetupComplete.log also includes `master_log=<path>`.
 
-If `SetupComplete.cmd` writes `%WINDIR%\Panther\_needs_reboot.flag` but AutoAdminLogon was not armed (degraded mode after Winlogon priming), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_AUTOLOGON` to avoid a silent stall: Stage B is scheduled but will not run until a manual logon occurs. Example:
+If `SetupComplete.cmd` successfully signals `%WINDIR%\Panther\_needs_reboot.flag` (`REBOOT_FLAG_SIGNAL_OK=1`) but AutoAdminLogon was not armed (degraded mode after Winlogon priming), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_AUTOLOGON` to avoid a silent stall: Stage B is scheduled but will not run until a manual logon occurs. Example:
 `[WARN] WARN_REBOOT_FLAG_NO_AUTOLOGON Reboot required, but autologon is not armed (degraded=1); Stage B will not run until manual login. marker=%WINDIR%\Panther\_needs_reboot.flag (value=need-reboot). executor_task=\\L2C\\CreatePrimaryAdmin.`
 
 #### When both ACL flags are 0 (bootstrap=0, primaryadmin=0)
