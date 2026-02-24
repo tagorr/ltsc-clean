@@ -1588,10 +1588,11 @@ if not errorlevel 1 (
 )
 
 set "REBOOT_FLAG_OBSERVED="
-set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG%"
-set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
-
-if "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_read_ok
+call :reboot_flag_read_firstline_checked
+if "%REBOOT_FLAG_READ_IOERR%"=="1" goto :reboot_flag_fast_read_failed
+if not "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_fast_read_failed
+goto :reboot_flag_read_ok
+:reboot_flag_fast_read_failed
 set "REBOOT_FLAG_REASON=read_failed"
 set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
 goto :reboot_flag_fail
@@ -1619,25 +1620,27 @@ REM IMPORTANT: Avoid multi-line (...) blocks here. cmd.exe expands variables at 
 REM which can corrupt retry logic without delayed expansion (forbidden).
 
 REM Attempt #1
-> "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
-set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
-if not "%REBOOT_FLAG_WRITE_RC%"=="0" call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=1 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
-if "%REBOOT_FLAG_WRITE_RC%"=="0" goto :reboot_flag_write_ok
+call :reboot_flag_write_once
+call :reboot_flag_verify_expected_after_write
+if "%REBOOT_FLAG_VERIFY_OK%"=="1" goto :reboot_flag_write_ok
+call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=1 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
 
 REM Retry #2
-> "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
-set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
-if not "%REBOOT_FLAG_WRITE_RC%"=="0" call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=2 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
-if "%REBOOT_FLAG_WRITE_RC%"=="0" echo DIAG_WRITE_RETRY_OK attempt=2 marker=%REBOOT_FLAG%
-if "%REBOOT_FLAG_WRITE_RC%"=="0" goto :reboot_flag_write_ok
+call :reboot_flag_write_once
+call :reboot_flag_verify_expected_after_write
+if "%REBOOT_FLAG_VERIFY_OK%"=="1" echo DIAG_WRITE_RETRY_OK attempt=2 marker=%REBOOT_FLAG%
+if "%REBOOT_FLAG_VERIFY_OK%"=="1" goto :reboot_flag_write_ok
+call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=2 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
 
 REM Retry #3
-> "%REBOOT_FLAG%" (echo(%REBOOT_FLAG_CONTENT%)
-set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
-if "%REBOOT_FLAG_WRITE_RC%"=="0" echo DIAG_WRITE_RETRY_OK attempt=3 marker=%REBOOT_FLAG%
-if "%REBOOT_FLAG_WRITE_RC%"=="0" goto :reboot_flag_write_ok
+call :reboot_flag_write_once
+call :reboot_flag_verify_expected_after_write
+if "%REBOOT_FLAG_VERIFY_OK%"=="1" echo DIAG_WRITE_RETRY_OK attempt=3 marker=%REBOOT_FLAG%
+if "%REBOOT_FLAG_VERIFY_OK%"=="1" goto :reboot_flag_write_ok
 
-call :log "[ERROR] REBOOT_FLAG_WRITE_FAILED marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC%"
+set "REBOOT_FLAG_WRITE_RC_LOG=%REBOOT_FLAG_WRITE_RC%"
+if "%REBOOT_FLAG_WRITE_RC_LOG%"=="0" set "REBOOT_FLAG_WRITE_RC_LOG="
+call :log "[ERROR] REBOOT_FLAG_WRITE_FAILED marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC_LOG%"
 cmd.exe /d /c "dir /a ""%REBOOT_FLAG%"" 2>&1"
 cmd.exe /d /c "attrib ""%REBOOT_FLAG%"" 2>&1"
 cmd.exe /d /c "icacls ""%REBOOT_FLAG%"" 2>&1"
@@ -1647,53 +1650,67 @@ set "REBOOT_FLAG_OBSERVED_CLASS=unwritable"
 goto :reboot_flag_fail
 
 :reboot_flag_write_ok
+set "REBOOT_FLAG_SIGNAL_OK=1"
+call :log "[INFO] REBOOT_FLAG_SIGNAL_OK marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC% read_rc=%REBOOT_FLAG_READ_RC%"
+exit /b 0
 
-REM Verify: marker must not be a directory
+:reboot_flag_write_once
+REM Write to marker. Do not trust ERRORLEVEL from redirection as authoritative.
+REM Auditor-confirmed: redirection failures can be masked (stderr only, ERRORLEVEL=0), and same-line 2> capture
+REM can miss errors when < or > redirection fails (redirection ordering). Classification is verify-driven.
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$p=$env:REBOOT_FLAG;$c=$env:REBOOT_FLAG_CONTENT;[System.IO.File]::WriteAllText($p,$c + [char]13 + [char]10,[System.Text.Encoding]::ASCII)" 1>nul 2>nul
+set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
+exit /b 0
+
+:reboot_flag_read_firstline_checked
+REM Read first line from marker. Do not trust ERRORLEVEL from set /p + < redirection as authoritative.
+REM Auditor-confirmed: same-line 2> capture can miss errors when < redirection fails (redirection ordering).
+REM Avoid < redirection entirely by using TYPE in a child cmd.exe process; capture stderr at the process boundary.
+set "REBOOT_FLAG_READ_IOERR=0"
+set "REBOOT_FLAG_IOERR_SZ=0"
+set "REBOOT_FLAG_IOERR_OUT=%TEMP%\l2c_reboot_flag_read_%RANDOM%_%RANDOM%.out"
+set "REBOOT_FLAG_IOERR_FILE=%TEMP%\l2c_reboot_flag_read_%RANDOM%_%RANDOM%.err"
+del /q "%REBOOT_FLAG_IOERR_OUT%" >nul 2>&1
+del /q "%REBOOT_FLAG_IOERR_FILE%" >nul 2>&1
+set "REBOOT_FLAG_OBSERVED="
+cmd.exe /d /q /c "type ""%REBOOT_FLAG%""" 1>"%REBOOT_FLAG_IOERR_OUT%" 2>"%REBOOT_FLAG_IOERR_FILE%"
+set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
+if not exist "%REBOOT_FLAG_IOERR_OUT%" set "REBOOT_FLAG_READ_IOERR=1"
+if not exist "%REBOOT_FLAG_IOERR_FILE%" set "REBOOT_FLAG_READ_IOERR=1"
+if exist "%REBOOT_FLAG_IOERR_FILE%" for %%G in ("%REBOOT_FLAG_IOERR_FILE%") do set "REBOOT_FLAG_IOERR_SZ=%%~zG"
+if exist "%REBOOT_FLAG_IOERR_OUT%" set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG_IOERR_OUT%"
+del /q "%REBOOT_FLAG_IOERR_OUT%" >nul 2>&1
+del /q "%REBOOT_FLAG_IOERR_FILE%" >nul 2>&1
+if not "%REBOOT_FLAG_IOERR_SZ%"=="0" set "REBOOT_FLAG_READ_IOERR=1"
+exit /b 0
+
+:reboot_flag_verify_expected_after_write
+REM Verify marker contains expected content (authoritative). Do not rely on ERRORLEVEL from redirection alone.
+set "REBOOT_FLAG_VERIFY_OK=0"
 dir /ad "%REBOOT_FLAG%" 2>nul | find "<DIR>" >nul
 if not errorlevel 1 (
   set "REBOOT_FLAG_REASON=directory"
   set "REBOOT_FLAG_OBSERVED_CLASS=directory"
   goto :reboot_flag_fail
 )
-
-REM Verify: marker must exist
-if not exist "%REBOOT_FLAG%" (
-  set "REBOOT_FLAG_REASON=missing"
-  set "REBOOT_FLAG_OBSERVED_CLASS=unset"
-  goto :reboot_flag_fail
-)
-
-REM Verify: read first line
-set "REBOOT_FLAG_OBSERVED="
-set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG%"
-set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
-
-if not "%REBOOT_FLAG_READ_RC%"=="0" (
-  set "REBOOT_FLAG_REASON=read_failed"
-  set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
-  goto :reboot_flag_fail
-)
-
-if "%REBOOT_FLAG_OBSERVED%"=="" (
-  set "REBOOT_FLAG_REASON=empty"
-  set "REBOOT_FLAG_OBSERVED_CLASS=empty"
-  goto :reboot_flag_fail
-)
-
-if /I not "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" (
-  set "REBOOT_FLAG_REASON=mismatch"
-  set "REBOOT_FLAG_OBSERVED_CLASS=mismatch"
-  goto :reboot_flag_fail
-)
-
-set "REBOOT_FLAG_SIGNAL_OK=1"
-call :log "[INFO] REBOOT_FLAG_SIGNAL_OK marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC% read_rc=%REBOOT_FLAG_READ_RC%"
+if not exist "%REBOOT_FLAG%" exit /b 0
+call :reboot_flag_read_firstline_checked
+if "%REBOOT_FLAG_READ_IOERR%"=="1" goto :reboot_flag_verify_read_failed
+if not "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_verify_read_failed
+if /I "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" set "REBOOT_FLAG_VERIFY_OK=1"
 exit /b 0
+:reboot_flag_verify_read_failed
+set "REBOOT_FLAG_REASON=read_failed"
+set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
+goto :reboot_flag_fail
 
 :reboot_flag_fail
 REM Freeze RCs before any further commands so logs cannot accidentally drift
 set "REBOOT_FLAG_WRITE_RC_FINAL=%REBOOT_FLAG_WRITE_RC%"
 set "REBOOT_FLAG_READ_RC_FINAL=%REBOOT_FLAG_READ_RC%"
+REM ERRORLEVEL is diagnostic-only for redirection/set /p. Avoid misleading "write_failed/read_failed with rc=0".
+if /I "%REBOOT_FLAG_REASON%"=="write_failed" if "%REBOOT_FLAG_WRITE_RC_FINAL%"=="0" set "REBOOT_FLAG_WRITE_RC_FINAL="
+if /I "%REBOOT_FLAG_REASON%"=="read_failed" if "%REBOOT_FLAG_READ_RC_FINAL%"=="0" set "REBOOT_FLAG_READ_RC_FINAL="
 call :log "[ERROR] REBOOT_FLAG_SIGNAL_FAIL reason=%REBOOT_FLAG_REASON% marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% observed_class=%REBOOT_FLAG_OBSERVED_CLASS% write_rc=%REBOOT_FLAG_WRITE_RC_FINAL% read_rc=%REBOOT_FLAG_READ_RC_FINAL%"
 set "FAILED=1"
 call :track_rc 9001
