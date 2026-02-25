@@ -361,7 +361,7 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * Disabled services with guarded checks:
 
-  * `SysMain`, `WSearch`, `Spooler`, `DiagTrack`, `dmwappushsvc`, `WerSvc`, `WebClient`
+  * `SysMain`, `WSearch`, `Spooler`, `DiagTrack`, `dmwappushservice`, `WerSvc`, `WebClient`
 
 * Nonexistent services are logged as info and do not count as failures.
 
@@ -487,7 +487,7 @@ Platform gate failures now flow through the same final RC aggregation block as s
 
 * WU UI shows notify behavior. Drivers and other MS products are not offered automatically, and no OS upgrade offers appear.
 
-* Services `SysMain`, `WSearch`, `Spooler`, `DiagTrack`, `dmwappushsvc`, `WerSvc`, `WebClient` are disabled.
+* Services `SysMain`, `WSearch`, `Spooler`, `DiagTrack`, `dmwappushservice`, `WerSvc`, `WebClient` are disabled.
 
 * SMBv1 and PowerShell 2.0 are disabled if they were enabled.
 

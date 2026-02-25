@@ -427,7 +427,7 @@ How violations show up:
 * Delivery Optimization set to mode 0 (HTTP only, no peer to peer).
 * Network quieting: WPAD off via WinINET and WinHTTP keys, LLMNR off, Teredo/6to4/ISATAP off.
 * OneDrive sync disabled via policy (`DisableFileSyncNGSC=1`). The client is not uninstalled by default.
-* Services disabled with guards: SysMain, WSearch, Spooler, DiagTrack, dmwappushsvc, WerSvc, WebClient.
+* Services disabled with guards: SysMain, WSearch, Spooler, DiagTrack, dmwappushservice, WerSvc, WebClient.
 * Features and Capabilities: SMBv1 and PowerShell 2.0 disabled if present; remove Quick Assist, SNMP Client, and WMI SNMP Provider with correct DISM return code handling.
 * Windows Update in notify only mode, no drivers, no preview builds, no other Microsoft products, OS upgrade offers blocked.
 ## Post-install quick check
