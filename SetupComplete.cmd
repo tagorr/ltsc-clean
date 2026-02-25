@@ -910,7 +910,12 @@ if not "%FINAL_RC%"=="0" (
 )
 
 if "%FINAL_RC%"=="0" (
-  call :log "[FINAL] SUCCESS"
+  if "%L2C_AUTOLOGON_DEGRADED%"=="1" (
+    set "FINAL_RC=2"
+    call :log "[FINAL] DEGRADED manual_login_required=%MANUAL_LOGIN_REQUIRED%"
+  ) else (
+    call :log "[FINAL] SUCCESS"
+  )
 ) else (
   call :log "[FINAL] FAIL (FINAL_RC=%FINAL_RC%)"
 )
@@ -977,6 +982,7 @@ exit /b %RC%
 set "RC=%ERRORLEVEL%"
 call :log "[ERROR] L2C_MARKER_WRITE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
 call :log "[ERROR] L2C_DEGRADED_ENTERED manual_login_required=1"
+set "MANUAL_LOGIN_REQUIRED=1"
 call :winlogon_rollback_autologon
 set "L2C_AUTOLOGON_ARMED=0"
 set "L2C_AUTOLOGON_DEGRADED=1"

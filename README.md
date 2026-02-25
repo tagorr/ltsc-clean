@@ -522,7 +522,11 @@ If the primary admin secret is missing or invalid, `SetupComplete.cmd` logs the 
   * `-2146498541` / `2148468755` – warning (invalid install state for this feature on this SKU); logged and do not fail the run;
   * any other code – fatal servicing error (see FINAL_RC aggregation below).
 
-Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_BAD_RC`, and set `DISM_HARD_FAIL=1`. After a fatal RC, feature/capability/cleanup DISM calls are skipped. At the end of `SetupComplete.cmd`, `FINAL_RC` is computed as `L2C_FIRST_BAD_RC` when set, otherwise `1` when `FAILED==1`, otherwise `0`, and is logged as “[RC] returning %FINAL_RC%” before the script exits with that code.
+Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_BAD_RC`, and set `DISM_HARD_FAIL=1`. After a fatal RC, feature/capability/cleanup DISM calls are skipped. At the end of `SetupComplete.cmd`, `FINAL_RC` is computed as `L2C_FIRST_BAD_RC` when set, otherwise `1` when `FAILED==1`, otherwise `2` when `L2C_AUTOLOGON_DEGRADED==1`, otherwise `0`, and is logged as “[RC] returning %FINAL_RC%” before the script exits with that code.
+
+Immediately before the tail `[RC] returning ...` line, `SetupComplete.cmd` emits a final outcome marker: `[FINAL] SUCCESS` (exit code `0`), `[FINAL] DEGRADED manual_login_required=1` (exit code `2`), or `[FINAL] FAIL (FINAL_RC=...)` (exit code `FINAL_RC`). Hard failures take precedence over DEGRADED and are not overridden to `2`.
+
+DEGRADED means unattended continuity is broken (no automatic logon), so interactive login is required to continue. Stage B may already be scheduled (OnLogon) but will not run until an interactive logon occurs.
 * Installers are invoked with:
 
   * MSI: `REBOOT=ReallySuppress /norestart`
@@ -774,7 +778,7 @@ Behavior:
   * with `STRICT_DISPLAYVERSION=0` (opt-out) the script logs a warning and continues in best effort mode.
 * In `:gate_dv`, `DisplayVersion` is read before branching on `STRICT_DISPLAYVERSION`; if it cannot be read, `DV` is normalized to `<missing>` so WARN/ERROR logs are not blank.
 
-Regardless of failure source (platform gate, DISM, or other checks), `SetupComplete.cmd` aggregates a final RC (`L2C_FIRST_BAD_RC` if present, else `1` when `FAILED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code so operators always see a single tail marker in the log.
+Regardless of failure source (platform gate, DISM, or other checks), `SetupComplete.cmd` aggregates a final RC (`L2C_FIRST_BAD_RC` if present, else `1` when `FAILED==1`, else `2` when `L2C_AUTOLOGON_DEGRADED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code so operators always see a single tail marker in the log.
 
 Baseline behavior is fail-closed with `STRICT_DISPLAYVERSION=1`. For forks and experiments, opt out with `STRICT_DISPLAYVERSION=0` and adjust `REQUIRED_*` to your target.
 
