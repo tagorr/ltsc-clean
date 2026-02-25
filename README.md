@@ -23,6 +23,8 @@ This baseline expects the primary local admin password to be supplied explicitly
 - Windows 10 Enterprise LTSC 2021 (21H2, EditionID = EnterpriseS, build 19044+)
 - No corporate integration required
 
+Note: Documentation is UTF-8. Copy/paste command blocks are kept ASCII where possible. If your environment is not UTF-8 capable, view these files in a UTF-8 aware editor.
+
 ## Files in this repo
 
 - `PreOOBE.cmd` - specialize-phase privacy policies and bootstrap trigger

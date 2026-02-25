@@ -19,6 +19,7 @@ Thanks for your interest in contributing!
 - Do not mix `reg.exe` and PowerShell cmdlets in one logical block **without a clear reason**.
 - Reboot via `shutdown.exe /r /t 0` (add `/f` only if needed).
 - ASCII quotes only in code examples: `' " - /`. No smart quotes.
+- Documentation is UTF-8. For copy/paste command blocks, prefer ASCII punctuation (plain quotes and hyphens) to avoid issues in non-UTF8 environments.
 - All examples and snippets must be compatible with Windows PowerShell 5.1.
 
 ## Line endings (EOL)
