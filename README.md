@@ -103,7 +103,7 @@ High-level interpretation:
 1. Open the most recent `%ProgramData%\l2c_master_<timestamp>.log`.
 2. Look for:
 
-   - the final `OUTCOME: ...` line (`SUCCESS`, `FAIL`, or `ABORTED`);
+   - the final `OUTCOME:` line (one of: `OUTCOME: SUCCESS`, `OUTCOME: FAIL - <reason>`, `OUTCOME: ABORTED - <reason>`);
    - logon policy restore verification failures:
      - `HARD FAIL: Logon policy restore verification failed, refusing to teardown executor/bootstrap.`
      - `Teardown blocked due to logon policy restore verification failure; bootstrap/task/secrets retained.`
@@ -293,7 +293,7 @@ Normal path (TeardownEligible: Winlogon cleanup verified + logon policy restore 
 * deletes `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`;
 * if either secret delete fails (cleanup state `error`), Stage B logs a secret cleanup error outcome, keeps `StageB_Succeeded=$false`, and suppresses any automatic reboot even if the Panther flag exists;
 * if `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B completed successfully in normal mode, Stage B performs a tri-state pending reboot check, logs the result (Example: `Pending reboot check: state=true reasons=<...> errors=<...>`), and then either consumes the flag and reboots (`state=true`), clears the stale flag without reboot (`state=false`), or reboots conservatively on `unknown`; state precedence is `true` if any reasons exist even if errors exist, `unknown` only if no reasons but probe errors exist, `false` only if no reasons and no errors; indicators include CBS and Windows Update markers, Session Manager `PendingFileRenameOperations`/`PendingFileRenameOperations2`, and `HKLM\SOFTWARE\Microsoft\Updates\UpdateExeVolatile`;
-* logs an `OUTCOME: Success` entry in the master log in `C:\ProgramData\l2c_master_<timestamp>.log`.
+* logs an `OUTCOME: SUCCESS` entry in the master log in `C:\ProgramData\l2c_master_<timestamp>.log`.
 
 Recovery path:
 
@@ -438,7 +438,7 @@ How violations show up:
 * Windows Update UI shows notify behavior; no drivers or other Microsoft products are auto offered.
 * Disabled services remain disabled after reboot.
 * DISM capability removals logged explicit outcomes (removed, not present, skipped due to missing/unparsable state, or hard-fail with `DISM_HARD_FAIL=1`).
-* `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: Success` entry for the normal path, or a clearly marked non-success `OUTCOME: ...` entry (for example, `OUTCOME: FAIL - Stage A failed (RC=...)`) when diagnostics are required.
+* `C:\ProgramData\l2c_master_<timestamp>.log` contains an `OUTCOME: SUCCESS` entry for the normal path, or a clearly marked non-success `OUTCOME: ...` entry (for example, `OUTCOME: FAIL - Stage A failed (RC=...)`) when diagnostics are required.
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` are absent in the normal success path; if they are present you are either in recovery, after a Winlogon cleanup verification failure, or running the master manually.
 
 For the full verification list, see `DECISIONS.md` §9 and `docs/AUDIT_CHECKLIST.md` (end-to-end audit checklist for scripts and documentation).
@@ -818,7 +818,7 @@ PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePri
 3. `SetupComplete.cmd` (runs once after OOBE as SYSTEM) performs:
 
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
-   * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, anything else is failure;
+   * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, LTSC DISM warnings `-2146498548`/`2148468748` (feature not recognized) and `-2146498541`/`2148468755` (invalid install state) are logged as WARN (set `HAS_DISM_WARN=1`) and treated as success, anything else is failure;
    * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate; when the validator returns `4` (internal error) `SetupComplete.cmd` logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration).
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid, validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
 
@@ -933,7 +933,7 @@ If `.primaryadmin.pw` is missing or invalid, `SetupComplete.cmd` logs the condit
 * Policies: `DisableCAD=0`, `DevicePasswordLessBuildVersion=2` in the normal path.
 * `bootstrap` is disabled (`net.exe user bootstrap /active:no`); Stage B may invoke the same command during teardown, it carries no password and is not a secret-on-CLI exposure.
 * `%WINDIR%\Panther\SetupComplete.log` contains clean end markers for SetupComplete.
-* `C:\ProgramData\l2c_master_<timestamp>.log` contains `OUTCOME: Success` for the normal path or a clearly marked recovery outcome when applicable.
+* `C:\ProgramData\l2c_master_<timestamp>.log` contains `OUTCOME: SUCCESS` for the normal path or a clearly marked recovery outcome when applicable.
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist in the normal path.
 
 ## Diagnostics (short)
