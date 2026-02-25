@@ -20,7 +20,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 ## Process policy: Agent execution model
 
-- Codex CLI is the sole automation agent; its operational rules live in `AGENTS.md` under the “Codex CLI Contract”.
+- Codex CLI is the sole automation agent; its operational rules live in `AGENTS.md` under the "Codex CLI Contract".
 - The interaction contract is maintained in `docs/INTERACTION_CONTRACT.md` and defines the operational rules for agent-assisted changes.
 
 ## ADR: Fix PS interpolation in CreatePrimaryAdmin ($User: → ${User}:)
@@ -33,7 +33,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 - **Status:** historical (Stage A now uses `Microsoft.PowerShell.LocalAccounts` instead of ADSI).
 
-- **Related:** see “Idempotent Stage A; guard Stage B” about Stage A idempotence and the Stage B guard.
+- **Related:** see "Idempotent Stage A; guard Stage B" about Stage A idempotence and the Stage B guard.
 
 ## 2A. Move servicing from XML into SetupComplete
 
@@ -41,7 +41,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 **Decision.** All DISM operations and policies (IE/Edge, Delivery Optimization, telemetry, OneDrive, etc.) run in `SetupComplete.cmd`. The `Autounattend.xml` stays minimal (`windowsPE`, `generalize`, `specialize`, `oobeSystem` only), with no `FirstLogonCommands`.
 
-**Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the “Panther flag”), leaving consumption of that flag to Stage B of `CreatePrimaryAdmin.ps1` after the first interactive logon.
+**Motivation.** Predictable phases, a single logging point, no races during OOBE, and idempotent behavior. `SetupComplete.cmd` never performs a reboot. Instead, it decides whether a post install reboot is required and signals that decision via `%WINDIR%\Panther\_needs_reboot.flag` (the "Panther flag"), leaving consumption of that flag to Stage B of `CreatePrimaryAdmin.ps1` after the first interactive logon.
 
 `SetupComplete.cmd` does not delete a pre-existing `%WINDIR%\Panther\_needs_reboot.flag` on entry; it logs a WARN when the flag already exists and preserves it as a sticky pending reboot marker.
 
@@ -81,7 +81,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
 
 | Delivery Optimization | Various places | SetupComplete           | DO policies (Mode 0) |
 
-| `Panther flag` reboot signal | —            | SetupComplete           |`%REBOOT_FLAG%` → `Panther flag` (written when servicing RC is `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`, and preserved as sticky when pre-existing; Stage B of `CreatePrimaryAdmin.ps1` consumes the flag in normal mode and may clear it as stale when no pending reboot indicators exist)|
+| `Panther flag` reboot signal | -            | SetupComplete           |`%REBOOT_FLAG%` → `Panther flag` (written when servicing RC is `3010/1641` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`, and preserved as sticky when pre-existing; Stage B of `CreatePrimaryAdmin.ps1` consumes the flag in normal mode and may clear it as stale when no pending reboot indicators exist)|
 
 ---
 
@@ -143,7 +143,7 @@ The baseline never auto-generates the primary local admin password. Instead it e
    If `SetupComplete.cmd` successfully signals `%WINDIR%\Panther\_needs_reboot.flag` (`REBOOT_FLAG_SIGNAL_OK=1`) but AutoAdminLogon was not armed (degraded mode after Winlogon priming), `SetupComplete.log` logs `WARN_REBOOT_FLAG_NO_AUTOLOGON` to avoid a silent stall: Stage B is scheduled but will not run until a manual logon occurs.
    In the normal path, when Stage B succeeded and `%WINDIR%\Panther\_needs_reboot.flag` exists, Stage B logs a pending reboot check with state/reasons/errors (Example: `Pending reboot check: state=<true|false|unknown> reasons=<...> errors=<...>`) and then: `state=true` consumes the flag and reboots, `state=false` treats the flag as stale and clears it without reboot, `state=unknown` logs a WARN and reboots conservatively (policy-driven, recorded in the master log). State precedence: `true` if any reasons exist even if errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors.
 
-5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A’s outcome and internal validation. Stage A of `CreatePrimaryAdmin.ps1` always reads the secret from `.primaryadmin.pw` under SYSTEM and never falls back to other sources; if the secret is missing or invalid, Stage A fails closed and Stage B runs in recovery. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs a pending reboot check with state/reasons/errors (Example: `Pending reboot check: state=<true|false|unknown> reasons=<...> errors=<...>`) and then: `state=true` consumes the flag and performs a single controlled `shutdown.exe /r /t 0`; `state=false` treats the flag as stale and clears it without reboot; `state=unknown` logs a WARN and reboots conservatively (policy-driven, recorded in the master log). State precedence: `true` if any reasons exist even if errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
+5. First interactive sign-in happens. The SYSTEM scheduled task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`, which always executes Stage B once after Stage A and chooses between a normal and a recovery path based on Stage A's outcome and internal validation. Stage A of `CreatePrimaryAdmin.ps1` always reads the secret from `.primaryadmin.pw` under SYSTEM and never falls back to other sources; if the secret is missing or invalid, Stage A fails closed and Stage B runs in recovery. In the normal path, Stage B performs its cleanup and, if the Panther flag exists and Stage B completed successfully, it logs a pending reboot check with state/reasons/errors (Example: `Pending reboot check: state=<true|false|unknown> reasons=<...> errors=<...>`) and then: `state=true` consumes the flag and performs a single controlled `shutdown.exe /r /t 0`; `state=false` treats the flag as stale and clears it without reboot; `state=unknown` logs a WARN and reboots conservatively (policy-driven, recorded in the master log). State precedence: `true` if any reasons exist even if errors exist; `unknown` only if no reasons but probe errors exist; `false` only if no reasons and no errors. In recovery mode or when Stage B fails, Stage B performs as much cleanup as possible, logs any Panther flag, does not reboot automatically, and leaves the flag in place for operator diagnostics.
 
 ## 3. File layout and key paths
 
@@ -167,9 +167,9 @@ PreOOBE.cmd (specialize) invokes BootstrapLocalAdmin.ps1. PreOOBE does not touch
 
 * Password source files inside the image
 
-  `%WINDIR%\Setup\Scripts\.bootstrap.pw` – bootstrap account password, generated by `BootstrapLocalAdmin.ps1` at PreOOBE time.
+  `%WINDIR%\Setup\Scripts\.bootstrap.pw` - bootstrap account password, generated by `BootstrapLocalAdmin.ps1` at PreOOBE time.
 
-  `%WINDIR%\Setup\Scripts\.primaryadmin.pw` – primary local admin password, provided by the operator (UTF-8 without BOM, one non-empty line, restricted character set).
+  `%WINDIR%\Setup\Scripts\.primaryadmin.pw` - primary local admin password, provided by the operator (UTF-8 without BOM, one non-empty line, restricted character set).
 
   Both files are deleted by Stage B on the normal path and preserved only when Stage B enters the recovery path.
 
@@ -254,7 +254,7 @@ See section **5.1** below for details and a sample verification snippet.
 
   - `1` → log **ERROR**, set `FAILED=1`, and jump to the shared final RC tail;
 
-  - `0` → log **WARN** and **continue** (best‑effort opt-out).
+  - `0` → log **WARN** and **continue** (best-effort opt-out).
   - In `:gate_dv`, `DV` is read from the registry before branching on strictness; if unavailable it is normalized to `<missing>` so mismatch logs are never blank.
 
 ### 5.1 Platform gate - details and code
@@ -557,7 +557,7 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 **Decision:** Use the standard `AutoAdminLogon` Winlogon, which works only for a console session.
 
-**Consequences:** In VMConnect **Enhanced** (RDP) there will always be a logon screen — this is expected and not an autologon bug.
+**Consequences:** In VMConnect **Enhanced** (RDP) there will always be a logon screen - this is expected and not an autologon bug.
 
 ## ADR-002: Registry writes via `reg.exe` with explicit types
 
@@ -569,7 +569,7 @@ Contributions are welcome via issues and pull requests. Please keep changes alig
 
 **Consequences:** More verbose code, but predictable types and reliability.
 
-Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; read `$LASTEXITCODE`. For `DELETE` acceptable RCs: `{0,2}` (idempotence).
+Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe ... | Out-Null 2>$null`; read `$LASTEXITCODE`. For `DELETE` acceptable RCs: `{0,2}` (idempotence).
 
 ## ADR-003: RNG shim for WinPS 5.1
 
@@ -601,7 +601,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 - Stage A performs an ADSI membership pre-check and treats `net.exe localgroup` return codes `0` and `1378` as success, logging `A: SKIP (already member)` when no change is needed.
 
-- Stage B (Winlogon rollback, `bootstrap` deactivation) always runs once after Stage A and selects a normal or recovery path based on Stage A’s outcome and internal validation, guarding any automatic reboot behind Stage B success in the normal path.
+- Stage B (Winlogon rollback, `bootstrap` deactivation) always runs once after Stage A and selects a normal or recovery path based on Stage A's outcome and internal validation, guarding any automatic reboot behind Stage B success in the normal path.
 
 - Ban `cmd /c` wrappers in Windows PowerShell 5.1; invoke `net.exe` directly to preserve `$LASTEXITCODE` and reduce noise.
 
@@ -635,7 +635,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 - Editors should be configured accordingly (see `CONTRIBUTING.md`).
 
-## ADRs – 2025-11
+## ADRs - 2025-11
 
 ### ADR: No Delayed Expansion in .cmd
 
@@ -669,7 +669,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Winlogon autologon flipped `AutoAdminLogon`/`ForceAutoLogon` even if the PowerShell write of `DefaultPassword` failed, leaving a stuck autologon without credentials.
 - `schtasks /Create \L2C\CreatePrimaryAdmin` was not tracked via `:track_rc`, so failures could be invisible to L2C_FIRST_BAD_RC and exit codes even when task creation failed.
 - Stage B of `CreatePrimaryAdmin.ps1` cleaned Winlogon, the scheduled task, and `.bootstrap.pw`, but many failure paths only emitted DEBUG/WARN entries and did not encode the cleanup result for later tooling.
-- `.bootstrap.pw` ACLs were recreated using localized “Administrators” names instead of translating the Administrators SID, leaving room for locale regressions.
+- `.bootstrap.pw` ACLs were recreated using localized "Administrators" names instead of translating the Administrators SID, leaving room for locale regressions.
 
 ### Decision
 
@@ -717,13 +717,13 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 **Decision:**
 
 - Whitelist two DISM warning codes and treat them as non-fatal:
-  - -2146498548 / 2148468748 (“feature not recognized in this image”).
-  - -2146498541 / 2148468755 (“invalid install state for this feature”).
+  - -2146498548 / 2148468748 ("feature not recognized in this image").
+  - -2146498541 / 2148468755 ("invalid install state for this feature").
   For these codes, `:run_dism` logs a warning, sets `HAS_DISM_WARN=1`, and does not set `DISM_HARD_FAIL`.
 - All other DISM return codes outside `{0, 3010, 1641}` and the warning whitelist remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
-- Treat `3010` and `1641` as non-fatal “reboot required” outcomes (success with reboot required). They do not set `DISM_HARD_FAIL` and are not part of the warning whitelist.
+- Treat `3010` and `1641` as non-fatal "reboot required" outcomes (success with reboot required). They do not set `DISM_HARD_FAIL` and are not part of the warning whitelist.
 - The warning whitelist is intentionally narrow (only the two codes above); expanding it requires operator investigation and explicit documentation updates. In `SetupComplete.cmd`, Stage B scheduling is gated on `FAILED=0`. Any DISM hard-fail that sets `FAILED=1` therefore prevents Stage B scheduling in that run (fail-closed).
-- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, if `L2C_AUTOLOGON_DEGRADED==1`, `FINAL_RC=2`; otherwise, `FINAL_RC=0`. The script logs “[RC] returning %FINAL_RC%” and exits with that code.
+- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, if `L2C_AUTOLOGON_DEGRADED==1`, `FINAL_RC=2`; otherwise, `FINAL_RC=0`. The script logs "[RC] returning %FINAL_RC%" and exits with that code.
 
 **Consequences:**
 
@@ -740,7 +740,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 **Decision:**
 
 - Maintain two secrets under `%WINDIR%\Setup\Scripts`: `.bootstrap.pw` (generated by `BootstrapLocalAdmin.ps1` for the temporary `bootstrap` account) and `.primaryadmin.pw` (operator-supplied for `primaryadmin`). Both are single-line UTF-8 (no BOM) files with inheritance disabled, explicit FullControl ACEs only for `NT AUTHORITY\SYSTEM` (S-1-5-18) and the local Administrators group (S-1-5-32-544), and Hidden + System attributes.
-- `ValidateSecrets.ps1` runs in the `SetupComplete.cmd` gateway after DISM feature/capability servicing and before the Panther reboot-flag evaluation, verifies the ACL/attribute shape of both files without reading passwords, and returns a 0–3 exit-code bitmask (bit0=bootstrap secret valid, bit1=primary admin secret valid); `SetupComplete.cmd` decodes `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK` instead of parsing stdout (only for `rc` in `0..3`; `rc=4` is an internal validator failure sentinel, and any other exit code is treated as unexpected/out-of-contract and fails closed with `FAILED=1`, `bootstrap=0, primaryadmin=0`, and `:track_rc` capturing the unexpected rc for `FINAL_RC` aggregation).
+- `ValidateSecrets.ps1` runs in the `SetupComplete.cmd` gateway after DISM feature/capability servicing and before the Panther reboot-flag evaluation, verifies the ACL/attribute shape of both files without reading passwords, and returns a 0-3 exit-code bitmask (bit0=bootstrap secret valid, bit1=primary admin secret valid); `SetupComplete.cmd` decodes `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK` instead of parsing stdout (only for `rc` in `0..3`; `rc=4` is an internal validator failure sentinel, and any other exit code is treated as unexpected/out-of-contract and fails closed with `FAILED=1`, `bootstrap=0, primaryadmin=0`, and `:track_rc` capturing the unexpected rc for `FINAL_RC` aggregation).
 - `SetupComplete.cmd` requires `.bootstrap.pw` to exist and be non-empty (first line) and contain only allowed characters on that first line, and `.primaryadmin.pw` to exist, pass the ACL/attribute check, and be readable with the allowed character set. A single gate (FAILED=0 plus both secrets validated and loaded) controls temporary logon policy relaxation, Winlogon priming for `bootstrap` (`DefaultUserName`/`DefaultDomainName`/`DefaultPassword` read from the first line of `.bootstrap.pw`), and registration of the SYSTEM/Highest OnLogon task `\L2C\CreatePrimaryAdmin` without embedding passwords.
 - `SetupComplete.cmd` enforces a scheduled task tampering boundary (non-admin) for `\L2C\CreatePrimaryAdmin`: it runs a pre-check on `%WINDIR%\Setup\Scripts` and `CreatePrimaryAdmin.ps1`, hardens `%SystemRoot%\System32\Tasks\L2C` before task creation (see `[ACLBOUNDARY] Hardened task_dir=...`), and runs a post-check on the task definition file and `%SystemRoot%\System32\Tasks\L2C`. When post-check fails it deletes the task and logs a deterministic deletion RC (see `[ACLBOUNDARY] Task delete rc=...`) while refusing to prime Winlogon.
 - Fail-closed boundary behavior: when an Allow ACE grants unsafe rights and the ACE identity cannot be resolved to a SID, `ValidateSecrets.ps1` treats this as unsafe and logs `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed): path=... id=... rights=... hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.` or `[ACLBOUNDARY] Unsafe Allow ACE (identity_unresolved_fail_closed, domain_possible): path=... id=... rights=... hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.` (`domain_possible` is a heuristic based on `id=X\Y` format, excluding built-in prefixes).
@@ -759,7 +759,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 
 **Context:** Earlier, `ValidateSecrets.ps1` printed `set ...` statements to stdout and `SetupComplete.cmd` parsed them via `for /f ... do call`. That bridge was brittle (locale/encoding dependent) and mingled contract data with free-form output.
 
-**Decision:** `ValidateSecrets.ps1` now encodes its results solely in the process exit code: a 0–3 bitmask where bit0 indicates the bootstrap secret passed ACL/attribute checks and bit1 indicates the primary-admin secret passed, and exit code `4` indicates an internal validator error. The validator runs under `Set-StrictMode -Version Latest` with `$ErrorActionPreference='Stop'` so unexpected conditions surface as errors; internal errors are caught and returned as `4` rather than being mapped to `0`. `SetupComplete.cmd` invokes the validator as a child process, reads `%ERRORLEVEL%`, allow-lists `rc` in `0..3` for bit decoding into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`, and gates autologon/Stage B registration on both bits being `1`; `rc=4` and any other exit code fail closed (unexpected/out-of-contract codes are captured via `:track_rc` for `FINAL_RC` aggregation).
+**Decision:** `ValidateSecrets.ps1` now encodes its results solely in the process exit code: a 0-3 bitmask where bit0 indicates the bootstrap secret passed ACL/attribute checks and bit1 indicates the primary-admin secret passed, and exit code `4` indicates an internal validator error. The validator runs under `Set-StrictMode -Version Latest` with `$ErrorActionPreference='Stop'` so unexpected conditions surface as errors; internal errors are caught and returned as `4` rather than being mapped to `0`. `SetupComplete.cmd` invokes the validator as a child process, reads `%ERRORLEVEL%`, allow-lists `rc` in `0..3` for bit decoding into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=X, primaryadmin=Y)`, and gates autologon/Stage B registration on both bits being `1`; `rc=4` and any other exit code fail closed (unexpected/out-of-contract codes are captured via `:track_rc` for `FINAL_RC` aggregation).
 
 **Consequences:**
 
@@ -811,6 +811,6 @@ The temporary `bootstrap` account is provisioned in PreOOBE via `Microsoft.Power
 - The password is applied via `New-LocalUser`/`Set-LocalUser` with a `SecureString`; the password is never passed as plaintext on an external process command line.
 - Stage A creates or updates the local user, enables it, and enforces required local group membership via SID-based group resolution (`Get-LocalGroup -SID` + `Add-LocalGroupMember`). Membership verification does not enumerate group members; it uses bounded repeat `Add-LocalGroupMember` idempotency (already-member / MemberExists condition, Win32 1378). Ensure-step code semantics: the Administrators ensure returns 1378 for already-member/no-change (used for `A: SKIP (already member)` logging) while ensured/verified returns 0; Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 - Rollback remains fail-closed and observable: when Stage A created `primaryadmin` during this run and a later Stage A step fails, it attempts best-effort rollback via `Remove-LocalUser` and forces recovery; when the user existed before this run, Stage A does not delete it on failure.
-- For pre-existing users only, Stage A makes a best-effort attempt to clear “must change password at next logon” via `net.exe user <user> /logonpasswordchg:no` (no secrets on CLI).
+- For pre-existing users only, Stage A makes a best-effort attempt to clear "must change password at next logon" via `net.exe user <user> /logonpasswordchg:no` (no secrets on CLI).
 
 **Consequences:** The password remains off external process command lines and task XML, while Stage A no longer depends on ADSI. Failure modes remain fail-closed and preserve the recovery entrypoint (scheduled task + bootstrap + secrets) for operator investigation and retry.

@@ -6,8 +6,8 @@ Primary goal: deterministic Windows-native execution without multi-layer quoting
 ## Scope and working directory
 1. All work MUST be scoped to the repository root (workspace root). Do not assume CWD stability between harness steps.
 2. Do not operate inside `.git` and do not write anything into `.git`.
-3. All temporary execution scripts MUST be created only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
-4. Do not rely on persistent environment variables across runner steps. Within a single Scripted-mode `.ps1`, setting `$env:` is allowed for that script’s process tree.
+3. All temporary execution scripts MUST be created only under the repository root's `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
+4. Do not rely on persistent environment variables across runner steps. Within a single Scripted-mode `.ps1`, setting `$env:` is allowed for that script's process tree.
 
 ## Execution model (Windows-native)
 Each step is one harness invocation executed as `cmd.exe /c "<line>"`. Scripted mode may require a prior file-edit operation to create a temporary execution script under `.codex_tmp`. 
@@ -36,7 +36,7 @@ In emitted inline `<line>`, quoting characters are forbidden: do not use `"` or 
 
 Inside `.ps1`, invoke executables directly (for example: `git status`). Use the call operator `&` only when invoking an executable via an explicit path (especially if the path is stored in a variable or contains spaces).
 
-If there is any doubt whether a command is “simple enough” to inline, use Scripted mode.
+If there is any doubt whether a command is "simple enough" to inline, use Scripted mode.
 Keep emitted CMD lines within the Windows command-line length limit (roughly 8191 characters); otherwise use Scripted mode.
 
 ## Inline vs Scripted (mandatory decision)
@@ -70,7 +70,7 @@ Scripted mode is REQUIRED if the task involves any of the following:
 
 Scripted mode workflow:
 Inside the temporary .ps1, apply the repository-root anchoring rule from ## Execution model (Windows-native) before doing any other work.
-1) Write a temporary PowerShell script file only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
+1) Write a temporary PowerShell script file only under the repository root's `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 2) Execute it via Windows PowerShell 5.1 using `-File` (do not run temporary execution scripts via `-Command`).
 3) Cleanup according to the Cleanup policy.
 
@@ -97,7 +97,7 @@ Good (Scripted mode; argv-safe). Replace `C:\repo` with the exact value printed 
 
 ## Temporary execution scripts directory: .codex_tmp
 Location:
-- the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
+- the repository root's `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`).
 
 The repository is expected to ignore `.codex_tmp/` via `.gitignore`.
 
@@ -158,7 +158,7 @@ Example form (replace `C:\repo` with the exact value printed earlier by `git rev
 
 Notes:
 * Do not embed script logic into command strings.
-* Do not pass a single “mega string” as arguments. Prefer explicit script parameters.
+* Do not pass a single "mega string" as arguments. Prefer explicit script parameters.
 
 ## Cleanup policy
 * **Success (exit code 0):** the agent MUST delete the **single** just-executed temporary script file under `.codex_tmp\` **as the next separate step** (do not combine deletion with the launcher step).
@@ -215,7 +215,7 @@ When calling an external executable, the script MUST:
 * Invoke the executable directly (no nested shells).
 * Check `$LASTEXITCODE` and treat non-zero as failure unless explicitly normalized.
 
-If a tool uses a non-zero code for “not an error” semantics (example: “no matches”), the script MUST:
+If a tool uses a non-zero code for "not an error" semantics (example: "no matches"), the script MUST:
 
 * Normalize that code explicitly.
 * Document the normalization in a comment.
@@ -242,15 +242,15 @@ Rules:
 * Only normalize non-zero codes that are documented (example: `git grep` RC=1 as "no matches").
 
 ## Forbidden patterns
-The following are forbidden in this repository’s execution workflow:
+The following are forbidden in this repository's execution workflow:
 
 * Running temporary execution scripts via `-Command` instead of `-File`
 * HARD STOP: Any emitted `<line>` invoking `powershell.exe` with `-Command` is forbidden. No exceptions, including read-only viewing, searching, printing line ranges, or formatting output.
 * PowerShell in emitted `<line>` is allowed ONLY as the pinned `-File` launcher, never `-Command`.
 * Embedding non-trivial PowerShell inside `cmd.exe` quoting layers for logic
 * Retrying a failed inline step by adding quoting/escaping due to argv splitting or quoting fragility; switch to Scripted mode immediately instead
-* Adding extra steps to “check the previous step” (for example via `if errorlevel`) instead of relying on the step’s exit code
-* Any “double wrapping” such as `cmd.exe /c "cmd.exe /c ..."`
+* Adding extra steps to "check the previous step" (for example via `if errorlevel`) instead of relying on the step's exit code
+* Any "double wrapping" such as `cmd.exe /c "cmd.exe /c ..."`
 * Including `cmd.exe /c` in an emitted step command (the harness already supplies it)
 * Building a single command string to execute via a shell inside `.ps1` instead of invoking tools directly
 * Creating multiple temporary execution `.ps1` files for one investigation when one probe script would suffice
