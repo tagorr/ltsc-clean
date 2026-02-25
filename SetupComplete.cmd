@@ -67,7 +67,7 @@ set "CB=%CB:"=%"
 REM --- Normalize CurrentBuild into CBN (integer) ---
 set "CBN="
 if not defined CB (
-  for /f "skip=1 tokens=1,2,*" %%A in (reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuild 2^>nul) do if /I "%%A"=="CurrentBuild" set "CB=%%C"
+  for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuild 2^>nul') do if /I "%%A"=="CurrentBuild" set "CB=%%C"
   set "CB=%CB:"=%"
 )
 for /f "tokens=1 delims= " %%# in ("%CB%") do set "CBN=%%#"
@@ -600,7 +600,7 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyn
 
 :: ------------ Services ------------
 call :log "[SECTION] Services"
-for %%S in (SysMain WSearch Spooler DiagTrack dmwappushsvc WerSvc) do (
+for %%S in (SysMain WSearch Spooler DiagTrack dmwappushservice WerSvc) do (
   sc config %%S start= disabled >nul 2>&1
   sc stop   %%S >nul 2>&1
 )
@@ -1057,7 +1057,7 @@ if not exist "%SystemRoot%\System32\Tasks\L2C" (
   if errorlevel 1 goto :l2c_taskdir_harden_failed_mkdir
 )
 
-REM Break inheritance but COPY inherited ACEs first (language-neutral via SIDs), then remove risky principals.
+REM Break inheritance and REMOVE inherited ACEs (language-neutral via SIDs), then remove risky principals.
 icacls "%SystemRoot%\System32\Tasks\L2C" /inheritance:r >nul 2>&1
 if errorlevel 1 goto :l2c_taskdir_harden_failed_inheritance_r
 icacls "%SystemRoot%\System32\Tasks\L2C" /remove:g "*S-1-5-11" "*S-1-5-32-545" >nul 2>&1
