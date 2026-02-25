@@ -216,7 +216,7 @@ When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs r
 
 * DISM calls flow through `:run_dism`/`:track_rc`; once `DISM_HARD_FAIL` is set, further DISM feature/capability calls are skipped for the rest of the run.
 
-* The script aggregates a final exit code: `FINAL_RC=L2C_FIRST_BAD_RC` if set, else `FINAL_RC=1` when `FAILED=1`, else `FINAL_RC=0`; it logs `[RC] returning %FINAL_RC%` before exiting, and never forces a reboot inside SetupComplete.
+* The script aggregates a final exit code: `FINAL_RC=L2C_FIRST_BAD_RC` if set, else `FINAL_RC=1` when `FAILED=1`, else `FINAL_RC=2` when `L2C_AUTOLOGON_DEGRADED=1`, else `FINAL_RC=0`; it logs `[RC] returning %FINAL_RC%` before exiting, and never forces a reboot inside SetupComplete.
 
 * Installers are invoked with reboot suppression: **MSI** via `REBOOT=ReallySuppress /norestart`; **EXE** with an equivalent `/norestart` switch to avoid reboots inside SetupComplete.
 
@@ -275,7 +275,7 @@ if errorlevel 1 (
 
 ```
 
-Platform gate failures now flow through the same final RC aggregation block as servicing and other failures: `SetupComplete.cmd` computes `FINAL_RC` (preferring `L2C_FIRST_BAD_RC`, otherwise `1` when `FAILED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code. This guarantees a single observable end marker for operators and CI even when the platform is unsupported.
+Platform gate failures now flow through the same final RC aggregation block as servicing and other failures: `SetupComplete.cmd` computes `FINAL_RC` (preferring `L2C_FIRST_BAD_RC`, otherwise `1` when `FAILED==1`, else `2` when `L2C_AUTOLOGON_DEGRADED==1`, else `0`), logs `[RC] returning %FINAL_RC%`, and exits with that code. This guarantees a single observable end marker for operators and CI even when the platform is unsupported.
 
 ## 6. Major decisions and rationale
 
@@ -678,7 +678,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - Capability removal only runs for known states (`Installed`, `Staged`); other states log explicit skip reasons rather than silently continuing.
 - Winlogon autologon switches are configured only if the `DefaultPassword` PowerShell call returns RC=0; on error the script logs `[ERROR]`, sets `FAILED=1`, and leaves autologon off.
 - `schtasks /Create \L2C\CreatePrimaryAdmin` always captures `%ERRORLEVEL%`, logs failures with `[ERROR]`, calls `:track_rc`, and sets `FAILED=1`.
-- Final RC policy: `SetupComplete.cmd` returns `L2C_FIRST_BAD_RC` if set; otherwise it returns `1` when `FAILED==1`, else `0`. Each path logs the specific `[RC] returning ...` line.
+- Final RC policy: `SetupComplete.cmd` returns `L2C_FIRST_BAD_RC` if set; otherwise it returns `1` when `FAILED==1`, else `2` when `L2C_AUTOLOGON_DEGRADED==1`, else `0`. Each path logs the specific `[RC] returning ...` line.
 - `BootstrapLocalAdmin.ps1` resolves the Administrators group via SID `S-1-5-32-544`, uses an atomic create-with-DACL model for `.bootstrap.pw` (CreateNew + FileSecurity; verify fail-closed), and refuses to write the secret insecurely.
 - On `BOOTSTRAP_SECRET_DELETE_FAILED`, `BootstrapLocalAdmin.ps1` best-effort writes `%WINDIR%\Panther\preoobe_warnings.flag` so later stages can surface a non-blocking anomaly warning.
 - `SetupComplete.cmd` reads `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, validates the primary admin password read via `set /p` (first line only, must be non-empty as read; empty first line is rejected, allowed character set only), and only when both secrets are present and valid and the script has not failed, it applies temporary Winlogon policies for AutoAdminLogon, configures AutoAdminLogon for `bootstrap` using the secret from `.bootstrap.pw`, and registers the `\L2C\CreatePrimaryAdmin` task without embedding any password arguments so that secrets do not appear in Task Scheduler or process command lines. If the primary admin secret is missing or invalid, or if `FAILED=1`, it logs the condition, rolls back temporary logon tweaks to safe values, and does not configure autologon or the scheduled task. For visibility, `SetupComplete.log` always logs `.primaryadmin.pw` presence and SEC-2 ACL/attributes status (OK/BAD, or skipped/unknown); when `FAILED=1` it does not read `.primaryadmin.pw` content and logs that the content load was skipped due to earlier failure.
@@ -723,7 +723,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe … | Out-Null 2>$null`; r
 - All other DISM return codes outside `{0, 3010, 1641}` and the warning whitelist remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
 - Treat `3010` and `1641` as non-fatal “reboot required” outcomes (success with reboot required). They do not set `DISM_HARD_FAIL` and are not part of the warning whitelist.
 - The warning whitelist is intentionally narrow (only the two codes above); expanding it requires operator investigation and explicit documentation updates. In `SetupComplete.cmd`, Stage B scheduling is gated on `FAILED=0`. Any DISM hard-fail that sets `FAILED=1` therefore prevents Stage B scheduling in that run (fail-closed).
-- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, `FINAL_RC=0`. The script logs “[RC] returning %FINAL_RC%” and exits with that code.
+- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, if `L2C_AUTOLOGON_DEGRADED==1`, `FINAL_RC=2`; otherwise, `FINAL_RC=0`. The script logs “[RC] returning %FINAL_RC%” and exits with that code.
 
 **Consequences:**
 

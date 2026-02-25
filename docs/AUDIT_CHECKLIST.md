@@ -129,9 +129,10 @@
 * [ ] Start and end logging:
 
   * [ ] `----- SetupComplete started -----`.
-  * [ ] A clear final entry indicating success or failure (for example: [FINAL] SUCCESS or [FINAL] FAIL (FINAL_RC=...)) emitted immediately before the final [RC] returning <code> line.
+  * [ ] A clear final entry indicating success, degraded, or failure (for example: [FINAL] SUCCESS, [FINAL] DEGRADED manual_login_required=1, or [FINAL] FAIL (FINAL_RC=...)) emitted immediately before the final [RC] returning <code> line.
   * [ ] Final entry of the form `[RC] returning <code>` written via `:log`, where `<code>` equals:
         - `0` on success;
+        - `2` when `L2C_AUTOLOGON_DEGRADED==1` (DEGRADED outcome; hard failures still take precedence and are not overridden to `2`);
         - the first fatal DISM RC when present (`L2C_FIRST_BAD_RC`);
         - or `1` when `FAILED==1` without a captured fatal RC.
 * [ ] Platform gate (EditionID, DisplayVersion, CurrentBuild) does not exit early: EditionID/CurrentBuild mismatches log an ERROR, set `FAILED=1`, and jump to the shared final RC label (for example `l2c_final_rc`); DisplayVersion mismatch is fail-closed by default (`STRICT_DISPLAYVERSION=1`): it logs the ERROR and the run ends in the shared final RC tail.
@@ -527,7 +528,7 @@ For each document:
   * [ ] Logs clearly describe where and what failed.
   * [ ] The master log records FAIL with a reason.
 * [ ] `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` do not exist on the normal success path; if they are present, you are either in a recovery scenario, after a Winlogon cleanup verification failure, or running the master manually (see README for expected behavior).
-* [ ] FINAL_RC aggregation matches behavior: `L2C_FIRST_BAD_RC` wins if present; otherwise `FINAL_RC=1` when `FAILED==1`, else `0`.
+* [ ] FINAL_RC aggregation matches behavior: `L2C_FIRST_BAD_RC` wins if present; otherwise `FINAL_RC=1` when `FAILED==1`, else `2` when `L2C_AUTOLOGON_DEGRADED==1`, else `0`.
 
 ---
 
@@ -548,7 +549,7 @@ For each document:
 
 ### Additional DISM/RC validation
 
-* [ ] `SetupComplete.log` shows `[RC] returning 0` for a passing run. For failing runs, non-zero values must match the `FINAL_RC` rules and the first fatal RC captured in `L2C_FIRST_BAD_RC`.
+* [ ] `SetupComplete.log` shows `[RC] returning 0` for a `[FINAL] SUCCESS` run, and `[RC] returning 2` for a `[FINAL] DEGRADED manual_login_required=1` run. For failing runs, non-zero values must match the `FINAL_RC` rules and the first fatal RC captured in `L2C_FIRST_BAD_RC`.
 * [ ] DISM warnings related to missing/not-applicable components on LTSC (whitelisted RCs such as `-2146498548/2148468748` and `-2146498541/2148468755`) are documented as acceptable; any DISM return codes outside `{0, 3010, 1641}` and this warning whitelist must be treated as audit failures and must correspond to a non-zero `FINAL_RC`.
 * [ ] Capability probes use `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English` with output captured to a temp file; no `dism | findstr` pipelines are used for capability decisions (the raw DISM return code must be preserved for classification).
 * [ ] When the probe output lacks a parsable `State :` line, `SetupComplete.cmd` logs a WARN and skips capability removal (no hard-fail is triggered solely by missing state).
