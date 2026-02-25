@@ -97,7 +97,7 @@ Use the current-run logs as your single source of truth. Start from the symptom 
    - if it is missing, the combined gate did not open, so no first-logon master will run automatically.
 
 High-level interpretation:
-- `bootstrap=1, primaryadmin=1` and task scheduled → Stage B should run on first logon; if it didn’t, check task presence manually.
+- `bootstrap=1, primaryadmin=1` and task scheduled → Stage B should run on first logon; if it didn't, check task presence manually.
 - any `0` flag or an internal validator error (`rc=4`) → `SetupComplete.cmd` stayed fail-closed and did not schedule Stage B.
 
 ### Symptom: Stage B ran, but the system is not in the expected final state
@@ -124,7 +124,7 @@ High-level interpretation:
 Interpretation:
 - `OUTCOME: SUCCESS` plus both secrets `removed` → normal final state.
 - any secret `cleanup state=error` → secrets may still exist on disk and require immediate manual inspection and secure removal.
-- a “reboot suppressed …” line → no automatic reboot happened; handle recovery manually even if the Panther flag was present.
+- a "reboot suppressed ..." line → no automatic reboot happened; handle recovery manually even if the Panther flag was present.
 
 ### Symptom: failure during PreOOBE / bootstrap phase
 
@@ -151,7 +151,7 @@ Interpretation:
 
 * The answer file targets Index 1 and sets `<cpi:offlineImage name="Windows 10 Enterprise LTSC">`.
 * At runtime, Windows Setup selects the image by Index; the `<cpi:offlineImage>` entry is for WSIM validation and self documentation only and does not affect drive letters or media paths.
-* The `windowsPE` pass selects the OS via `/IMAGE/INDEX=1` and sets `<UserData><AcceptEula>true</AcceptEula>`, so the installer never shows the “Windows 10 Enterprise LTSC vs Windows 10 Enterprise N LTSC” edition picker and skips the interactive EULA screen.
+* The `windowsPE` pass selects the OS via `/IMAGE/INDEX=1` and sets `<UserData><AcceptEula>true</AcceptEula>`, so the installer never shows the "Windows 10 Enterprise LTSC vs Windows 10 Enterprise N LTSC" edition picker and skips the interactive EULA screen.
 * If you use another WIM/ESD, adjust the `Index` to match your media layout; do not rely on the image name alone. Update the `name` accordingly or remove it and keep `Index=...`.
 
 ## Install flow
@@ -166,14 +166,14 @@ Interpretation:
 
    * performs baseline servicing and hardening with DISM and registry policies;
    * interprets DISM return codes with a small warning whitelist for LTSC-missing features:
-     * `0` – success;
-     * `3010` / `1641` – success, reboot required (set `NEEDS_REBOOT=1` and write the Panther reboot flag);
-     * `-2146498548` / `2148468748` – warning, feature not recognized in this image; logged and treated as success;
-     * `-2146498541` / `2148468755` – warning, invalid install state for this feature; logged and treated as success;
-     * any other code – fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
+     * `0` - success;
+     * `3010` / `1641` - success, reboot required (set `NEEDS_REBOOT=1` and write the Panther reboot flag);
+     * `-2146498548` / `2148468748` - warning, feature not recognized in this image; logged and treated as success;
+     * `-2146498541` / `2148468755` - warning, invalid install state for this feature; logged and treated as success;
+     * any other code - fatal servicing error (logged, `FAILED=1`, `DISM_HARD_FAIL=1`, first fatal RC captured in `L2C_FIRST_BAD_RC`);
      * the whitelist is intentionally narrow (only the codes above); any other non-zero DISM return code is treated as a hard failure that blocks unattended provisioning until an operator reviews `SetupComplete.log` and `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` and extends the whitelist deliberately only if the new code is confirmed benign;
     * probes capability state via `dism /Online /Get-CapabilityInfo /CapabilityName:<cap> /English` with output captured to a temp file and parsed for the `State :` line (no `dism | findstr` pipelines); if the `State :` line is missing/unparsable it logs a WARN and skips removal, and if the probe produces a fatal DISM RC (`DISM_HARD_FAIL=1`) it logs an ERROR and skips subsequent capability removals;
-   * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0–3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0–3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration); any other validator exit code is treated as unexpected/out-of-contract and fatal: in the secrets gate unexpected-RC branch, `SetupComplete.cmd` logs an `[ERROR]` with the rc, calls `:track_rc_secrets` (captures the first out-of-contract rc verbatim, including `3010`/`1641`) so `FINAL_RC` can reflect it when it is the first bad rc, sets `FAILED=1`, and keeps both ACL flags at `0`.
+   * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to check ACL/attribute shape for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the validator runs with `Set-StrictMode -Version Latest` and `$ErrorActionPreference='Stop'` and returns a 0-3 exit-code bitmask (0=both invalid, 1=bootstrap only, 2=primary only, 3=both valid) when it completes successfully, or `4` on an internal error. `SetupComplete.cmd` decodes `0-3` from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses these flags for the gate; when the validator returns `4` it logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration); any other validator exit code is treated as unexpected/out-of-contract and fatal: in the secrets gate unexpected-RC branch, `SetupComplete.cmd` logs an `[ERROR]` with the rc, calls `:track_rc_secrets` (captures the first out-of-contract rc verbatim, including `3010`/`1641`) so `FINAL_RC` can reflect it when it is the first bad rc, sets `FAILED=1`, and keeps both ACL flags at `0`.
     * always logs `.primaryadmin.pw` status in `SetupComplete.log` (present/missing; SEC-2 ACL/attributes `OK`/`BAD`, or `skipped (file missing)` / `unknown (validation not run)`); when `FAILED=1` it does not read `.primaryadmin.pw` contents and logs that the content load was skipped due to earlier failure;
     * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid; validates the secret (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists (non-empty first line), the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
        * creates the scheduled task `\L2C\CreatePrimaryAdmin` (OnLogon, Run as SYSTEM, Run with highest) which will run `CreatePrimaryAdmin.ps1` at the first interactive sign in without embedding any password in the task definition;
@@ -187,12 +187,12 @@ Interpretation:
    * if the primary admin secret is missing or invalid, ACL/attribute checks fail, or if `FAILED=1`, logs the condition, rolls back any temporary logon tweaks to safe values, and does not configure autologon or the scheduled task; the script exits with a non-zero RC, leaving the system in a SetupComplete recovery state.
    * when `FAILED=1` (regardless of whether set by servicing, secret/ACL validation, task creation, or Winlogon priming), the recovery gate logs `SetupComplete entered recovery mode; skipping extra registrations` and suppresses extra registrations (including Stage B scheduling/priming).
    * after the Stage B gateway, evaluates reboot requirement and signals it via `:flag_reboot` (write + verify) by creating `%WINDIR%\Panther\_needs_reboot.flag` only when a reboot is required (`NEEDS_REBOOT=1`) or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set; the marker is a single-line ASCII (7-bit) token (`need-reboot` by default; `force-reboot` when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`) written with CRLF (no BOM) and verified by reading the first line only (PowerShell/.NET writer; process-boundary TYPE capture + first-line-only parsing). I/O failure classification is not based on `%ERRORLEVEL%` from CMD < / > redirections. Terminal verify-time failures abort retries immediately (no FAIL→OK logs in a single run). If the flag already exists at `SetupComplete.cmd` start, the script logs a WARN and preserves it as a sticky pending reboot marker (it is not deleted on entry); the script does not scan prior `SetupComplete.log` history. If signaling cannot be verified, SetupComplete fails closed (`FAILED=1`, tracked RC `9001`).
-   * aggregates a final exit code (`FINAL_RC`) from these signals and logs “[RC] returning %FINAL_RC%” before exiting;
+   * aggregates a final exit code (`FINAL_RC`) from these signals and logs "[RC] returning %FINAL_RC%" before exiting;
 
 #### Safe rerun semantics for SetupComplete.cmd
 
 If you manually rerun `SetupComplete.cmd`:
-- it does not scan historical `SetupComplete.log` for older `3010/1641` markers; it decides whether to signal reboot via `%WINDIR%\Panther\_needs_reboot.flag` (write + verify) based only on the current run’s servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`;
+- it does not scan historical `SetupComplete.log` for older `3010/1641` markers; it decides whether to signal reboot via `%WINDIR%\Panther\_needs_reboot.flag` (write + verify) based only on the current run's servicing results and `ALWAYS_REBOOT_AFTER_FIRST_LOGON`;
 - if `%WINDIR%\Panther\_needs_reboot.flag` already exists at `SetupComplete.cmd` start, `SetupComplete.cmd` logs a WARN and preserves it as a sticky pending reboot marker (reruns do not delete it).
 - it re-runs secret validation and logs the current ACL/attribute status; bootstrap format failures emit an explicit `[ERROR]`, and gate-skip logs include `L2C_BOOTSTRAP_PW_FORMAT_OK`.
 
@@ -265,11 +265,11 @@ Operator follow-up:
 
 ### Stage B - cleanup, Panther flag, normal vs recovery
 
-Stage B always runs once after Stage A. It chooses between a normal path and a recovery path based on Stage A’s outcome and internal validation.
+Stage B always runs once after Stage A. It chooses between a normal path and a recovery path based on Stage A's outcome and internal validation.
 
 Winlogon reset logging is two-phase (begin → attempted) and emits a separate verification-passed line only when verification genuinely succeeded (see `docs/AUDIT_CHECKLIST.md` for the current exact strings).
 
-Return-code note: Winlogon reset captures both raw and effective `reg.exe` return codes for each operation; the `wlRcs=` suffix (when present) is based on effective RCs only (clean set `{0,2}`). Raw RCs may differ from effective RCs in idempotent cases (for example, delete attempts can return non-zero even when the end-state is already “value absent”); when verbose logging is enabled and any raw/effective differences occur, a DEBUG line records both sets for diagnosis. AccessDenied is never treated as success and forces recovery posture and teardown suppression even if verification would otherwise pass.
+Return-code note: Winlogon reset captures both raw and effective `reg.exe` return codes for each operation; the `wlRcs=` suffix (when present) is based on effective RCs only (clean set `{0,2}`). Raw RCs may differ from effective RCs in idempotent cases (for example, delete attempts can return non-zero even when the end-state is already "value absent"); when verbose logging is enabled and any raw/effective differences occur, a DEBUG line records both sets for diagnosis. AccessDenied is never treated as success and forces recovery posture and teardown suppression even if verification would otherwise pass.
 
 Common work:
 
@@ -365,7 +365,7 @@ Diagnostics checklist:
 * `DisableCAD=0` and `DevicePasswordLessBuildVersion=2` in the normal path, `0` in recovery while diagnostics are ongoing;
 * `bootstrap` is disabled in the normal path and remains enabled in the recovery path;
 * `.bootstrap.pw` and `.primaryadmin.pw` have been deleted in the normal success path and preserved in recovery or when Winlogon cleanup verification failed or logon policy restore verification failed;
-* in the normal path `_needs_reboot.flag` is cleared after Stage B’s tri-state decision (reboot or stale-clear); in recovery mode or when Stage B fails the flag may remain to signal manual follow-up.
+* in the normal path `_needs_reboot.flag` is cleared after Stage B's tri-state decision (reboot or stale-clear); in recovery mode or when Stage B fails the flag may remain to signal manual follow-up.
 
 ### Bootstrap password source file
 
@@ -518,13 +518,13 @@ If the primary admin secret is missing or invalid, `SetupComplete.cmd` logs the 
 * DISM logging is centralized to `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` with `/LogLevel:4`.
 * DISM return codes are interpreted as:
 
-  * `0` – success;
-  * `3010` / `1641` – success, reboot required (flagged via `_needs_reboot.flag`);
-  * `-2146498548` / `2148468748` – warning (feature not present/not recognized on this SKU); logged and do not fail the run;
-  * `-2146498541` / `2148468755` – warning (invalid install state for this feature on this SKU); logged and do not fail the run;
-  * any other code – fatal servicing error (see FINAL_RC aggregation below).
+  * `0` - success;
+  * `3010` / `1641` - success, reboot required (flagged via `_needs_reboot.flag`);
+  * `-2146498548` / `2148468748` - warning (feature not present/not recognized on this SKU); logged and do not fail the run;
+  * `-2146498541` / `2148468755` - warning (invalid install state for this feature on this SKU); logged and do not fail the run;
+  * any other code - fatal servicing error (see FINAL_RC aggregation below).
 
-Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_BAD_RC`, and set `DISM_HARD_FAIL=1`. After a fatal RC, feature/capability/cleanup DISM calls are skipped. At the end of `SetupComplete.cmd`, `FINAL_RC` is computed as `L2C_FIRST_BAD_RC` when set, otherwise `1` when `FAILED==1`, otherwise `2` when `L2C_AUTOLOGON_DEGRADED==1`, otherwise `0`, and is logged as “[RC] returning %FINAL_RC%” before the script exits with that code.
+Fatal servicing RCs set `FAILED=1`, capture the first fatal code in `L2C_FIRST_BAD_RC`, and set `DISM_HARD_FAIL=1`. After a fatal RC, feature/capability/cleanup DISM calls are skipped. At the end of `SetupComplete.cmd`, `FINAL_RC` is computed as `L2C_FIRST_BAD_RC` when set, otherwise `1` when `FAILED==1`, otherwise `2` when `L2C_AUTOLOGON_DEGRADED==1`, otherwise `0`, and is logged as "[RC] returning %FINAL_RC%" before the script exits with that code.
 
 Immediately before the tail `[RC] returning ...` line, `SetupComplete.cmd` emits a final outcome marker: `[FINAL] SUCCESS` (exit code `0`), `[FINAL] DEGRADED manual_login_required=1` (exit code `2`), or `[FINAL] FAIL (FINAL_RC=...)` (exit code `FINAL_RC`). Hard failures take precedence over DEGRADED and are not overridden to `2`.
 
@@ -784,7 +784,7 @@ Regardless of failure source (platform gate, DISM, or other checks), `SetupCompl
 
 Baseline behavior is fail-closed with `STRICT_DISPLAYVERSION=1`. For forks and experiments, opt out with `STRICT_DISPLAYVERSION=0` and adjust `REQUIRED_*` to your target.
 
-Most `SetupComplete.cmd` messages are written via the `:log` subroutine and include a live timestamp computed inside the script; this helps correlate with DISM and CBS logs and debug issues. A small number of lines are written without timestamps (for example some raw `echo` tags), and DISM’s own log format is tool-defined. The orchestration is CMD-first; PowerShell is used only for a small number of targeted helper calls (for example timestamp generation or reading specific values), not as a per-line wrapper around every command.
+Most `SetupComplete.cmd` messages are written via the `:log` subroutine and include a live timestamp computed inside the script; this helps correlate with DISM and CBS logs and debug issues. A small number of lines are written without timestamps (for example some raw `echo` tags), and DISM's own log format is tool-defined. The orchestration is CMD-first; PowerShell is used only for a small number of targeted helper calls (for example timestamp generation or reading specific values), not as a per-line wrapper around every command.
 
 ## Update (2025-09-19)
 
@@ -821,7 +821,7 @@ PowerShell helpers (`BootstrapLocalAdmin.ps1`, `ValidateSecrets.ps1`, `CreatePri
 
    * servicing and baseline hardening, logging to `%WINDIR%\Panther\SetupComplete.log` and DISM logs;
    * return code handling: `0` is OK, `3010` and `1641` are OK with deferred reboot, LTSC DISM warnings `-2146498548`/`2148468748` (feature not recognized) and `-2146498541`/`2148468755` (invalid install state) are logged as WARN (set `HAS_DISM_WARN=1`) and treated as success, anything else is failure;
-   * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0–3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate; when the validator returns `4` (internal error) `SetupComplete.cmd` logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration).
+   * calls `ValidateSecrets.ps1` after DISM servicing sections and later, before the reboot-flag evaluation to verify ACL/attributes for `.bootstrap.pw` and `.primaryadmin.pw` without reading passwords; the script returns a 0-3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that `SetupComplete.cmd` decodes from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, logs as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`, and uses for the gate; when the validator returns `4` (internal error) `SetupComplete.cmd` logs the internal failure, sets `FAILED=1`, keeps both ACL flags at `0`, and stays in the fail-closed recovery path (no Stage B registration).
    * reads `%WINDIR%\Setup\Scripts\.primaryadmin.pw` via `set /p` (first line only) only when the validator exit code reports both secrets as valid, validates it (allowed characters only, must be non-empty as read), and only if `.bootstrap.pw` exists, the primary admin secret is valid, ACL flags are OK, and `FAILED=0`:
 
      * applies temporary logon policies for AutoAdminLogon (`DisableCAD=1`, `DevicePasswordLessBuildVersion=0`);

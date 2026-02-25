@@ -269,7 +269,7 @@
 
   * [ ] The password is updated using the secret from `.primaryadmin.pw` via `Set-LocalUser -Password` (SecureString).
   * [ ] The user is enabled via `Enable-LocalUser`.
-  * [ ] Best-effort: “must change password at next logon” is cleared for pre-existing users via `net.exe user <user> /logonpasswordchg:no` (WARN-only on failure).
+  * [ ] Best-effort: "must change password at next logon" is cleared for pre-existing users via `net.exe user <user> /logonpasswordchg:no` (WARN-only on failure).
 * [ ] Property updates via `New-LocalUser` / `Set-LocalUser`:
 
   * [ ] Correctly handle `FullName`, `Description`, `PasswordNeverExpires`.
@@ -332,7 +332,7 @@
     * [ ] `Winlogon and logon policy reset: begin`
     * [ ] `Winlogon and logon policy reset: attempted` (may include an `(wlRcs=...)` suffix only when any effective RC is outside `{0,2}`)
     * [ ] `Winlogon cleanup verification passed (reset verified)` is emitted only when verification genuinely succeeded (never on failure/recovery paths).
-  * [ ] `wlRcs` is based on effective RCs (the script’s interpreted return codes after idempotence and AccessDenied handling), not raw `reg.exe` return codes; when `$VerboseLog` is enabled and any operation has `Raw` ≠ `Effective`, the script emits a DEBUG `Winlogon reset rc detail: raw=... effective=...` line to aid diagnosis.
+  * [ ] `wlRcs` is based on effective RCs (the script's interpreted return codes after idempotence and AccessDenied handling), not raw `reg.exe` return codes; when `$VerboseLog` is enabled and any operation has `Raw` ≠ `Effective`, the script emits a DEBUG `Winlogon reset rc detail: raw=... effective=...` line to aid diagnosis.
   * [ ] `DefaultUserName` and `DefaultDomainName` are cleared; `DefaultPassword` is removed (absent).
   * [ ] `AutoAdminLogon`, `ForceAutoLogon`, and `AutoLogonCount` are absent or `0`.
   * [ ] A post-action verification reads `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` and treats read errors as failures; if `DefaultPassword` is present or any autologon value is present and not `0`, Stage B hard-fails and refuses to disable `bootstrap` or delete `\L2C\CreatePrimaryAdmin` (and suppresses any automatic reboot).
