@@ -600,10 +600,12 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyn
 
 :: ------------ Services ------------
 call :log "[SECTION] Services"
-for %%S in (SysMain WSearch Spooler DiagTrack dmwappushservice WerSvc) do (
-  sc config %%S start= disabled >nul 2>&1
-  sc stop   %%S >nul 2>&1
-)
+call :svc_disable "SysMain"
+call :svc_disable "WSearch"
+call :svc_disable "Spooler"
+call :svc_disable "DiagTrack"
+call :svc_disable "dmwappushservice"
+call :svc_disable "WerSvc"
 
 :: ------------ WebDAV Redirector (WebClient) ------------
 call :log "[SECTION] WebClient (WebDAV)"
@@ -625,10 +627,9 @@ sc stop   WebClient >nul 2>&1
 :: ------------ Game Bar / Xbox / Game DVR ------------
 call :log "[SECTION] GameDVR and Xbox"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" "REG_DWORD" "0"
-for %%S in (XblGameSave XboxGipSvc XboxNetApiSvc) do (
-  sc config %%S start= disabled >nul 2>&1
-  sc stop   %%S >nul 2>&1
-)
+call :svc_disable "XblGameSave"
+call :svc_disable "XboxGipSvc"
+call :svc_disable "XboxNetApiSvc"
 :: Optional removal of Xbox Game Bar if present (harmless on LTSC if missing)
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-AppxPackage -AllUsers *XboxGamingOverlay* ^| Remove-AppxPackage" >nul 2>&1
 
