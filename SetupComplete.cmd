@@ -243,18 +243,18 @@ if not defined _cap_state (
   call :log "[WARN] Capability state parse failed for %FR% (%CAP%); skipping removal"
   goto :_cap_cleanup
 )
-echo [CAP] %FR% state=%_cap_state%>>"%LOG%"
+call :log "[CAP] %FR% state=%_cap_state%"
 if /i "%_cap_state%"=="Installed" goto :_cap_remove
 if /i "%_cap_state%"=="Staged" goto :_cap_remove
 if /i "%_cap_state%"=="NotPresent" (
-  echo [CAP] %FR% not present, skip removal>>"%LOG%"
+  call :log "[CAP] %FR% not present, skip removal"
   goto :_cap_cleanup
 )
 if /i "%_cap_state%"=="Unknown" (
-  echo [CAP] %FR% unknown, skip removal>>"%LOG%"
+  call :log "[CAP] %FR% unknown, skip removal"
   goto :_cap_cleanup
 )
-echo [CAP] %FR% state=%_cap_state% -> skip removal>>"%LOG%"
+call :log "[CAP] %FR% state=%_cap_state% -> skip removal"
 goto :_cap_cleanup
 
 :_cap_remove
@@ -262,14 +262,14 @@ call :log "[STEP] Remove capability %FR% (%CAP%)"
 call :run_dism /Remove-Capability /CapabilityName:%CAP%
 set "RC=%ERRORLEVEL%"
 if "%RC%"=="0" (
-  echo [CAP] %FR% removal succeeded>>"%LOG%"
+  call :log "[CAP] %FR% removal succeeded"
   goto :_cap_cleanup
 )
 if defined DISM_HARD_FAIL (
   set "FAILED=1"
   call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
 ) else (
-  echo [CAP] %FR% removal returned RC=%RC% (non-fatal)>>"%LOG%"
+  call :log "[CAP] %FR% removal returned RC=%RC% (non-fatal)"
 )
 goto :_cap_cleanup
 
