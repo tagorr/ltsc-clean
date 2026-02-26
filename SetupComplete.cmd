@@ -1637,7 +1637,6 @@ REM Retry #2
 call :reboot_flag_write_once
 call :reboot_flag_verify_expected_after_write
 if "%REBOOT_FLAG_VERIFY_HARDFAIL%"=="1" goto :reboot_flag_fail
-if "%REBOOT_FLAG_VERIFY_OK%"=="1" echo DIAG_WRITE_RETRY_OK attempt=2 marker=%REBOOT_FLAG%
 if "%REBOOT_FLAG_VERIFY_OK%"=="1" goto :reboot_flag_write_ok
 call :log "[WARN] REBOOT_FLAG_WRITE_RETRY attempt=2 marker=%REBOOT_FLAG% write_rc=%REBOOT_FLAG_WRITE_RC%"
 
@@ -1645,16 +1644,11 @@ REM Retry #3
 call :reboot_flag_write_once
 call :reboot_flag_verify_expected_after_write
 if "%REBOOT_FLAG_VERIFY_HARDFAIL%"=="1" goto :reboot_flag_fail
-if "%REBOOT_FLAG_VERIFY_OK%"=="1" echo DIAG_WRITE_RETRY_OK attempt=3 marker=%REBOOT_FLAG%
 if "%REBOOT_FLAG_VERIFY_OK%"=="1" goto :reboot_flag_write_ok
 
 set "REBOOT_FLAG_WRITE_RC_LOG=%REBOOT_FLAG_WRITE_RC%"
 if "%REBOOT_FLAG_WRITE_RC_LOG%"=="0" set "REBOOT_FLAG_WRITE_RC_LOG="
 call :log "[ERROR] REBOOT_FLAG_WRITE_FAILED marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT% write_rc=%REBOOT_FLAG_WRITE_RC_LOG%"
-cmd.exe /d /c "dir /a ""%REBOOT_FLAG%"" 2>&1"
-cmd.exe /d /c "attrib ""%REBOOT_FLAG%"" 2>&1"
-cmd.exe /d /c "icacls ""%REBOOT_FLAG%"" 2>&1"
-cmd.exe /d /c "icacls ""%SystemRoot%\Panther"" 2>&1"
 set "REBOOT_FLAG_REASON=write_failed"
 set "REBOOT_FLAG_OBSERVED_CLASS=unwritable"
 goto :reboot_flag_fail
