@@ -1,8 +1,0 @@
-[2024-05-01T10:00:00.000Z][SECTION] PreOOBE start
-[2024-05-01T10:00:00.001Z][STEP] reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "NoLocalPasswordResetQuestions" REG_DWORD "1"
-[2024-05-01T10:00:00.002Z][OK] "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "NoLocalPasswordResetQuestions"
-[2024-05-01T10:00:00.003Z][STEP] reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\OOBE" "DisablePrivacyExperience" REG_DWORD "1"
-[2024-05-01T10:00:00.004Z][OK] "HKLM\SOFTWARE\Policies\Microsoft\Windows\OOBE" "DisablePrivacyExperience"
-[2024-05-01T10:00:00.005Z][STEP] reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" REG_DWORD "0"
-[2024-05-01T10:00:00.006Z][OK] "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry"
-[2024-05-01T10:00:00.100Z][SECTION] PreOOBE completed successfully
