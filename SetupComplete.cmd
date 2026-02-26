@@ -559,7 +559,7 @@ call :edge_remove
 :: ------------ Telemetry / Diagnostics / WER ------------
 call :log "[SECTION] Telemetry, Diagnostics, WER"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" "REG_DWORD" "1"
-REM -- Services: disable and log (keep WerSvc at default/Manual; queue handled by task) --
+REM -- Services: disable and log (WerSvc is disabled; queue handled by task) --
 call :svc_disable "DiagTrack"
 call :svc_disable "dmwappushservice"
 REM call :svc_disable "WerSvc"
