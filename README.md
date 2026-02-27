@@ -371,7 +371,7 @@ Diagnostics checklist:
 
 * Path: `%WINDIR%\Setup\Scripts\.bootstrap.pw`
 * Encoding: UTF-8 without BOM, single line
-* ACL: `SYSTEM:(F)`, `Administrators:(F)`, inheritance disabled
+* ACL (semantic): protected DACL (inheritance disabled; no inherited ACEs), Allow-only, only `SYSTEM` (S-1-5-18) and local Administrators (S-1-5-32-544); effective rights include FullControl for both (multiple/duplicate Allow ACEs OK)
 * Attributes: Hidden and System
 
 The file is sensitive. In the normal unattended flow Stage B deletes it on success; if you run the master manually or end up in the recovery path and the file is still present, remove it once you no longer need the bootstrap secret.
@@ -382,7 +382,7 @@ The file is sensitive. In the normal unattended flow Stage B deletes it on succe
 * Encoding: UTF-8 without BOM, single line
 * Content: first line only; must be non-empty as read and contain only the allowed characters (whitespace is invalid, no trimming)
 * Allowed characters: `A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`
-* ACL: `SYSTEM:(F)`, `Administrators:(F)`, inheritance disabled; Hidden and System attributes
+* ACL (semantic): protected DACL (inheritance disabled; no inherited ACEs), Allow-only, only `SYSTEM` (S-1-5-18) and local Administrators (S-1-5-32-544); effective rights include FullControl for both (multiple/duplicate Allow ACEs OK); Hidden and System attributes
 
 This file is not part of the repository and must be created by the operator before deployment using the same ACL/attribute shape as `.bootstrap.pw`. The password is never logged or echoed and never appears in task XML or command lines. If the file is missing, fails ACL/attribute checks, or contains invalid characters, `SetupComplete.cmd` logs the error, skips autologon priming, and does not register the `\L2C\CreatePrimaryAdmin` task.
 
