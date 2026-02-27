@@ -111,45 +111,66 @@ function Test-SecretAcl {
         return (Fail 'acl_not_protected')
     }
 
-    $allowed = @('S-1-5-18', 'S-1-5-32-544') # SYSTEM, BUILTIN\Administrators
-    $seen = @()
+    $sidSystem = 'S-1-5-18'      # SYSTEM
+    $sidAdmins = 'S-1-5-32-544'  # BUILTIN\Administrators
+
+    $rightsBySid = @{
+        $sidSystem = [System.Security.AccessControl.FileSystemRights]0
+        $sidAdmins = [System.Security.AccessControl.FileSystemRights]0
+    }
+    $presentBySid = @{
+        $sidSystem = $false
+        $sidAdmins = $false
+    }
 
     foreach ($rule in $acl.Access) {
+        if ($null -eq $rule) { return (Fail 'acl_rule_null') }
+        if (-not ($rule -is [System.Security.AccessControl.FileSystemAccessRule])) {
+            return (Fail ('unexpected_rule_type: ' + $rule.GetType().FullName))
+        }
+
+        if ($rule.IsInherited) {
+            return (Fail 'inherited_ace_present')
+        }
+
+        if ($rule.AccessControlType -ne 'Allow') {
+            return (Fail ('non_allow_ace_present: ' + $rule.AccessControlType))
+        }
+
         $idInfo = Resolve-IdentityReferenceSafe -IdentityReference $rule.IdentityReference
         if (-not $idInfo.Resolved) {
             return (Fail ('identity_translate_failed: raw=' + $idInfo.Raw))
         }
         $sid = $idInfo.Sid
 
-        if ($allowed -notcontains $sid) {
-            return (Fail ('unexpected_ace_sid: ' + $sid))
-        }
-        if ($rule.AccessControlType -ne 'Allow') {
-            return (Fail ('unexpected_ace_type: ' + $rule.AccessControlType))
-        }
-        if (-not ($rule.FileSystemRights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl))) {
-            return (Fail ('not_fullcontrol: ' + $rule.FileSystemRights))
-        }
-        if ($rule.IsInherited) {
-            return (Fail 'inherited_ace_present')
+        if (($sid -ne $sidSystem) -and ($sid -ne $sidAdmins)) {
+            return (Fail ('non_allowed_sid_present: ' + $sid))
         }
 
-        $seen += $sid
+        $presentBySid[$sid] = $true
+        try {
+            $rightsBySid[$sid] = $rightsBySid[$sid] -bor $rule.FileSystemRights
+        } catch {
+            return (Fail ('acl_rights_merge_failed: ' + $_.Exception.Message))
+        }
     }
 
-    if ($seen.Count -ne $allowed.Count) {
-        return (Fail ('ace_count_mismatch: seen=' + $seen.Count + ' expected=' + $allowed.Count))
+    if (-not $presentBySid[$sidSystem]) {
+        return (Fail 'missing_SYSTEM_ace')
+    }
+    if (-not $presentBySid[$sidAdmins]) {
+        return (Fail 'missing_Administrators_ace')
     }
 
-    $unique = $seen | Sort-Object -Unique
-    if ($unique.Count -ne $allowed.Count) {
-        return (Fail ('ace_duplicate_or_missing: unique=' + $unique.Count + ' expected=' + $allowed.Count))
+    $full = [System.Security.AccessControl.FileSystemRights]::FullControl
+    $sysRights = $rightsBySid[$sidSystem]
+    if ((($sysRights -band $full) -ne $full)) {
+        return (Fail ('SYSTEM_rights_not_fullcontrol: ' + $sysRights))
     }
 
-    foreach ($sid in $allowed) {
-        if ($unique -notcontains $sid) {
-            return (Fail ('missing_expected_sid: ' + $sid))
-        }
+    $admRights = $rightsBySid[$sidAdmins]
+    if ((($admRights -band $full) -ne $full)) {
+        return (Fail ('Administrators_rights_not_fullcontrol: ' + $admRights))
     }
 
     $attrs = [System.IO.File]::GetAttributes($Path)
