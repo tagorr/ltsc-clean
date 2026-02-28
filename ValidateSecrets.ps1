@@ -173,7 +173,14 @@ function Test-SecretAcl {
         return (Fail ('Administrators_rights_not_fullcontrol: ' + $admRights))
     }
 
-    $attrs = [System.IO.File]::GetAttributes($Path)
+    $attrs = $null
+    try {
+        $attrs = [System.IO.File]::GetAttributes($Path)
+    } catch {
+        $exType = $_.Exception.GetType().FullName
+        $exMsg = ($_.Exception.Message -replace "[`r`n]+", ' ')
+        return (Fail ("get_attributes_failed: {0}: {1}" -f $exType, $exMsg))
+    }
     if (-not ($attrs.HasFlag([System.IO.FileAttributes]::Hidden))) {
         return (Fail ('missing_hidden attrs=' + $attrs))
     }
