@@ -165,7 +165,7 @@ The primary admin account password is **never** stored in `DefaultPassword`. It 
 
 ### ValidateSecrets internal failures
 
-* `ValidateSecrets.ps1` runs under `Set-StrictMode -Version Latest` with `$ErrorActionPreference='Stop'` and can still encounter internal failures (for example unexpected I/O errors or unhandled exceptions in the validation logic). In those cases it logs diagnostics and exits with code `4`.
+* `ValidateSecrets.ps1` runs under `Set-StrictMode -Version Latest` with `$ErrorActionPreference='Stop'` and can still encounter internal failures (for example an unhandled exception in the validation logic). In those cases it logs diagnostics and exits with code `4`.
 * `SetupComplete.cmd` treats exit `4` as a hard validation failure: it logs an explicit internal error, sets `FAILED=1`, and does not register Stage B.
 * Any other `ValidateSecrets.ps1` exit code outside `0-3` and `4` in secrets-mode is treated as unexpected/out-of-contract execution failure: `SetupComplete.cmd` logs an `[ERROR]`, sets `FAILED=1`, and does not register Stage B.
 * Exit codes `0-3` retain their bitmask meaning; when either bit is `0`, treat the secrets as unusable and use the logs to determine whether misconfigured secret files or validation failures are the root cause.

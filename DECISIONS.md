@@ -765,7 +765,7 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe ... | Out-Null 2>$null`; r
 
 - The pipeline proceeds only when exit code `3` is returned; any missing/invalid secret keeps the gate closed. An internal validator failure returns `4`, is logged explicitly, sets `FAILED=1`, keeps both ACL flags at `0`, and blocks autologon and Stage B registration. Any other validator exit code is treated as unexpected/out-of-contract, is logged as an error, closes the gate, and is captured via `:track_rc` so `FINAL_RC` can reflect it when it is the first bad rc.
 - The contract remains fail-closed but now differentiates internal errors:
-  - `ValidateSecrets.ps1` returns `4` when the validator itself encounters an internal error (for example, unexpected I/O failure or an unhandled exception).
+  - `ValidateSecrets.ps1` returns `4` when the validator itself encounters an internal error (for example, an unhandled exception in the validation logic).
   - Identity/SID translation failures in secret ACL checks are handled as normal validation failures (not `4`) and are logged as `[SECRETS] FAIL: path=... reason=identity_translate_failed: raw=...`.
   - `SetupComplete.cmd` treats `RC=4` as a hard validation failure, logs the internal error, sets `FAILED=1`, keeps `bootstrap=0, primaryadmin=0`, and does not register Stage B.
 - Operational note: when the gate reports `bootstrap=0, primaryadmin=0` because of `RC` in `0..3`, operators should treat the secrets as unusable and inspect logs; `RC=4` explicitly signals a validator failure and keeps the system in recovery until investigated.
