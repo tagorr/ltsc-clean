@@ -18,17 +18,15 @@ goto :main
 :: Subroutines
 :: --------------------------
 :ts
-  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do (
-    set "TS=%%#"
-    goto :eof
-  )
+  set "TS="
+  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do set "TS=%%#" & goto :eof
   set "TS=%DATE% %TIME%"
-goto :eof
+  goto :eof
 
 :log
   set "msg=%*"
-  for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do set "ts=%%G"
-  >>"%LOGFILE%" echo [%ts%] %msg%
+  call :ts
+  >>"%LOGFILE%" echo [%TS%] %msg%
   exit /b 0
 
 :regadd
