@@ -74,6 +74,8 @@ This verifies: parse-only PowerShell syntax checks for the three deployment help
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
   4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale); when Stage B is not scheduled and the reboot marker was successfully signaled, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage
 
+Some informational lines may parse `sc query` output (SERVICE STATE) for logging only. `sc` output is localized; on non-en-US images the parsed `STATE` value may be blank or misleading, but this does not affect baseline behavior or control flow. If you need locale-agnostic status in logs, replace that detail with a different approach (for example: log only the service `Start` value plus `sc` return codes, or query status via PowerShell).
+
 ## Operator triage and recovery
 
 Use the current-run logs as your single source of truth. Start from the symptom you see and follow the pointers below.
