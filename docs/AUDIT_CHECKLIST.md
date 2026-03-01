@@ -125,7 +125,7 @@
 
   * [ ] Uses a single tracking path via `L2C_FIRST_BAD_RC`.
   * [ ] Does not lose the first non-success RC.
-* [ ] Execution order: DISM feature/capability servicing occurs before the Stage B gateway (secret validation + gate + optional scheduling/Winlogon priming), and the gateway runs before the Panther reboot-flag evaluation section.
+* [ ] Execution order: DISM feature/capability servicing occurs before the Stage B gateway (secret validation + gate + optional scheduling/Winlogon priming), and the gateway runs before the final Panther reboot-flag evaluation section (the marker may also be signaled earlier when a reboot-required RC is observed and can be confirmed again in the final evaluation).
 * [ ] Start and end logging:
 
   * [ ] `----- SetupComplete started -----`.
@@ -207,7 +207,7 @@
   * [ ] Only `call :flag_reboot` is invoked.
 * [ ] In the central RC handling:
 
-  * [ ] When RC ∈ {3010, 1641}, `NEEDS_REBOOT=1` is set.
+  * [ ] When RC ∈ {3010, 1641}, `NEEDS_REBOOT=1` is set and the reboot marker may be signaled immediately via `call :flag_reboot` (early signaling), in addition to later signaling/confirmation in the final reboot evaluation.
 * [ ] When `NEEDS_REBOOT==1`:
 
   * [ ] `[INFO] Reboot required` is logged.
@@ -216,7 +216,7 @@
 * [ ] If `STAGEB_NOT_SCHEDULED==1` when the reboot marker is successfully signaled (`REBOOT_FLAG_SIGNAL_OK==1`), `SetupComplete.log` includes `[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR ...` and SetupComplete writes a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry containing a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for triage.
 * [ ] Component cleanup and reboot
   * [ ] No `shutdown.exe` calls are present inside `SetupComplete.cmd`.
-  * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is signaled via `:flag_reboot` with write + verify (`REBOOT_FLAG_SIGNAL_*` logs); signaling failures fail closed (non-zero final RC).
+  * [ ] When `NEEDS_REBOOT==1`, `[INFO] Reboot required` is logged and `%WINDIR%\Panther\_needs_reboot.flag` is signaled via `:flag_reboot` with write + verify (`REBOOT_FLAG_SIGNAL_*` logs); signaling may be a confirmation signal when the marker was already signaled earlier, and failures still fail closed (non-zero final RC).
   * [ ] Stage B evaluates the tri-state pending reboot probe when the flag exists in normal mode; it reboots on `true`/`unknown` and clears a stale flag without reboot on `false`.
   * [ ] In recovery mode or when Stage B fails, the flag is left in place as a marker for manual follow-up and no automatic reboot is triggered by Stage B.
 
