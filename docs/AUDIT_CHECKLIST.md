@@ -47,9 +47,10 @@
   * [ ] `ValidateSecrets.ps1` is invoked in the gateway block after DISM feature/capability servicing and before the reboot-flag evaluation with both secret paths, does not read passwords, and returns a 0-3 exit-code bitmask (bit0=bootstrap, bit1=primary admin) that is decoded from `%ERRORLEVEL%` into `L2C_BOOTSTRAP_PW_ACL_OK` and `L2C_PRIMARYADMIN_PW_ACL_OK`, then logged as `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`; exit code `4` is reserved for internal validator errors, and any other out-of-contract exit code is treated as an unexpected validator execution failure (fail closed with `FAILED=1`, `bootstrap=0, primaryadmin=0`, and `:track_rc_secrets` capturing the rc verbatim for `FINAL_RC` aggregation when it is the first bad rc, including preserving 3010/1641 if encountered).
   * [ ] When the validator returns `4`, `SetupComplete.cmd` logs an explicit internal-failure message (rc=4), sets `FAILED=1`, keeps both ACL flags at `0`, and treats both secrets as invalid for gating.
   * [ ] Identity/SID translation issues are handled as normal validation failures (not `rc=4`).
-  * [ ] There is a check for the existence of `.bootstrap.pw` and that the first line is non-empty (single-line secret; read via `set /p`, no trimming).
+  * [ ] There is a check for the existence of `.bootstrap.pw` and that it is non-empty, and `.bootstrap.pw` content is not read until the SEC-2 ACL/attributes flag is OK (`L2C_BOOTSTRAP_PW_ACL_OK==1`).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
   * [ ] `.primaryadmin.pw` is read via `set /p` (first line only) only when the ACL/attribute check succeeded, is non-empty as read, and respects the allowed character set/format (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`).
+  * [ ] Password character validation is deterministic under `cmd.exe` without delayed expansion (runtime-safe `if errorlevel` branching; no `%ERRORLEVEL%` checks inside multi-line `(...)` blocks), and invalid characters (for example `.`) are reliably rejected.
   * [ ] If it is missing or empty:
 
     * [ ] An error is logged, not just a warning.
@@ -117,7 +118,7 @@
   * [ ] `ALWAYS_REBOOT_AFTER_FIRST_LOGON` (manual reboot after first logon).
   * [ ] `NEEDS_REBOOT` (whether a post-install reboot is required).
   * [ ] `FAILED` (SetupComplete failure).
-  * [ ] `HAS_BOOTSTRAP_PW` (present + non-empty first line of `.bootstrap.pw`).
+  * [ ] `HAS_BOOTSTRAP_PW` (present + non-empty file).
   * [ ] `L2C_BOOTSTRAP_PW_FORMAT_OK` (bootstrap first-line format/charset validity).
   * [ ] `L2C_FIRST_BAD_RC` (first non-success servicing RC).
   * [ ] `REBOOT_FLAG` (path to the Panther flag `%WINDIR%\Panther\_needs_reboot.flag`).
