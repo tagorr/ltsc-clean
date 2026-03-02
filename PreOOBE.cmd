@@ -51,7 +51,8 @@ goto :main
 :: Main
 :: --------------------------
 :main
-call :log [SECTION] PreOOBE start
+call :log ----- PreOOBE started -----
+call :log [SECTION] PreOOBE policy phase start
 
 REM 1) Local account security questions - disable (no questions when resetting local account passwords)
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System"                   "NoLocalPasswordResetQuestions" ^
@@ -100,9 +101,9 @@ call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"          
         REG_DWORD "1"
 
 if "%FAILED%"=="0" (
-  call :log [SECTION] PreOOBE completed successfully
+  call :log [SECTION] PreOOBE policy phase complete
 ) else (
-  call :log [WARN] PreOOBE completed with FAILED=%FAILED%
+  call :log [WARN] PreOOBE policy phase complete with FAILED=%FAILED%
 )
 
 REM Bootstrap: one-time local admin + secret generation only
@@ -119,5 +120,13 @@ if not "%PSRC%"=="0" (
 REM Non-blocking marker for later Stage B observability (PreOOBE anomalies)
 if exist "%WINDIR%\Panther\preoobe_warnings.flag" (
   call :log [WARN] PreOOBE anomaly marker detected: %WINDIR%\Panther\preoobe_warnings.flag
+)
+call :log ----- PreOOBE finished -----
+if "%FAILED%"=="0" (
+  call :log [FINAL] SUCCESS
+  call :log [RC] returning 0
+) else (
+  call :log [FINAL] FAIL
+  call :log [RC] returning 1
 )
 endlocal & exit /b %FAILED%
