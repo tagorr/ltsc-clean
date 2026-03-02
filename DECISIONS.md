@@ -189,7 +189,7 @@ When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs r
 
   4. `%ProgramData%\l2c_master_<timestamp>.log`
 
-  `PreOOBE.cmd` redirects stdout+stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log`; `BootstrapLocalAdmin.ps1` emits structured `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines for bootstrap lifecycle steps without ever logging the password itself.
+  `PreOOBE.cmd` redirects stdout+stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log`; `BootstrapLocalAdmin.ps1` emits structured `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines for bootstrap lifecycle steps without ever logging the password itself. PreOOBE also emits phase-scoped `[SECTION]` markers and a tail outcome (`----- PreOOBE finished -----`, `[FINAL] ...`, `[RC] returning 0|1`).
 
   The Stage B master log aggregates Stage A/B steps, secret cleanup states, and Panther flag handling, including whether the reboot flag was consumed for reboot, cleared as stale, or suppressed.
 

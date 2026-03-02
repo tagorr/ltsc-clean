@@ -95,6 +95,8 @@
   * [ ] Launches `BootstrapLocalAdmin.ps1` in the expected way.
   * [ ] Does not modify Winlogon or logon policies if this is forbidden by design.
   * [ ] Redirects stdout and stderr from `BootstrapLocalAdmin.ps1` into `%WINDIR%\Panther\PreOOBE.log` (no separate bootstrap log file).
+  * [ ] `PreOOBE.log` includes `----- PreOOBE started -----` / `----- PreOOBE finished -----` anchors and ends with a `[FINAL] ...` line followed by `[RC] returning 0|1`.
+  * [ ] Policy phase markers are phase-scoped (`[SECTION] PreOOBE policy phase start` / `[SECTION] PreOOBE policy phase complete` or the WARN variant) and do not claim overall success before bootstrap runs.
   * [ ] If `%WINDIR%\Panther\preoobe_warnings.flag` exists, a non-blocking WARN is logged indicating the marker was detected.
 * [ ] `BootstrapLocalAdmin.ps1`:
 

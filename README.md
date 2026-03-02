@@ -70,6 +70,7 @@ This verifies: parse-only PowerShell syntax checks for the three deployment help
 * Runtime logs:
 
   1. `%WINDIR%\Panther\PreOOBE.log` - specialize-phase policies and bootstrap status; captures stdout/stderr from `BootstrapLocalAdmin.ps1` as `[BOOTSTRAP] [INFO|WARN|ERROR] ...` lines
+     PreOOBE also writes phase-scoped `[SECTION]` markers plus `----- PreOOBE started -----` / `----- PreOOBE finished -----` anchors and a `[FINAL]` / `[RC] returning 0|1` tail outcome.
   2. `%WINDIR%\Panther\SetupComplete.log` - post-setup baseline run (mixed producers; many logger-written lines are ISO-8601; some lines are un-timestamped); includes secret gate results, Stage B registration decisions, and reboot-flag evaluation (`REBOOT_FLAG_SIGNAL_BEGIN` / `REBOOT_FLAG_SIGNAL_OK` / `REBOOT_FLAG_SIGNAL_FAIL`; for example the "Pre-existing Panther reboot flag found..." WARN)
   3. `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` - consolidated DISM trace for all servicing actions
   4. `%ProgramData%\l2c_master_<timestamp>.log` - Stage A/B master log from `CreatePrimaryAdmin.ps1` (Winlogon cleanup, secret cleanup states, Panther flag state before the Stage B decision, and whether the reboot flag was suppressed, consumed for restart, or cleared as stale); when Stage B is not scheduled and the reboot marker was successfully signaled, SetupComplete may write a standalone `%ProgramData%\l2c_master_<timestamp>.log` entry with a single `[timestamp] WARN_REBOOT_FLAG_NO_EXECUTOR ...` line for centralized triage
@@ -131,7 +132,7 @@ Interpretation:
 ### Symptom: failure during PreOOBE / bootstrap phase
 
 1. Open `%WINDIR%\Panther\PreOOBE.log`.
-2. Review `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries from `BootstrapLocalAdmin.ps1` and any PreOOBE `[ERROR]` lines.
+2. Review `[BOOTSTRAP] [INFO|WARN|ERROR] ...` entries from `BootstrapLocalAdmin.ps1` and any PreOOBE `[ERROR]` lines; use the tail `----- PreOOBE finished -----` + `[FINAL] ...` + `[RC] returning 0|1` as the definitive outcome (the policy-phase `[SECTION] ... complete` line is phase-scoped, not overall success).
 3. If PreOOBE failed, the pipeline did not reach `SetupComplete.cmd` or Stage B; this log is the first triage point.
 
 ### Media layout example
