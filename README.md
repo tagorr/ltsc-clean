@@ -604,6 +604,8 @@ These rules do not apply to batch scripts (`.cmd`) such as `SetupComplete.cmd` a
 * redirection and suppression: `>nul` for STDOUT, `2>nul` for STDERR, `>nul 2>&1` for both
 * control flow: `call :label`, `goto`, `if errorlevel`, `for /f`, and similar
 
+Important (CMD): inside multi-line parenthesized blocks `(...)`, percent-expanded variables (`%VAR%`, including `%ERRORLEVEL%`) are expanded at parse time. Avoid capturing or consuming values that may change during the block via `%...%`; use `call :label` subroutines to capture state (set variables) and to perform any RC-dependent logging/branching outside the `(...)` parse context.
+
 Note: the "no `>nul` and `2>nul`" constraint applies only to PowerShell context. In `.cmd` these are valid constructs.
 
 ### 0) General principle

@@ -257,6 +257,7 @@ The following are forbidden in this repository's execution workflow:
 * Building reusable tooling/frameworks under `.codex_tmp` (for example: `common.ps1`, `helper.ps1`, `*.psm1`, subfolders, or multi-file toolchains)
 * Growing a probe across retries into a larger multi-mode tool instead of keeping it a single-use probe
 * Introducing `EnableDelayedExpansion` in tracked `.cmd` scripts
+* In tracked `.cmd` scripts: capturing or consuming values that may change during a multi-line `(...)` block via percent-expansion (`%ERRORLEVEL%` or `%VAR%`); use `call :label` subroutines to capture state and to perform any RC-dependent logging/branching outside the `(...)` parse context.
 
 
 ## File writes, encoding, and redirections
