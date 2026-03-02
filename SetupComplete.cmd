@@ -747,25 +747,9 @@ call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%,
 
 REM Bootstrap secret presence check
 if exist "%PWFILE%" (
-  set "BOOTSTRAP_CHECK="
-  REM Read the first line of the file, standard set /p VAR=<FILE syntax
-  set /p BOOTSTRAP_CHECK=<"%PWFILE%"
+  for %%A in ("%PWFILE%") do if not "%%~zA"=="0" set "HAS_BOOTSTRAP_PW=1"
 )
-if defined BOOTSTRAP_CHECK set "HAS_BOOTSTRAP_PW=1"
 set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
-if defined BOOTSTRAP_CHECK (
-  set "L2C_BOOTSTRAP_PASSWORD=%BOOTSTRAP_CHECK%"
-  call :validate_bootstrap_password
-  if errorlevel 1 (
-    set "FAILED=1"
-    set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
-    call :log "[ERROR] bootstrap password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration and autologon priming will be skipped."
-  ) else (
-    set "L2C_BOOTSTRAP_PW_FORMAT_OK=1"
-  )
-  set "L2C_BOOTSTRAP_PASSWORD="
-)
-set "BOOTSTRAP_CHECK="
 
 :after_pw_check
 REM Bootstrap secret gate
@@ -776,6 +760,31 @@ if not "%HAS_BOOTSTRAP_PW%"=="1" (
 if "%HAS_BOOTSTRAP_PW%"=="1" if not "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
   set "FAILED=1"
   call :log "[ERROR] .bootstrap.pw ACL/attributes invalid; expected SYSTEM + Administrators FullControl, no inheritance, Hidden+System."
+)
+
+REM Bootstrap secret SEC-2 gate: ACL/attributes must be valid before reading
+if "%HAS_BOOTSTRAP_PW%"=="1" (
+  REM Read the first line of the file, standard set /p VAR=<FILE syntax
+  if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
+    set "BOOTSTRAP_CHECK="
+    set /p BOOTSTRAP_CHECK=<"%PWFILE%"
+    if not defined BOOTSTRAP_CHECK (
+      set "FAILED=1"
+      call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
+    ) else (
+      set "L2C_BOOTSTRAP_PASSWORD=%BOOTSTRAP_CHECK%"
+      call :validate_bootstrap_password
+      if errorlevel 1 (
+        set "FAILED=1"
+        set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
+        call :log "[ERROR] bootstrap password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration and autologon priming will be skipped."
+      ) else (
+        set "L2C_BOOTSTRAP_PW_FORMAT_OK=1"
+      )
+      set "L2C_BOOTSTRAP_PASSWORD="
+    )
+    set "BOOTSTRAP_CHECK="
+  )
 )
 
 REM Primary admin secret status (always logged)
