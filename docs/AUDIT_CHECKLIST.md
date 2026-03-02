@@ -50,7 +50,8 @@
   * [ ] There is a check for the existence of `.bootstrap.pw` and that it is non-empty, and `.bootstrap.pw` content is not read until the SEC-2 ACL/attributes flag is OK (`L2C_BOOTSTRAP_PW_ACL_OK==1`).
   * [ ] There is a check that `%WINDIR%\Setup\Scripts\.primaryadmin.pw` exists and passes the ACL/attribute flag before it is read.
   * [ ] `.primaryadmin.pw` is read via `set /p` (first line only) only when the ACL/attribute check succeeded, is non-empty as read, and respects the allowed character set/format (`A-Z`, `a-z`, `0-9`, `#`, `@`, `_`, `-`).
-  * [ ] Password character validation is deterministic under `cmd.exe` without delayed expansion (runtime-safe `if errorlevel` branching; no `%ERRORLEVEL%` checks inside multi-line `(...)` blocks), and invalid characters (for example `.`) are reliably rejected.
+  * [ ] Password character validation is deterministic under `cmd.exe` without delayed expansion (runtime-safe `if errorlevel` branching; no capture or consumption of `%ERRORLEVEL%` or other changing `%VAR%` values via percent-expansion inside multi-line `(...)` blocks), and invalid characters (for example `.`) are reliably rejected.
+  * [ ] For any action that captures a return code into a variable (for example `EDGE_RC`), RC-dependent logging/branching does not consume `%...%` inside the same multi-line `(...)` parse context; use `call :label` subroutines (capture, then consume) instead.
   * [ ] If it is missing or empty:
 
     * [ ] An error is logged, not just a warning.

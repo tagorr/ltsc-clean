@@ -1405,12 +1405,8 @@ if defined EDGE_SETUP_X86 (
 if defined EDGE_SETUP (
   call :log "[INFO] Edge setup.exe selected: %EDGE_SETUP%"
   call :log "[INFO] Running Edge uninstall with wait semantics."
-  start "" /wait "%EDGE_SETUP%" --uninstall --system-level --force-uninstall >nul 2>&1
-  set "EDGE_RC=%ERRORLEVEL%"
-  call :log "[INFO] Edge uninstall RC=%EDGE_RC%"
-  if not "%EDGE_RC%"=="0" (
-    call :log "[WARN] Edge browser removal returned RC=%EDGE_RC%; continuing (best-effort)."
-  )
+  call :edge_uninstall_once
+  call :edge_uninstall_consume_rc
 ) else (
   call :log "[WARN] Edge setup.exe not found under Program Files paths; skipping uninstall step."
 )
@@ -1480,6 +1476,18 @@ if "%EDGE_EXE_PRESENT%"=="0" (
 )
 
 endlocal & exit /b 0
+
+:edge_uninstall_once
+start "" /wait "%EDGE_SETUP%" --uninstall --system-level --force-uninstall >nul 2>&1
+set "EDGE_RC=%ERRORLEVEL%"
+exit /b 0
+
+:edge_uninstall_consume_rc
+call :log "[INFO] Edge uninstall RC=%EDGE_RC%"
+if not "%EDGE_RC%"=="0" (
+  call :log "[WARN] Edge browser removal returned RC=%EDGE_RC%; continuing (best-effort)."
+)
+exit /b 0
 
 REM ===== Helpers (Telemetry hardening) =====
 :svc_disable
