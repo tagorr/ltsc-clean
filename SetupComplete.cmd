@@ -458,15 +458,15 @@ if not defined L2C_PW_CHECK goto :_validate_primaryadmin_password_ok
 if "%L2C_PW_CHECK%"=="" if "%L2C_PW_SEEN%"=="1" goto :_validate_primaryadmin_password_ok
 set "L2C_PW_CHAR=%L2C_PW_CHECK:~0,1%"
 call :is_primaryadmin_char_allowed "%L2C_PW_CHAR%"
-if not "%ERRORLEVEL%"=="0" (
-  set "L2C_PW_CHAR="
-  set "L2C_PW_CHECK="
-  set "L2C_PW_SEEN="
-  exit /b 1
-)
+if errorlevel 1 goto :_validate_primaryadmin_password_badchar
 set "L2C_PW_SEEN=1"
 set "L2C_PW_CHECK=%L2C_PW_CHECK:~1%"
 goto :_validate_primaryadmin_password_loop
+:_validate_primaryadmin_password_badchar
+set "L2C_PW_CHAR="
+set "L2C_PW_CHECK="
+set "L2C_PW_SEEN="
+exit /b 1
 :_validate_primaryadmin_password_ok
 set "L2C_PW_CHAR="
 set "L2C_PW_CHECK="
@@ -485,15 +485,15 @@ if not defined L2C_PW_CHECK goto :_validate_bootstrap_password_ok
 if "%L2C_PW_CHECK%"=="" if "%L2C_PW_SEEN%"=="1" goto :_validate_bootstrap_password_ok
 set "L2C_PW_CHAR=%L2C_PW_CHECK:~0,1%"
 call :is_primaryadmin_char_allowed "%L2C_PW_CHAR%"
-if not "%ERRORLEVEL%"=="0" (
-  set "L2C_PW_CHAR="
-  set "L2C_PW_CHECK="
-  set "L2C_PW_SEEN="
-  exit /b 1
-)
+if errorlevel 1 goto :_validate_bootstrap_password_badchar
 set "L2C_PW_SEEN=1"
 set "L2C_PW_CHECK=%L2C_PW_CHECK:~1%"
 goto :_validate_bootstrap_password_loop
+:_validate_bootstrap_password_badchar
+set "L2C_PW_CHAR="
+set "L2C_PW_CHECK="
+set "L2C_PW_SEEN="
+exit /b 1
 :_validate_bootstrap_password_ok
 set "L2C_PW_CHAR="
 set "L2C_PW_CHECK="
@@ -506,7 +506,7 @@ if "%L2C_PW_CHAR_TEST%"=="" (
   set "L2C_PW_CHAR_TEST="
   exit /b 1
 )
-set "L2C_PW_SCAN=%L2C_PW_ALLOWED:%~1=%"
+call set "L2C_PW_SCAN=%%L2C_PW_ALLOWED:%L2C_PW_CHAR_TEST%=%%"
 if "%L2C_PW_SCAN%"=="%L2C_PW_ALLOWED%" (
   set "L2C_PW_SCAN="
   set "L2C_PW_CHAR_TEST="
@@ -746,9 +746,7 @@ set "TMP="
 call :log "[SECTION] Secret ACL validation (bootstrap=%L2C_BOOTSTRAP_PW_ACL_OK%, primaryadmin=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
 
 REM Bootstrap secret presence check
-if exist "%PWFILE%" (
-  for %%A in ("%PWFILE%") do if not "%%~zA"=="0" set "HAS_BOOTSTRAP_PW=1"
-)
+if exist "%PWFILE%" for %%A in ("%PWFILE%") do if not "%%~zA"=="0" set "HAS_BOOTSTRAP_PW=1"
 set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
 
 :after_pw_check
@@ -763,29 +761,32 @@ if "%HAS_BOOTSTRAP_PW%"=="1" if not "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
 )
 
 REM Bootstrap secret SEC-2 gate: ACL/attributes must be valid before reading
-if "%HAS_BOOTSTRAP_PW%"=="1" (
-  REM Read the first line of the file, standard set /p VAR=<FILE syntax
-  if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" (
-    set "BOOTSTRAP_CHECK="
-    set /p BOOTSTRAP_CHECK=<"%PWFILE%"
-    if not defined BOOTSTRAP_CHECK (
-      set "FAILED=1"
-      call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
-    ) else (
-      set "L2C_BOOTSTRAP_PASSWORD=%BOOTSTRAP_CHECK%"
-      call :validate_bootstrap_password
-      if errorlevel 1 (
-        set "FAILED=1"
-        set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
-        call :log "[ERROR] bootstrap password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration and autologon priming will be skipped."
-      ) else (
-        set "L2C_BOOTSTRAP_PW_FORMAT_OK=1"
-      )
-      set "L2C_BOOTSTRAP_PASSWORD="
-    )
-    set "BOOTSTRAP_CHECK="
-  )
+if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" goto :l2c_bootstrap_pw_read
+goto :l2c_bootstrap_pw_done
+
+:l2c_bootstrap_pw_read
+REM Read the first line of the file, standard set /p VAR=<FILE syntax
+set "BOOTSTRAP_CHECK="
+set /p BOOTSTRAP_CHECK=<"%PWFILE%"
+if not defined BOOTSTRAP_CHECK (
+  set "FAILED=1"
+  call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
+  goto :l2c_bootstrap_pw_done
 )
+
+set "L2C_BOOTSTRAP_PASSWORD=%BOOTSTRAP_CHECK%"
+call :validate_bootstrap_password
+if errorlevel 1 (
+  set "FAILED=1"
+  set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
+  call :log "[ERROR] bootstrap password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration and autologon priming will be skipped."
+) else (
+  set "L2C_BOOTSTRAP_PW_FORMAT_OK=1"
+)
+set "L2C_BOOTSTRAP_PASSWORD="
+set "BOOTSTRAP_CHECK="
+
+:l2c_bootstrap_pw_done
 
 REM Primary admin secret status (always logged)
 if exist "%L2C_PRIMARYADMIN_SECRET%" (
