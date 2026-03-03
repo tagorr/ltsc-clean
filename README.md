@@ -247,9 +247,9 @@ Operator follow-up:
 * Stage A enforces local group membership via SID-based resolution using `Microsoft.PowerShell.LocalAccounts` (`Get-LocalGroup -SID` + `Add-LocalGroupMember`), so membership operations do not depend on localized group names. Membership verification does not enumerate group members; it uses bounded repeat `Add-LocalGroupMember` idempotency (already-member / MemberExists condition, Win32 1378). Ensure-step code semantics: the Administrators ensure returns 1378 for already-member/no-change (used for `A: SKIP (already member)` logging) while ensured/verified returns 0; Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 
   * `S-1-5-32-544` for the Administrators group
-  * `S-1-5-32-555` for the Remote Desktop Users group
+  * `S-1-5-32-555` for the Remote Desktop Users group (only when `-AddToRemoteDesktopUsers` is set)
 
-* Stage A does not rely on localized group-name lookup for correctness; there is no fallback to localized or English group names. If SID-based group resolution fails for a required built-in group, Stage A fails closed with a clear error (SID + label when applicable + underlying message).
+* Stage A does not rely on localized group-name lookup for correctness; there is no fallback to localized or English group names. Required built-in group lookup for membership uses well-known SIDs (`Get-LocalGroup -SID`) and fails closed inside Stage A with a clear error (SID + label when applicable + underlying message). SID->name translation (if enabled for verbose/debug logs) is best-effort: it may WARN and continue.
 
 * If the required LocalAccounts cmdlets (or the `-SID` capability) are unavailable, or if Stage A is running under a 32-bit PowerShell process, Stage A fails closed during preflight (no fallback to name-based membership operations).
 
