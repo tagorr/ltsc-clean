@@ -60,14 +60,16 @@ function Resolve-LocalGroupName {
 try {
   $script:AdministratorsGroupName = Resolve-LocalGroupName -Sid 'S-1-5-32-544' -Label 'Administrators'
 } catch {
-  $script:AdministratorsGroupName = 'Administrators'
-  Write-SetupLog ("Fallback to literal Administrators: {0}" -f $_.Exception.Message) 'WARN'
+  $msg = "FAIL-CLOSED: $($_.Exception.Message)"
+  Write-SetupLog $msg 'ERROR'
+  throw [System.InvalidOperationException]::new($msg)
 }
 try {
   $script:RemoteDesktopGroupName  = Resolve-LocalGroupName -Sid 'S-1-5-32-555' -Label 'Remote Desktop Users'
 } catch {
-  $script:RemoteDesktopGroupName = 'Remote Desktop Users'
-  Write-SetupLog ("Fallback to literal Remote Desktop Users: {0}" -f $_.Exception.Message) 'WARN'
+  $msg = "FAIL-CLOSED: $($_.Exception.Message)"
+  Write-SetupLog $msg 'ERROR'
+  throw [System.InvalidOperationException]::new($msg)
 }
 
 if ($VerboseLog) {
@@ -482,7 +484,13 @@ function Ensure-LocalGroupMemberBounded(
   }
 }
 function Ensure-InAdministrators([string]$User) {
-  $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+  $groupSid = 'S-1-5-32-544'
+  try {
+    $group = Get-LocalGroup -SID $groupSid -ErrorAction Stop
+  } catch {
+    $msg = "FAIL-CLOSED: unable to resolve group SID $groupSid (Administrators) via Get-LocalGroup -SID: $($_.Exception.Message)"
+    throw [System.InvalidOperationException]::new($msg)
+  }
   [void](Get-LocalUser -Name $User -ErrorAction Stop)
 
   $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
@@ -494,11 +502,16 @@ function Ensure-InAdministrators([string]$User) {
   return $rc
 }
 function Ensure-InGroup([string]$Group, [string]$User) {
-  $groupObj = $null
-  if ($Group -match '^S-1-') {
+  if (-not ($Group -match '^S-1-')) {
+    $msg = "FAIL-CLOSED: Ensure-InGroup requires a SID (got '$Group')"
+    throw [System.InvalidOperationException]::new($msg)
+  }
+
+  try {
     $groupObj = Get-LocalGroup -SID $Group -ErrorAction Stop
-  } else {
-    $groupObj = Get-LocalGroup -Name $Group -ErrorAction Stop
+  } catch {
+    $msg = "FAIL-CLOSED: unable to resolve group SID $Group via Get-LocalGroup -SID: $($_.Exception.Message)"
+    throw [System.InvalidOperationException]::new($msg)
   }
 
   [void](Get-LocalUser -Name $User -ErrorAction Stop)
