@@ -249,7 +249,7 @@ Operator follow-up:
   * `S-1-5-32-544` for the Administrators group
   * `S-1-5-32-555` for the Remote Desktop Users group
 
-* Stage A does not rely on localized group-name lookup for correctness; any name translation (if present) is strictly informational for logs and must not be treated as a functional dependency.
+* Stage A does not rely on localized group-name lookup for correctness; there is no fallback to localized or English group names. If SID-based group resolution fails for a required built-in group, Stage A fails closed with a clear error (SID + label when applicable + underlying message).
 
 * If the required LocalAccounts cmdlets (or the `-SID` capability) are unavailable, or if Stage A is running under a 32-bit PowerShell process, Stage A fails closed during preflight (no fallback to name-based membership operations).
 
