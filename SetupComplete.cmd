@@ -560,8 +560,6 @@ call :edge_remove
 call :log "[SECTION] Telemetry, Diagnostics, WER"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" "REG_DWORD" "1"
 REM -- Services: disable and log (WerSvc is disabled; queue handled by task) --
-call :svc_disable "DiagTrack"
-call :svc_disable "dmwappushservice"
 REM call :svc_disable "WerSvc"
 REM -- Scheduled Tasks: CEIP / Appraiser / StartupAppTask / DiskDiagnostic / WER Queue --
 call :task_disable "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser"
@@ -573,7 +571,6 @@ call :task_disable "\Microsoft\Windows\Customer Experience Improvement Program\U
 call :task_disable "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector"
 call :task_disable "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
 REM Ensure outbound firewall rule bound to DiagTrack exists
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if(-not (Get-NetFirewallRule -DisplayName 'Block Telemetry Service (DiagTrack)' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -DisplayName 'Block Telemetry Service (DiagTrack)' -Direction Outbound -Action Block -Enabled True -Service DiagTrack -Profile Any }" >nul 2>&1
 call :fw_block_diagtrack
 
 :: ------------ Delivery Optimization ------------
