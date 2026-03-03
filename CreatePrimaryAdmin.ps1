@@ -57,22 +57,24 @@ function Resolve-LocalGroupName {
   }
 }
 
-try {
-  $script:AdministratorsGroupName = Resolve-LocalGroupName -Sid 'S-1-5-32-544' -Label 'Administrators'
-} catch {
-  $script:AdministratorsGroupName = 'Administrators'
-  Write-SetupLog ("Fallback to literal Administrators: {0}" -f $_.Exception.Message) 'WARN'
-}
-try {
-  $script:RemoteDesktopGroupName  = Resolve-LocalGroupName -Sid 'S-1-5-32-555' -Label 'Remote Desktop Users'
-} catch {
-  $script:RemoteDesktopGroupName = 'Remote Desktop Users'
-  Write-SetupLog ("Fallback to literal Remote Desktop Users: {0}" -f $_.Exception.Message) 'WARN'
-}
-
+$script:AdministratorsGroupName = $null
+$script:RemoteDesktopGroupName = $null
 if ($VerboseLog) {
-  Write-SetupLog ("Resolved Administrators -> {0}" -f $script:AdministratorsGroupName) 'DEBUG'
-  Write-SetupLog ("Resolved Remote Desktop Users -> {0}" -f $script:RemoteDesktopGroupName) 'DEBUG'
+  try {
+    $script:AdministratorsGroupName = Resolve-LocalGroupName -Sid 'S-1-5-32-544' -Label 'Administrators'
+    Write-SetupLog ("Resolved Administrators -> {0}" -f $script:AdministratorsGroupName) 'DEBUG'
+  } catch {
+    Write-SetupLog ("Unable to resolve Administrators (S-1-5-32-544) for logs: {0}" -f $_.Exception.Message) 'WARN'
+  }
+
+  if ($AddToRemoteDesktopUsers) {
+    try {
+      $script:RemoteDesktopGroupName = Resolve-LocalGroupName -Sid 'S-1-5-32-555' -Label 'Remote Desktop Users'
+      Write-SetupLog ("Resolved Remote Desktop Users -> {0}" -f $script:RemoteDesktopGroupName) 'DEBUG'
+    } catch {
+      Write-SetupLog ("Unable to resolve Remote Desktop Users (S-1-5-32-555) for logs: {0}" -f $_.Exception.Message) 'WARN'
+    }
+  }
 }
 
 function Get-RegExePath {
@@ -482,7 +484,13 @@ function Ensure-LocalGroupMemberBounded(
   }
 }
 function Ensure-InAdministrators([string]$User) {
-  $group = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+  $groupSid = 'S-1-5-32-544'
+  try {
+    $group = Get-LocalGroup -SID $groupSid -ErrorAction Stop
+  } catch {
+    $msg = "FAIL-CLOSED: unable to resolve group SID $groupSid (Administrators) via Get-LocalGroup -SID: $($_.Exception.Message)"
+    throw [System.InvalidOperationException]::new($msg)
+  }
   [void](Get-LocalUser -Name $User -ErrorAction Stop)
 
   $memberName = "{0}\{1}" -f $env:COMPUTERNAME, $User
@@ -494,11 +502,18 @@ function Ensure-InAdministrators([string]$User) {
   return $rc
 }
 function Ensure-InGroup([string]$Group, [string]$User) {
-  $groupObj = $null
-  if ($Group -match '^S-1-') {
+  if (-not ($Group -match '^S-1-')) {
+    $msg = "FAIL-CLOSED: Ensure-InGroup requires a SID (got '$Group')"
+    throw [System.InvalidOperationException]::new($msg)
+  }
+
+  try {
     $groupObj = Get-LocalGroup -SID $Group -ErrorAction Stop
-  } else {
-    $groupObj = Get-LocalGroup -Name $Group -ErrorAction Stop
+  } catch {
+    $label = if ($Group -eq 'S-1-5-32-555') { 'Remote Desktop Users' } else { $null }
+    $labelText = if ($label) { " ($label)" } else { '' }
+    $msg = "FAIL-CLOSED: unable to resolve group SID $Group$labelText via Get-LocalGroup -SID: $($_.Exception.Message)"
+    throw [System.InvalidOperationException]::new($msg)
   }
 
   [void](Get-LocalUser -Name $User -ErrorAction Stop)
@@ -571,8 +586,18 @@ try {
           throw "PasswordNeverExpires requested but Set-LocalUser does not support -PasswordNeverExpires on this system"
         }
       }
-      [void](Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop)
-      if ($AddToRemoteDesktopUsers) { [void](Get-LocalGroup -SID 'S-1-5-32-555' -ErrorAction Stop) }
+      try {
+        [void](Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop)
+      } catch {
+        throw "FAIL-CLOSED: unable to resolve required group SID S-1-5-32-544 (Administrators) via Get-LocalGroup -SID: $($_.Exception.Message)"
+      }
+      if ($AddToRemoteDesktopUsers) {
+        try {
+          [void](Get-LocalGroup -SID 'S-1-5-32-555' -ErrorAction Stop)
+        } catch {
+          throw "FAIL-CLOSED: unable to resolve required group SID S-1-5-32-555 (Remote Desktop Users) via Get-LocalGroup -SID: $($_.Exception.Message)"
+        }
+      }
     } catch {
       $StageAAbortReason = "Stage A preflight failed: $($_.Exception.Message)"
       Write-SetupLog $StageAAbortReason 'ERROR'

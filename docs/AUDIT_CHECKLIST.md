@@ -243,6 +243,7 @@
 * [ ] Logical initialization:
 
   * [ ] `$rc = 0`, `$StageA_Succeeded = $false`, `$StageA_RC = 0`, `$StageAAbortReason = $null`.
+  * [ ] Any SID->name translation used for logs is best-effort (WARN-only) and must not abort initialization; required group SID checks for membership happen inside Stage A preflight.
   * [ ] Log entry `"Begin A: Primary admin creation/config"` is written.
 
 #### 5.2. Parameter handling and password source
@@ -280,11 +281,13 @@
 * [ ] Membership in `Administrators`:
 
   * [ ] Ensured via `Ensure-InAdministrators` (no `Get-LocalGroupMember` enumeration).
+  * [ ] Group resolution is SID-only (`S-1-5-32-544`); no fallback to localized or English group names; resolution failures are fail-closed with an actionable error (SID + label when applicable + underlying message).
   * [ ] Verification uses bounded repeat `Add-LocalGroupMember` idempotency (already-member / MemberExists condition, Win32 1378).
   * [ ] Ensure-step code semantics: `Ensure-InAdministrators` returns 1378 for already-member/no-change (Stage A logs `A: SKIP (already member)`), returns 0 when ensured/verified; Stage A overall success still ends with `End A (SUCCESS, RC=0)` when no other errors occur.
 * [ ] Membership in `Remote Desktop Users`:
 
-  * [ ] Controlled by `-AddToRemoteDesktopUsers`.
+  * [ ] Controlled by `-AddToRemoteDesktopUsers` (when off, no `S-1-5-32-555` lookup/operation occurs).
+  * [ ] When `-AddToRemoteDesktopUsers` is set: group resolution is SID-only (`S-1-5-32-555`); no fallback to localized or English group names; resolution failures are fail-closed with an actionable error (SID + label when applicable + underlying message).
 * [ ] On successful Stage A completion:
 
   * [ ] `$StageA_Succeeded = $true`, `$StageA_RC = 0`.
