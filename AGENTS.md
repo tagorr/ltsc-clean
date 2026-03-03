@@ -184,13 +184,30 @@ For narrow, file-scoped edits (small bugfixes, refactors, localized doc touch-up
 * Minimal diffs grouped per file; no cosmetic changes outside hunks.
 * PR description must confirm: edition gate, DISM RC policy, unified `/LogPath`, log locations, `IgnoreShiftOverride`, and formatting (UTF-8 / CRLF vs LF).
 
-## Runbook — one-command smoke path
+## Runbook — manual smoke path (bypasses SetupComplete secret gate)
 
 **Run in an elevated *Windows PowerShell 5.1* console.**
+
+Prerequisite (required): this manual path bypasses the `SetupComplete.cmd` secret validation gate. Run Step 0 to validate `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` ACL/attributes via `ValidateSecrets.ps1` (SEC-2); proceed only when `ValidateSecrets.ps1` returns `2` or `3` (primaryadmin bit set).
+
+Step 0 (required): SEC-2 secret validation gate (PASS only if `ValidateSecrets.ps1` returns `2` or `3`).
+
+```powershell
+$vs = Join-Path $env:WINDIR 'Setup\Scripts\ValidateSecrets.ps1'
+if (-not (Test-Path -LiteralPath $vs -PathType Leaf)) { Write-Error "[SEC-2] FAIL: missing ValidateSecrets.ps1 at $vs"; exit 1 }
+& $vs -BootstrapPath (Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw') -PrimaryAdminPath (Join-Path $env:WINDIR 'Setup\Scripts\.primaryadmin.pw')
+$rc = $LASTEXITCODE
+if ($rc -eq 2 -or $rc -eq 3) { Write-Host "[SEC-2] PASS: primaryadmin secret validated (RC=$rc). Proceed to Step 1." }
+else { Write-Error "[SEC-2] FAIL: ValidateSecrets RC=$rc. Stop and fix %WINDIR%\Setup\Scripts\.primaryadmin.pw (and %WINDIR%\Setup\Scripts\.bootstrap.pw if present) ACL/attrs before proceeding."; exit 1 }
+```
+
+Step 1: register the master task in Task Scheduler.
 
 ```cmd
 schtasks /Create /TN "\L2C\CreatePrimaryAdmin" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1""" /SC ONLOGON /RU SYSTEM /RL HIGHEST /F
 ```
+
+If Step 0 fails, do not run Step 1.
 
 Disclaimer: this is a manual engineering test. Inside `SetupComplete.cmd` no reboot is executed. A deferred reboot can only happen later when Stage B consumes the `Panther flag` that `SetupComplete.cmd` wrote after servicing RC `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set.
 
