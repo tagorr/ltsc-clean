@@ -23,6 +23,7 @@
 
   * [ ] PowerShell: `Set-StrictMode -Version Latest`, no syntax errors.
   * [ ] CMD: no unclosed quotes, correct structure of `(` `)` blocks.
+  * [ ] CMD parse-time `%VAR%` expansion: FAIL if any value that can be set/modified within a `(...)` block is read as `%VAR%` within that same block (logging, branching, comparisons, `echo`, file writes), including cases where the value is set/modified by `call :sub` invoked from that block. Only acceptable remediations: move the read outside the `(...)` block, or use `%%VAR%%` (CALL-expansion).
 
 ### 1.1. Unattended setup UX (image selection & EULA)
 
