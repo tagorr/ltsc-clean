@@ -36,6 +36,7 @@ Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not
 * Use `reg.exe` directly. Always inspect `$LASTEXITCODE` after each call. For `DELETE`, return codes `{0,2}` are treated as success.
 * In `.cmd` files, direct PowerShell syntax is **not allowed**. Use it only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
 * In `.cmd` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
+* **CMD parse-time expansion:** inside any parenthesized `(...)` block, it is forbidden to read `%VAR%` for variables that may be set/modified within the same block (including changes caused by `call :sub` invoked from that block). Only acceptable fixes: move the read/log/branch outside the `(...)` block, or use CALL-expansion with `%%VAR%%` (example: `call :log "resolved_path=%%OUT_PATH%%"`).
 
 ## Codex CLI Contract
 
