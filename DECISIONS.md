@@ -4,7 +4,7 @@
 
 **Scope:** Windows 10 Enterprise 2021 LTSC (21H2, EditionID=EnterpriseS, build 19044+)
 
-**Repository:** [https://github.com/tagor-sian/win10-ltsc-2021-clean-quiet-baseline](https://github.com/tagor-sian/win10-ltsc-2021-clean-quiet-baseline)
+**Repository:** [https://github.com/tagorr/ltsc-clean](https://github.com/tagorr/ltsc-clean)
 
 **License:** MIT
 
@@ -533,9 +533,9 @@ We do not append dated addenda; each decision is integrated into its canonical s
 
 ## 12. Maintainer
 
-* Maintainer: `@tagor-sian`
+* Maintainer: `@tagorr`
 
-  [https://github.com/tagor-sian](https://github.com/tagor-sian)
+  [https://github.com/tagorr](https://github.com/tagorr)
 
 Contributions are welcome via issues and pull requests. Please keep changes aligned with the principles: official tools only, deterministic and idempotent behavior, and no reboots inside SetupComplete.
 
