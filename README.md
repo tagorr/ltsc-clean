@@ -552,7 +552,7 @@ MIT
 
 ## Maintainer
 
-`@tagor-sian` - [https://github.com/tagor-sian](https://github.com/tagor-sian)
+`@tagorr` - [https://github.com/tagorr](https://github.com/tagorr)
 
 ## EOL policy and CI guard
 
