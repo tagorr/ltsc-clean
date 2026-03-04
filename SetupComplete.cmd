@@ -1558,16 +1558,16 @@ exit /b %RC%
 :triage_log_warn_reboot_flag_no_executor
 set "TRIAGE_LOG_PATH="
 set "TRIAGE_LOG_TS_SHORT="
-for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TRIAGE_LOG_TS_SHORT=%%G"
+for /f "usebackq delims=" %%G in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul`) do set "TRIAGE_LOG_TS_SHORT=%%G"
 if not defined TRIAGE_LOG_TS_SHORT exit /b 0
 set "TRIAGE_LOG_GUID="
-for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[guid]::NewGuid().ToString(^"N^")" 2^>nul') do set "TRIAGE_LOG_GUID=%%G"
+for /f "usebackq delims=" %%G in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "[guid]::NewGuid().ToString('N')" 2^>nul`) do set "TRIAGE_LOG_GUID=%%G"
 if not defined TRIAGE_LOG_GUID exit /b 0
 set "TRIAGE_LOG_PATH=%ProgramData%\l2c_triage_%TRIAGE_LOG_TS_SHORT%_%TRIAGE_LOG_GUID%.log"
 if not defined TRIAGE_LOG_PATH exit /b 0
 if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
 set "TRIAGE_LOG_TS="
-for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[DateTime]::UtcNow.ToString('o')" 2^>nul') do set "TRIAGE_LOG_TS=%%G"
+for /f "usebackq delims=" %%G in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "[DateTime]::UtcNow.ToString('o')" 2^>nul`) do set "TRIAGE_LOG_TS=%%G"
 if not defined TRIAGE_LOG_TS exit /b 0
 >> "%TRIAGE_LOG_PATH%" echo [%TRIAGE_LOG_TS%] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline.
 exit /b 0
@@ -1578,7 +1578,7 @@ if not "%NEEDS_REBOOT%"=="1" exit /b 0
 if "%REBOOT_FLAG_SIGNAL_OK%"=="1" if "%REBOOT_REQUESTED%"=="1" if "%STAGEB_NOT_SCHEDULED%"=="1" if not "%WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED%"=="1" (
   call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline."
   call :triage_log_warn_reboot_flag_no_executor
-  if defined TRIAGE_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR triage_log=%TRIAGE_LOG_PATH%"
+  if defined TRIAGE_LOG_PATH call :log "[WARN] WARN_REBOOT_FLAG_NO_EXECUTOR triage_log=%%TRIAGE_LOG_PATH%%"
   set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=1"
 )
 if "%REBOOT_FLAG_SIGNAL_OK%"=="1" if "%L2C_AUTOLOGON_DEGRADED%"=="1" if not "%L2C_AUTOLOGON_ARMED%"=="1" (
