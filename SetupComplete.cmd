@@ -1557,7 +1557,13 @@ exit /b %RC%
 
 :triage_log_warn_reboot_flag_no_executor
 set "TRIAGE_LOG_PATH="
-for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$ts = Get-Date; $u = [guid]::NewGuid().ToString('N'); $p = Join-Path $env:ProgramData ('l2c_triage_{0:yyyyMMdd_HHmmss}_{1}.log' -f $ts, $u); Write-Output $p" 2^>nul') do set "TRIAGE_LOG_PATH=%%G"
+set "TRIAGE_LOG_TS_SHORT="
+for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul') do set "TRIAGE_LOG_TS_SHORT=%%G"
+if not defined TRIAGE_LOG_TS_SHORT exit /b 0
+set "TRIAGE_LOG_GUID="
+for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[guid]::NewGuid().ToString(^"N^")" 2^>nul') do set "TRIAGE_LOG_GUID=%%G"
+if not defined TRIAGE_LOG_GUID exit /b 0
+set "TRIAGE_LOG_PATH=%ProgramData%\l2c_triage_%TRIAGE_LOG_TS_SHORT%_%TRIAGE_LOG_GUID%.log"
 if not defined TRIAGE_LOG_PATH exit /b 0
 if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
 set "TRIAGE_LOG_TS="
