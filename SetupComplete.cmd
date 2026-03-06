@@ -158,7 +158,7 @@ for /f "skip=1 tokens=1,2,*" %%A in ('reg query "%RK%" /v "%RV%" 2^>nul') do if 
   set "REGVERIFY_DATA=%%C"
 )
 if not "%REGVERIFY_FOUND%"=="1" (
-  call :hardwarn REG policy not applied: %RK% %RV% expected=%RD% actual=missing (rc=%L2C_LAST_REGADD_RC%)
+  call :hardwarn REG policy not applied: %RK% %RV% expected=%RD% actual=missing rc=%L2C_LAST_REGADD_RC%
   goto :regverify_cleanup
 )
 if /I "%RT%"=="REG_DWORD" (
