@@ -35,6 +35,22 @@ set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
 set "L2C_HAS_PRIMARYADMIN_SECRET=0"
 set "L2C_PW_ALLOWED=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-"
 set "L2C_FIRST_BAD_RC="
+set "HARDENING_HAS_WARNINGS=0"
+set "HARDENING_WARN_COUNT=0"
+set "HARDENING_WARN_UNIQUE_COUNT=0"
+set "HARDENING_WARN_FALLBACK_USED=0"
+set "HARDENING_WARN_TS_SHORT="
+if defined TRIAGE_LOG_TS_SHORT set "HARDENING_WARN_TS_SHORT=%TRIAGE_LOG_TS_SHORT%"
+if not defined HARDENING_WARN_TS_SHORT set "HARDENING_WARN_TS_SHORT=ts%RANDOM%%RANDOM%"
+set "HARDENING_WARN_GUID="
+if defined TRIAGE_LOG_GUID set "HARDENING_WARN_GUID=%TRIAGE_LOG_GUID%"
+if not defined HARDENING_WARN_GUID set "HARDENING_WARN_GUID=%RANDOM%%RANDOM%"
+set "HARDENING_WARN_FILE=%ProgramData%\l2c_hardening_warnings_%HARDENING_WARN_TS_SHORT%_%HARDENING_WARN_GUID%.log"
+set "HARDENING_WARN_FILE_FALLBACK=%SystemRoot%\Temp\l2c_hardening_warnings_%HARDENING_WARN_TS_SHORT%_%HARDENING_WARN_GUID%.log"
+if not defined ProgramData (
+  set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
+  set "HARDENING_WARN_FALLBACK_USED=1"
+)
 call :log "----- SetupComplete started -----"
 
 :: --- compatibility controls ---
@@ -115,12 +131,142 @@ set "RV=%~2"
 set "RT=%~3"
 set "RD=%~4"
 reg add "%RK%" /v "%RV%" /t %RT% /d %RD% /f >nul 2>&1
-if errorlevel 1 (
+set "L2C_LAST_REGADD_RC=%ERRORLEVEL%"
+if not "%L2C_LAST_REGADD_RC%"=="0" (
   call :log "[WARN] reg add failed: %~1 %~2"
 ) else (
   call :log "[STEP] reg add OK: %~1 %~2=%~4"
 )
 goto :eof
+
+:regadd_verify
+REM usage: call :regadd_verify <key> <value> <type> <data>
+call :regadd %*
+call :regverify %*
+goto :eof
+
+:regverify
+REM usage: call :regverify <key> <value> <type> <expected>
+set "RK=%~1"
+set "RV=%~2"
+set "RT=%~3"
+set "RD=%~4"
+set "REGVERIFY_FOUND=0"
+set "REGVERIFY_DATA="
+for /f "skip=1 tokens=1,2,*" %%A in ('reg query "%RK%" /v "%RV%" 2^>nul') do if /I "%%A"=="%RV%" (
+  set "REGVERIFY_FOUND=1"
+  set "REGVERIFY_DATA=%%C"
+)
+if not "%REGVERIFY_FOUND%"=="1" (
+  call :hardwarn REG policy not applied: %RK% %RV% expected=%RD% actual=missing (rc=%L2C_LAST_REGADD_RC%)
+  goto :regverify_cleanup
+)
+if /I "%RT%"=="REG_DWORD" (
+  set "REGVERIFY_EXP_DEC="
+  set /a REGVERIFY_EXP_DEC=%RD% >nul 2>&1
+  if errorlevel 1 goto :regverify_mismatch
+  set "REGVERIFY_ACT_DEC="
+  set /a REGVERIFY_ACT_DEC=%REGVERIFY_DATA% >nul 2>&1
+  if errorlevel 1 goto :regverify_mismatch
+  if not "%REGVERIFY_EXP_DEC%"=="%REGVERIFY_ACT_DEC%" goto :regverify_mismatch
+  goto :regverify_cleanup
+)
+if /I not "%REGVERIFY_DATA%"=="%RD%" goto :regverify_mismatch
+goto :regverify_cleanup
+
+:regverify_mismatch
+set "HARDWARN_MSG=REG policy not applied: %RK% %RV% expected=%RD% actual=%REGVERIFY_DATA% (rc=%L2C_LAST_REGADD_RC%)"
+call :hardwarn_cached
+
+:regverify_cleanup
+set "RK="
+set "RV="
+set "RT="
+set "RD="
+set "REGVERIFY_FOUND="
+set "REGVERIFY_DATA="
+set "REGVERIFY_EXP_DEC="
+set "REGVERIFY_ACT_DEC="
+goto :eof
+
+:hardwarn_cached
+if not defined HARDWARN_MSG exit /b 0
+if not defined HARDENING_WARN_FILE exit /b 0
+if "%HARDENING_WARN_FALLBACK_USED%"=="0" if defined ProgramData if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
+if "%HARDENING_WARN_FALLBACK_USED%"=="1" if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+>> "%HARDENING_WARN_FILE%" <nul set /p "=%HARDWARN_MSG%"
+>> "%HARDENING_WARN_FILE%" echo(
+if exist "%HARDENING_WARN_FILE%" goto :hardwarn_ok
+if "%HARDENING_WARN_FALLBACK_USED%"=="1" goto :hardwarn_fail
+set "HARDENING_WARN_FALLBACK_USED=1"
+set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
+call :log "[WARN] HARDENING_WARN_FILE_FALLBACK file=%HARDENING_WARN_FILE%"
+if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+>> "%HARDENING_WARN_FILE%" <nul set /p "=%HARDWARN_MSG%"
+>> "%HARDENING_WARN_FILE%" echo(
+if not exist "%HARDENING_WARN_FILE%" goto :hardwarn_fail
+goto :hardwarn_ok
+
+:hardwarn
+REM usage: call :hardwarn <one-line warning>
+REM Contract: single line; avoid CMD metacharacters & | < > ^ ; keep human-readable for final [HARDENING] block.
+set "HARDWARN_MSG=%*"
+:hardwarn_write
+if not defined HARDWARN_MSG exit /b 0
+if not defined HARDENING_WARN_FILE exit /b 0
+if "%HARDENING_WARN_FALLBACK_USED%"=="0" if defined ProgramData if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
+if "%HARDENING_WARN_FALLBACK_USED%"=="1" if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+>> "%HARDENING_WARN_FILE%" echo(%HARDWARN_MSG%
+if exist "%HARDENING_WARN_FILE%" goto :hardwarn_ok
+if "%HARDENING_WARN_FALLBACK_USED%"=="1" goto :hardwarn_fail
+set "HARDENING_WARN_FALLBACK_USED=1"
+set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
+call :log "[WARN] HARDENING_WARN_FILE_FALLBACK file=%HARDENING_WARN_FILE%"
+if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+>> "%HARDENING_WARN_FILE%" echo(%HARDWARN_MSG%
+if not exist "%HARDENING_WARN_FILE%" goto :hardwarn_fail
+:hardwarn_ok
+set "HARDENING_HAS_WARNINGS=1"
+set /a HARDENING_WARN_COUNT=%HARDENING_WARN_COUNT%+1 >nul 2>&1
+set "HARDWARN_MSG="
+exit /b 0
+:hardwarn_fail
+call :log "[WARN] HARDENING_WARN_FILE_WRITE_FAILED file=%HARDENING_WARN_FILE%"
+set "HARDWARN_MSG="
+exit /b 0
+
+:hardwarn_finalize
+set "HARDENING_WARN_UNIQUE_COUNT=0"
+if not "%HARDENING_HAS_WARNINGS%"=="1" exit /b 0
+if not exist "%HARDENING_WARN_FILE%" (
+  set "HARDENING_HAS_WARNINGS=0"
+  exit /b 0
+)
+for %%G in ("%HARDENING_WARN_FILE%") do set "HARDENING_WARN_FILE_SZ=%%~zG"
+if "%HARDENING_WARN_FILE_SZ%"=="0" (
+  set "HARDENING_HAS_WARNINGS=0"
+  set "HARDENING_WARN_FILE_SZ="
+  exit /b 0
+)
+sort /unique "%HARDENING_WARN_FILE%" > "%HARDENING_WARN_FILE%.dedup"
+set "HW_DEDUP_RC=%ERRORLEVEL%"
+if not "%HW_DEDUP_RC%"=="0" (
+  call :log "[WARN] HARDENING_WARN_DEDUP_FAILED rc=%HW_DEDUP_RC% file=%HARDENING_WARN_FILE%"
+) else (
+  if exist "%HARDENING_WARN_FILE%.dedup" move /y "%HARDENING_WARN_FILE%.dedup" "%HARDENING_WARN_FILE%" >nul 2>&1
+)
+for /f %%C in ('find /v /c "" ^< "%HARDENING_WARN_FILE%"') do set "HARDENING_WARN_UNIQUE_COUNT=%%C"
+set "HARDENING_WARN_FILE_SZ="
+set "HW_DEDUP_RC="
+exit /b 0
+
+:hardwarn_emit
+if not "%HARDENING_HAS_WARNINGS%"=="1" exit /b 0
+if not exist "%HARDENING_WARN_FILE%" exit /b 0
+call :log "[HARDENING] warn_count_unique=%HARDENING_WARN_UNIQUE_COUNT% file=%HARDENING_WARN_FILE%"
+type "%HARDENING_WARN_FILE%" >> "%LOG%"
+del /q "%HARDENING_WARN_FILE%" >nul 2>&1
+exit /b 0
 
 :l2c_defuser_quickaccess
 REM Best-effort. Loads Default user hive to HKU\DefUser and applies a few Explorer defaults.
@@ -219,7 +365,8 @@ if defined DISM_HARD_FAIL (
 )
 if not defined CAP goto :_cap_cleanup
 set "_cap_state="
-set "_cap_probe_out=%TEMP%\l2c_cap_probe_%RANDOM%_%RANDOM%.txt"
+if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+set "_cap_probe_out=%SystemRoot%\Temp\l2c_cap_probe_%RANDOM%_%RANDOM%.txt"
 if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
 call :run_dism_capture "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
 set "DISM_RC=%L2C_LAST_DISM_RC%"
@@ -263,19 +410,31 @@ call :run_dism /Remove-Capability /CapabilityName:%CAP%
 set "RC=%ERRORLEVEL%"
 if "%RC%"=="0" (
   call :log "[CAP] %FR% removal succeeded"
-  goto :_cap_cleanup
-)
-if defined DISM_HARD_FAIL (
-  set "FAILED=1"
-  call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
 ) else (
-  call :log "[CAP] %FR% removal returned RC=%RC% (non-fatal)"
+  if defined DISM_HARD_FAIL (
+    set "FAILED=1"
+    call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
+  ) else (
+    call :log "[CAP] %FR% removal returned RC=%RC% (non-fatal)"
+  )
+)
+if not defined DISM_HARD_FAIL (
+  set "_cap_state_after="
+  call :run_dism_capture "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
+  set "DISM_RC=%L2C_LAST_DISM_RC%"
+  for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_cap_probe_out%"') do set "_cap_state_after=%%S"
+  if defined _cap_state_after (
+    set "_cap_state_after=%_cap_state_after: =%"
+    if /i "%_cap_state_after%"=="Installed" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Installed rc=%RC%
+    if /i "%_cap_state_after%"=="Staged" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Staged rc=%RC%
+  )
 )
 goto :_cap_cleanup
 
 :_cap_cleanup
 if defined _cap_probe_out if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
 set "_cap_state="
+set "_cap_state_after="
 set "_cap_probe_out="
 set "DISM_RC="
 goto :eof
@@ -520,45 +679,45 @@ exit /b 0
 
 :: ------------ Edge Update policies ------------
 call :log "[SECTION] Edge Update policies"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "UpdateDefault" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "UpdateDefault" "REG_DWORD" "0"
 REM Optional: block installs too (uncomment if needed):
 REM call :regadd "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" "InstallDefault" "REG_DWORD" "0"
 
 :: ------------ Edge first run experience ------------
 call :log "[SECTION] Edge first run experience"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "HideFirstRunExperience" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" "DisableEdgeDesktopShortcutCreation" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "HideFirstRunExperience" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" "DisableEdgeDesktopShortcutCreation" "REG_DWORD" "1"
 
 :: ------------ Edge SmartScreen (best-effort) ------------
 call :log "[SECTION] Edge SmartScreen (best-effort)"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenEnabled" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenDnsRequestsEnabled" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenForTrustedDownloadsEnabled" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenPuaEnabled" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenEnabled" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenDnsRequestsEnabled" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenForTrustedDownloadsEnabled" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenPuaEnabled" "REG_DWORD" "0"
 
 :: ------------ Internet Explorer First Run policy ------------
 call :log "[SECTION] IE First Run policy"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableFirstRunCustomize" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableFirstRunCustomize" "REG_DWORD" "1"
 call :log "[SECTION] SmartScreen & Defender"
 
 REM ------------ SmartScreen ^& Defender (policy enforced) ------------
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableSmartScreen" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SpynetReporting" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SubmitSamplesConsent" "REG_DWORD" "2"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "DisableBlockAtFirstSeen" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "LocalSettingOverrideSpynetReporting" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine" "MpCloudBlockLevel" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableSmartScreen" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SpynetReporting" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SubmitSamplesConsent" "REG_DWORD" "2"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "DisableBlockAtFirstSeen" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "LocalSettingOverrideSpynetReporting" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine" "MpCloudBlockLevel" "REG_DWORD" "0"
 
 :: ------------ Early Edge browser removal (guarantee layer) ------------
 call :edge_remove
 
 :: ------------ Telemetry / Diagnostics / WER ------------
 call :log "[SECTION] Telemetry, Diagnostics, WER"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" "REG_DWORD" "1"
 REM -- Services: disable and log (WerSvc is disabled; queue handled by task) --
 REM call :svc_disable "WerSvc"
 REM -- Scheduled Tasks: CEIP / Appraiser / StartupAppTask / DiskDiagnostic / WER Queue --
@@ -575,25 +734,25 @@ call :fw_block_diagtrack
 
 :: ------------ Delivery Optimization ------------
 call :log "[SECTION] Delivery Optimization"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" "REG_DWORD" "0"
 
 :: ------------ Delivery Optimization cache limit ------------
 call :log "[SECTION] Delivery Optimization cache limit"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DOAbsoluteMaxCacheSizeMB" "REG_DWORD" "2048"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DOAbsoluteMaxCacheSizeMB" "REG_DWORD" "2048"
 
 :: ------------ Network quieting ------------
 call :log "[SECTION] Network"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" "DisableWpad" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" "DisableWpad" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" "DisableWpad" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" "DisableWpad" "REG_DWORD" "1"
 netsh winhttp reset proxy >nul 2>&1
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" "REG_DWORD" "0"
 netsh interface teredo set state disabled >nul 2>&1
 netsh interface 6to4   set state disabled >nul 2>&1
 netsh interface isatap set state disabled >nul 2>&1
 
 :: ------------ OneDrive ------------
 call :log "[SECTION] OneDrive"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyncNGSC" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyncNGSC" "REG_DWORD" "1"
 
 :: ------------ Services ------------
 call :log "[SECTION] Services"
@@ -623,7 +782,7 @@ sc stop   WebClient >nul 2>&1
 
 :: ------------ Game Bar / Xbox / Game DVR ------------
 call :log "[SECTION] GameDVR and Xbox"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" "REG_DWORD" "0"
 call :svc_disable "XblGameSave"
 call :svc_disable "XboxGipSvc"
 call :svc_disable "XboxNetApiSvc"
@@ -654,27 +813,27 @@ call :remove_capability "WMI-SNMP-Provider.Client~~~~0.0.1.0"       "WMI.SNMP.Pr
 
 :: ------------ Windows Update policy ------------
 call :log "[SECTION] Windows Update"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" "AUOptions" "REG_DWORD" "2"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ExcludeWUDriversInQualityUpdate" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ManagePreviewBuilds" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ManagePreviewBuildsPolicyValue" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "AllowMUUpdateService" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "DisableOSUpgrade" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Device Metadata" "PreventDeviceMetadataFromNetwork" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" "AUOptions" "REG_DWORD" "2"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ExcludeWUDriversInQualityUpdate" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ManagePreviewBuilds" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ManagePreviewBuildsPolicyValue" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "AllowMUUpdateService" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "DisableOSUpgrade" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Device Metadata" "PreventDeviceMetadataFromNetwork" "REG_DWORD" "1"
 
 REM ------------ UX ^& Power ------------
 call :log "[SECTION] UX ^& Power"
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" "REG_DWORD" "255"
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoRun" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoPlay" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "PublishUserActivities" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "UploadUserActivities" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer" "DisableSearchBoxSuggestions" "REG_DWORD" "1"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCloudSearch" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "ConnectedSearchUseWeb" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "BingSearchEnabled" "REG_DWORD" "0"
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "DisableWebSearch" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoDriveTypeAutoRun" "REG_DWORD" "255"
+call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoRun" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoPlay" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "PublishUserActivities" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "UploadUserActivities" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer" "DisableSearchBoxSuggestions" "REG_DWORD" "1"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCloudSearch" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "ConnectedSearchUseWeb" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "BingSearchEnabled" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "DisableWebSearch" "REG_DWORD" "1"
 
 :: ------------ Explorer Quick Access defaults for new users ------------
 call :log "[SECTION] Explorer Quick Access defaults"
@@ -917,18 +1076,25 @@ if not "%FINAL_RC%"=="0" (
   call :l2c_temp_logon_rollback
 )
 
+call :hardwarn_finalize
+
 if "%FINAL_RC%"=="0" (
   if "%L2C_AUTOLOGON_DEGRADED%"=="1" (
     set "FINAL_RC=2"
     call :log "[FINAL] DEGRADED manual_login_required=%MANUAL_LOGIN_REQUIRED%"
   ) else (
-    call :log "[FINAL] SUCCESS"
+    if "%HARDENING_HAS_WARNINGS%"=="1" (
+      call :log "[FINAL] SUCCESS_WITH_HARDENING_WARNINGS"
+    ) else (
+      call :log "[FINAL] SUCCESS"
+    )
   )
 ) else (
   call :log "[FINAL] FAIL (FINAL_RC=%FINAL_RC%)"
 )
 
 call :log "[RC] returning %FINAL_RC%"
+if "%HARDENING_HAS_WARNINGS%"=="1" call :hardwarn_emit
 exit /b %FINAL_RC%
 
 :winlogon_handle_default_password
@@ -1471,6 +1637,8 @@ if "%EDGE_EXE_PRESENT%"=="0" (
 ) else (
   call :log "[WARN] Edge removal verification result: FAIL after %EDGE_VERIFY_ATTEMPT% attempts (msedge.exe still present); continuing (best-effort)."
 )
+if "%EDGE_EXE_PRESENT%"=="1" if defined ProgramFiles(x86) if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" call :hardwarn EDGE removal verification failed: msedge.exe present at "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+if "%EDGE_EXE_PRESENT%"=="1" if defined ProgramFiles if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" call :hardwarn EDGE removal verification failed: msedge.exe present at "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
 
 endlocal & exit /b 0
 
@@ -1511,15 +1679,45 @@ exit /b 0
 REM Usage: call :task_disable "\Path\To\Task"
 schtasks /Query /TN "%~1" >nul 2>&1 || goto :task_done
 schtasks /Change /TN "%~1" /Disable >nul 2>&1
-set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" (
+set "TASK_DISABLE_RC=%ERRORLEVEL%"
+if "%TASK_DISABLE_RC%"=="0" (
   call :log "[OK] Task ""%~1"" -> Disabled"
 ) else (
-  call :log "[WARN] TASK_DISABLE_FAILED rc=%RC% task=%~1"
+  call :log "[WARN] TASK_DISABLE_FAILED rc=%TASK_DISABLE_RC% task=%~1"
 )
+if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+set "_task_xml=%SystemRoot%\Temp\l2c_task_verify_%RANDOM%_%RANDOM%.xml"
+del /q "%_task_xml%" >nul 2>&1
+schtasks /Query /TN "%~1" /XML 1>"%_task_xml%" 2>nul
+set "TASK_VERIFY_XML_RC=%ERRORLEVEL%"
+set "TASK_VERIFY_STATE=Unknown"
+set "TASK_VERIFY_REASON="
+set "_task_xml_sz="
+if "%TASK_VERIFY_XML_RC%"=="0" if exist "%_task_xml%" for %%G in ("%_task_xml%") do set "_task_xml_sz=%%~zG"
+if not "%TASK_VERIFY_XML_RC%"=="0" set "TASK_VERIFY_REASON=xml_query_failed"
+if "%TASK_VERIFY_XML_RC%"=="0" if not defined _task_xml_sz set "TASK_VERIFY_REASON=xml_missing_or_empty"
+if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if "%_task_xml_sz%"=="0" set "TASK_VERIFY_REASON=xml_missing_or_empty"
+if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>true</Enabled>" "%_task_xml%" >nul
+if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Enabled"
+if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>false</Enabled>" "%_task_xml%" >nul
+if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Disabled"
+if /I "%TASK_VERIFY_STATE%"=="Enabled" call :hardwarn TASK not disabled: %~1 expected=Disabled actual=Enabled rc=%TASK_DISABLE_RC%
+if /I "%TASK_VERIFY_STATE%"=="Unknown" if not defined TASK_VERIFY_REASON set "TASK_VERIFY_REASON=enabled_tag_missing"
+if /I "%TASK_VERIFY_STATE%"=="Unknown" if defined _task_xml_sz (
+  call :hardwarn TASK disable verification unavailable: %~1 reason=%TASK_VERIFY_REASON% disable_rc=%TASK_DISABLE_RC% verify_rc=%TASK_VERIFY_XML_RC% xml_sz=%_task_xml_sz%
+) else (
+  call :hardwarn TASK disable verification unavailable: %~1 reason=%TASK_VERIFY_REASON% disable_rc=%TASK_DISABLE_RC% verify_rc=%TASK_VERIFY_XML_RC%
+)
+del /q "%_task_xml%" >nul 2>&1
 
 :task_done
 set "RC="
+set "TASK_DISABLE_RC="
+set "TASK_VERIFY_XML_RC="
+set "TASK_VERIFY_STATE="
+set "TASK_VERIFY_REASON="
+set "_task_xml="
+set "_task_xml_sz="
 exit /b 0
 
 :after_telemetry_hardening
