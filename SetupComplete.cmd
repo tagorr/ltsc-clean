@@ -168,9 +168,9 @@ if /I "%RT%"=="REG_DWORD" (
   set "REGVERIFY_ACT_DEC="
   set /a REGVERIFY_ACT_DEC=%REGVERIFY_DATA% >nul 2>&1
   if errorlevel 1 goto :regverify_mismatch
-  if not "%REGVERIFY_EXP_DEC%"=="%REGVERIFY_ACT_DEC%" goto :regverify_mismatch
-  goto :regverify_cleanup
 )
+if /I "%RT%"=="REG_DWORD" if not "%REGVERIFY_EXP_DEC%"=="%REGVERIFY_ACT_DEC%" goto :regverify_mismatch
+if /I "%RT%"=="REG_DWORD" goto :regverify_cleanup
 if /I not "%REGVERIFY_DATA%"=="%RD%" goto :regverify_mismatch
 goto :regverify_cleanup
 
@@ -423,12 +423,10 @@ if not defined DISM_HARD_FAIL (
   call :run_dism_capture "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
   set "DISM_RC=%L2C_LAST_DISM_RC%"
   for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_cap_probe_out%"') do set "_cap_state_after=%%S"
-  if defined _cap_state_after (
-    set "_cap_state_after=%_cap_state_after: =%"
-    if /i "%_cap_state_after%"=="Installed" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Installed rc=%RC%
-    if /i "%_cap_state_after%"=="Staged" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Staged rc=%RC%
-  )
+  if defined _cap_state_after set "_cap_state_after=%_cap_state_after: =%"
 )
+if /i "%_cap_state_after%"=="Installed" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Installed rc=%RC%
+if /i "%_cap_state_after%"=="Staged" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Staged rc=%RC%
 goto :_cap_cleanup
 
 :_cap_cleanup
