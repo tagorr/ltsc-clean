@@ -216,7 +216,8 @@ When `FAILED=1` (gate closed or task creation fails), `SetupComplete.cmd` logs r
 
 * DISM calls flow through `:run_dism`/`:track_rc`; once `DISM_HARD_FAIL` is set, further DISM feature/capability calls are skipped for the rest of the run.
 
-* The script aggregates a final exit code: `FINAL_RC=L2C_FIRST_BAD_RC` if set, else `FINAL_RC=1` when `FAILED=1`, else `FINAL_RC=2` when `L2C_AUTOLOGON_DEGRADED=1`, else `FINAL_RC=0`; it logs `[RC] returning %FINAL_RC%` before exiting, and never forces a reboot inside SetupComplete.
+* The script aggregates a final exit code: `FINAL_RC=L2C_FIRST_BAD_RC` if set, else `FINAL_RC=1` when `FAILED=1`, else `FINAL_RC=2` when `L2C_AUTOLOGON_DEGRADED=1`, else `FINAL_RC=0`; it emits `[FINAL] FAIL (FINAL_RC=...)`, `[FINAL] DEGRADED manual_login_required=1`, `[FINAL] SUCCESS`, or `[FINAL] SUCCESS_WITH_HARDENING_WARNINGS` accordingly, logs `[RC] returning %FINAL_RC%`, and never forces a reboot inside SetupComplete.
+* Best-effort hardening warnings are transparent but non-fatal on their own: `SetupComplete.cmd` attempts to deduplicate the collected warning lines, logs `[HARDENING] warn_count_unique=<n> file=<artifact>`, appends the warning lines from the warning file to `SetupComplete.log`, and keeps `FINAL_RC=0` unless some other failure or degraded path applies.
 
 * Installers are invoked with reboot suppression: **MSI** via `REBOOT=ReallySuppress /norestart`; **EXE** with an equivalent `/norestart` switch to avoid reboots inside SetupComplete.
 
@@ -723,7 +724,8 @@ Addendum: Direct `reg.exe` call in PS 5.1: `& reg.exe ... | Out-Null 2>$null`; r
 - All other DISM return codes outside `{0, 3010, 1641}` and the warning whitelist remain fatal. `:run_dism` logs an error, sets `FAILED=1` and `DISM_HARD_FAIL=1`, and `:track_rc` captures the first fatal code in `L2C_FIRST_BAD_RC`. Once `DISM_HARD_FAIL` is set, subsequent DISM feature/capability/cleanup calls are skipped for the rest of the run.
 - Treat `3010` and `1641` as non-fatal "reboot required" outcomes (success with reboot required). They do not set `DISM_HARD_FAIL` and are not part of the warning whitelist.
 - The warning whitelist is intentionally narrow (only the two codes above); expanding it requires operator investigation and explicit documentation updates. In `SetupComplete.cmd`, Stage B scheduling is gated on `FAILED=0`. Any DISM hard-fail that sets `FAILED=1` therefore prevents Stage B scheduling in that run (fail-closed).
-- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, if `L2C_AUTOLOGON_DEGRADED==1`, `FINAL_RC=2`; otherwise, `FINAL_RC=0`. The script logs "[RC] returning %FINAL_RC%" and exits with that code.
+- At the end of `SetupComplete.cmd`, the script aggregates a final exit code: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, if `L2C_AUTOLOGON_DEGRADED==1`, `FINAL_RC=2`; otherwise, `FINAL_RC=0`. The human-readable final marker is emitted separately: `[FINAL] FAIL (FINAL_RC=...)`, `[FINAL] DEGRADED manual_login_required=1`, `[FINAL] SUCCESS`, or `[FINAL] SUCCESS_WITH_HARDENING_WARNINGS`. The script logs "[RC] returning %FINAL_RC%" and exits with that code.
+- When `HARDENING_HAS_WARNINGS=1`, `:hardwarn_finalize` attempts to deduplicate the collected warnings and finalizes `HARDENING_WARN_UNIQUE_COUNT`, and `:hardwarn_emit` logs `[HARDENING] warn_count_unique=<n> file=<artifact>` plus the warning lines from the warning file, then best-effort deletes the warning file afterward. This surfaces best-effort hardening drift without promoting it to a hard failure by itself.
 
 **Consequences:**
 
