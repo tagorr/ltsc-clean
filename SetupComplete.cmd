@@ -1695,10 +1695,10 @@ if "%TASK_VERIFY_XML_RC%"=="0" if exist "%_task_xml%" for %%G in ("%_task_xml%")
 if not "%TASK_VERIFY_XML_RC%"=="0" set "TASK_VERIFY_REASON=xml_query_failed"
 if "%TASK_VERIFY_XML_RC%"=="0" if not defined _task_xml_sz set "TASK_VERIFY_REASON=xml_missing_or_empty"
 if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if "%_task_xml_sz%"=="0" set "TASK_VERIFY_REASON=xml_missing_or_empty"
-if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>true</Enabled>" "%_task_xml%" >nul
-if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Enabled"
 if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>false</Enabled>" "%_task_xml%" >nul
 if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Disabled"
+if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>true</Enabled>" "%_task_xml%" >nul
+if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Enabled"
 if /I "%TASK_VERIFY_STATE%"=="Enabled" call :hardwarn TASK not disabled: %~1 expected=Disabled actual=Enabled rc=%TASK_DISABLE_RC%
 if /I "%TASK_VERIFY_STATE%"=="Unknown" if not defined TASK_VERIFY_REASON set "TASK_VERIFY_REASON=enabled_tag_missing"
 if /I "%TASK_VERIFY_STATE%"=="Unknown" if defined _task_xml_sz (
