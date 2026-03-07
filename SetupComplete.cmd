@@ -1638,7 +1638,7 @@ if "%EDGE_EXE_PRESENT%"=="0" (
 if "%EDGE_EXE_PRESENT%"=="1" if defined ProgramFiles(x86) if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" call :hardwarn EDGE removal verification failed: msedge.exe present at "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
 if "%EDGE_EXE_PRESENT%"=="1" if defined ProgramFiles if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" call :hardwarn EDGE removal verification failed: msedge.exe present at "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
 
-endlocal & exit /b 0
+endlocal & set "HARDENING_HAS_WARNINGS=%HARDENING_HAS_WARNINGS%" & set "HARDENING_WARN_COUNT=%HARDENING_WARN_COUNT%" & set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE%" & set "HARDENING_WARN_FALLBACK_USED=%HARDENING_WARN_FALLBACK_USED%" & exit /b 0
 
 :edge_uninstall_once
 start "" /wait "%EDGE_SETUP%" --uninstall --system-level --force-uninstall >nul 2>&1
