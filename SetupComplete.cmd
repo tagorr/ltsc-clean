@@ -368,14 +368,10 @@ set "_cap_state="
 if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
 set "_cap_probe_out=%SystemRoot%\Temp\l2c_cap_probe_%RANDOM%_%RANDOM%.txt"
 if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
-call :run_dism_capture "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
+call :run_dism_capture_nonfatal "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
 set "DISM_RC=%L2C_LAST_DISM_RC%"
 
-REM Hard-fail only. Otherwise, try to parse the output even if RC is non-zero.
-if defined DISM_HARD_FAIL (
-  call :log "[ERROR] Capability state retrieval failed for %FR% (%CAP%) (RC=%DISM_RC%)"
-  goto :_cap_cleanup
-)
+REM Best-effort probe. Try to parse the output even if RC is non-zero.
 
 if not "%DISM_RC%"=="0" (
   call :log "[WARN] Capability state retrieval returned RC=%DISM_RC% for %FR% (%CAP%); attempting to parse output anyway"
@@ -420,7 +416,7 @@ if "%RC%"=="0" (
 )
 if not defined DISM_HARD_FAIL (
   set "_cap_state_after="
-  call :run_dism_capture "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
+  call :run_dism_capture_nonfatal "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
   set "DISM_RC=%L2C_LAST_DISM_RC%"
   for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_cap_probe_out%"') do set "_cap_state_after=%%S"
 )
@@ -526,6 +522,17 @@ call :log "[DISM] %CMD%"
 set "RC=%ERRORLEVEL%"
 set "L2C_LAST_DISM_RC=%RC%"
 call :classify_dism_rc %RC%
+exit /b %RC%
+
+:run_dism_capture_nonfatal
+REM usage: call :run_dism_capture_nonfatal "<outfile>" <DISM-args-without-/Online>
+set "OUT=%~1"
+shift
+set "CMD=dism /Online %1 %2 %3 %4 %5 %6 %7 %8 %9 /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4"
+call :log "[DISM] %CMD%"
+%CMD% 1>"%OUT%" 2>&1
+set "RC=%ERRORLEVEL%"
+set "L2C_LAST_DISM_RC=%RC%"
 exit /b %RC%
 
 :classify_dism_rc
