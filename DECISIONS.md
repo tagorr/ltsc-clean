@@ -816,3 +816,13 @@ The temporary `bootstrap` account is provisioned in PreOOBE via `Microsoft.Power
 - For pre-existing users only, Stage A makes a best-effort attempt to clear "must change password at next logon" via `net.exe user <user> /logonpasswordchg:no` (no secrets on CLI).
 
 **Consequences:** The password remains off external process command lines and task XML, while Stage A no longer depends on ADSI. Failure modes remain fail-closed and preserve the recovery entrypoint (scheduled task + bootstrap + secrets) for operator investigation and retry.
+
+## ADR-012: Two-level documentation architecture
+
+**Date:** 2026-03-08
+
+**Context:** The root `README.md` currently carries too much operational depth for first-time readers, which increases cognitive load and makes public-facing navigation harder.
+
+**Decision:** Keep `README.md` at the repository root as the front door for new readers, and place deep documentation under `docs/`. The intended structure separates onboarding and reference topics into distinct documents: `docs/README.md`, `docs/QUICK_START.md`, `docs/PIPELINE_FLOW.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE.md`.
+
+**Consequences:** Future documentation PRs can move operational detail out of the root `README.md` without changing the consolidated decisions model in this file. The documentation set becomes easier to scan, the root entry point stays public-facing, and deeper material is organized by task and audience.
