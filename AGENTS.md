@@ -1,10 +1,10 @@
-# AGENTS.md — Automation Runbook (LTSC 2021 Clean & Quiet)
+# AGENTS.md
 
 **Scope:** Windows 10 Enterprise 2021 LTSC (21H2, build 19044+). We manage only the install scripts.
 
 ## Allowed to edit
 
-`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`.
+`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`, `docs/VALIDATION.md`, `docs/GUIDE.md`, `docs/QUICK_START.md`, `docs/PIPELINE_FLOW.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
 
 **Owner-controlled areas** (default: out of scope for agents)
 
@@ -31,10 +31,10 @@ Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not
 
 * **No immediate reboots** inside `SetupComplete.cmd`. Reboot requirements are signaled only via `%WINDIR%\Panther\_needs_reboot.flag` (`Panther flag`) when `RC ∈ {3010, 1641}` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`. `SetupComplete.cmd` never calls `shutdown.exe`.
 * **EOL:** scripts (`.cmd/.ps1`) use CRLF; documentation (`.md`) uses LF.
-* Documentation must match actual behavior (paths, logs, steps). Details live in `README.md` and `DECISIONS.md`.
-* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; do not add an extra `cmd.exe /c` wrapper inside emitted step commands (the harness already runs every step via `cmd.exe /c "<line>"`) (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **README.md → Project PowerShell/CLI rules**.
+* Documentation must match actual behavior (paths, logs, steps). Use `README.md` as the front door, `docs/GUIDE.md` as the documentation router, `DECISIONS.md` for rationale and trade-offs, `SECURITY.md` for security posture, and the relevant `docs/*` owner document for procedural or operational detail.
+* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; do not add an extra `cmd.exe /c` wrapper inside emitted step commands (the harness already runs every step via `cmd.exe /c "<line>"`) (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **docs/INTERACTION_CONTRACT.md**.
 * Use `reg.exe` directly. Always inspect `$LASTEXITCODE` after each call. For `DELETE`, return codes `{0,2}` are treated as success.
-* In `.cmd` files, direct PowerShell syntax is **not allowed**. Use it only via `powershell.exe ...` (see README → "Calling PowerShell from CMD scripts").
+* In `.cmd` files, direct PowerShell syntax is **not allowed**. Use it only via pinned Windows PowerShell 5.1 script invocation as defined in `docs/INTERACTION_CONTRACT.md`.
 * In `.cmd` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
 * **CMD parse-time expansion:** inside any parenthesized `(...)` block, it is forbidden to read `%VAR%` for variables that may be set/modified within the same block (including changes caused by `call :sub` invoked from that block). Only acceptable fixes: move the read/log/branch outside the `(...)` block, or use CALL-expansion with `%%VAR%%` (example: `call :log "resolved_path=%%OUT_PATH%%"`).
 
@@ -138,7 +138,7 @@ Prefer one task per CLI session. If scope or shell rules change, start a fresh s
 
 ### Reboot orchestration guardrails
 
-* `SetupComplete.cmd` is the only stage that decides whether the unattended pipeline requires a reboot, and it may only communicate that decision via the `Panther flag`.
+* `SetupComplete.cmd` is the only stage that decides whether the pipeline requires a reboot, and it may only communicate that decision via the `Panther flag`.
 * Stage B of `CreatePrimaryAdmin.ps1` is the only unattended stage allowed to read the `Panther flag` and, in normal mode, call `shutdown.exe` automatically. It may delete the flag only when Stage B completes successfully in normal mode; on failure or in recovery it must suppress automatic reboot and may leave the flag in place as a diagnostic marker.
 * Codex CLI must not introduce inline `shutdown.exe` calls in other scripts; the `Panther flag` remains the single reboot signal.
 * In normal mode, when Stage B completes successfully and the `Panther flag` is present, Stage B logs the pending reboot, finishes its cleanup, deletes the flag, and performs a single controlled reboot.
@@ -212,7 +212,7 @@ If Step 0 fails, do not run Step 1.
 
 Disclaimer: this is a manual engineering test. Inside `SetupComplete.cmd` no reboot is executed. A deferred reboot can only happen later when Stage B consumes the `Panther flag` that `SetupComplete.cmd` wrote after servicing RC `3010/1641` or when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` is set.
 
-*After a successful normal run, verify (see README for details): `AutoAdminLogon=0`, `ForceAutoLogon=0`, `DefaultPassword` removed and `AutoLogonCount` absent or `0`, `HKLM\SOFTWARE\L2C\AutologonPrimed` absent (best-effort), `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=0`, `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, `bootstrap` disabled, `primaryadmin` is a member of Administrators, task `\L2C\CreatePrimaryAdmin` deleted, and `C:\ProgramData\l2c_master_<timestamp>.log` present.*
+*After a successful normal run, verify the post-run state using `docs/OPERATIONS.md` (`Post-Run Checks`): `AutoAdminLogon=0`, `ForceAutoLogon=0`, `DefaultPassword` removed and `AutoLogonCount` absent or `0`, `HKLM\SOFTWARE\L2C\AutologonPrimed` absent (best-effort), `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD=0`, `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Authentication\LogonUI\Ngc\DevicePasswordLessBuildVersion=2`, `bootstrap` disabled, `primaryadmin` is a member of Administrators, task `\L2C\CreatePrimaryAdmin` deleted, and `C:\ProgramData\l2c_master_<timestamp>.log` present.*
 
 *`SetupComplete.cmd` aggregates a final exit code instead of exiting immediately on the first failure: if `L2C_FIRST_BAD_RC` is set, `FINAL_RC=L2C_FIRST_BAD_RC`; otherwise, if `FAILED==1`, `FINAL_RC=1`; otherwise, if `L2C_AUTOLOGON_DEGRADED==1`, `FINAL_RC=2` (`[FINAL] DEGRADED manual_login_required=1`); otherwise `FINAL_RC=0`. Hard failures take precedence over DEGRADED (`[FINAL] FAIL (FINAL_RC=...)`). When `FINAL_RC=0`, the human-readable final marker is `[FINAL] SUCCESS` or `[FINAL] SUCCESS_WITH_HARDENING_WARNINGS` depending on whether best-effort hardening warnings were collected. Those warnings are best-effort deduplicated and surfaced after `[RC] returning %FINAL_RC%` as `[HARDENING] warn_count_unique=<n> file=<artifact>` plus the warning lines; this transparency does not by itself change the returned RC. DISM warnings (`HAS_DISM_WARN=1`) do not force a failure.*
 
@@ -224,7 +224,6 @@ Disclaimer: this is a manual engineering test. Inside `SetupComplete.cmd` no reb
 
 **Repeat validation (snapshots / new VM):**
 
-* Run `schtasks /Query /TN "\L2C\CreatePrimaryAdmin"`. If the task is missing, register it again (see README → "Registering the master task in Task Scheduler"). Ensure that `.bootstrap.pw` is absent before a manual rerun, or that it contains a lab password with correct ACL and attributes.
+* Run `schtasks /Query /TN "\L2C\CreatePrimaryAdmin"`. If the task is missing, register it again using the command shown in Step 1 of this manual smoke path. Ensure that `.bootstrap.pw` is absent before a manual rerun, or that it contains a lab password with correct ACL and attributes.
 * Run `schtasks /Run /TN "\L2C\CreatePrimaryAdmin"` and verify that Stage B again cleans Winlogon state and, on success, removes the scheduled task and produces a fresh `l2c_master_<ts>.log`.
 
-**Known fix (historical):** message `ADSI update failed for ${User}:` — this was tied to the older ADSI-based Stage A; Stage A no longer uses ADSI, so this message should not occur in current runs (see `DECISIONS.md`).

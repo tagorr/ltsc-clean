@@ -1,4 +1,5 @@
 # Codex CLI Interaction Contract
+
 This repository uses Codex CLI as the sole automation agent. Follow these rules precisely.
 
 Primary goal: deterministic Windows-native execution without multi-layer quoting failures.
