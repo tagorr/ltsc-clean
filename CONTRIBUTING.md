@@ -7,12 +7,15 @@ Thanks for your interest in contributing!
 - Create a feature branch (e.g. `feat/...`, `fix/...`, `docs/...`, `chore/...`).
 - Keep commits clean; merges are **squash**.
 - Commit prefixes: `feat|fix|docs|chore|ci|refactor|test`.
+- Run the repository preflight checks from the repository root before opening a PR.
 - Make sure **CI is green** before requesting review.
 
 ## PowerShell 5.1 CLI rules (project-specific)
 
+These rules apply to interactive Windows PowerShell 5.1 commands and to project `.ps1` scripts. They do not replace normal CMD syntax in `.cmd` files.
+
 - Use **Windows PowerShell 5.1**. Do **not** use PowerShell 7 syntax or features.
-- External tools (`reg.exe`, `schtasks.exe`, `shutdown.exe`) are allowed, but suppression is **only** in PowerShell style: `| Out-Null 2>$null`.
+- External tools (`reg.exe`, `schtasks.exe`, `shutdown.exe`) are allowed, but suppression is **only** in PowerShell style: `| Out-Null 2>$null`. After external tools, check `$LASTEXITCODE`, not `$?`.
 - Registry paths:
   - `reg.exe` uses classic paths, for example `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
   - PowerShell cmdlets (`New/Set/Remove-ItemProperty`) use provider paths, for example `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
@@ -21,6 +24,7 @@ Thanks for your interest in contributing!
 - ASCII quotes only in code examples: `' " - /`. No smart quotes.
 - Documentation is UTF-8. For copy/paste command blocks, prefer ASCII punctuation (plain quotes and hyphens) to avoid issues in non-UTF8 environments.
 - All examples and snippets must be compatible with Windows PowerShell 5.1.
+- Do not use `cmd /c` unless it is explicitly required.
 
 ## Line endings (EOL)
 
@@ -28,62 +32,25 @@ Thanks for your interest in contributing!
 - Markdown `*.md` **should use LF**.
 - This is enforced by `.gitattributes` and an EOL CI guard (`.github/workflows/eol-guard.yml`).
 
-## VM smoke tests (minimum bar)
+## Validation before PR
 
-These are quick VM checks for PR validation (not a full audit). Use a clean VM or a snapshot.
+If your change can affect pipeline behavior, installation flow, recovery behavior, logon behavior, reboot handling, secret handling, final machine state, or the documented interpretation of those behaviors, validate it in a clean VM or equivalent isolated test environment before opening a PR.
 
-### Happy-path smoke (fresh VM)
+At minimum:
 
-- If available, validate `Autounattend.xml` in WSIM without errors.
-- Install and reach OOBE without Microsoft account screens (local flow).
-- Verify `PreOOBE.cmd` ran and wrote `%WINDIR%\Panther\PreOOBE.log`.
-- Verify `SetupComplete.cmd` ran once and wrote `%WINDIR%\Panther\SetupComplete.log`.
-- On the first console logon, Winlogon may perform AutoAdminLogon with `bootstrap`. This is visible on the VM console (for example Hyper-V VMConnect Basic), not on Enhanced (RDP) sessions.
-- Verify the scheduled task exists and runs the master:
-  - Task name: `\L2C\CreatePrimaryAdmin`
-  - It runs `CreatePrimaryAdmin.ps1` as SYSTEM on logon.
-- Validate the normal success end state (see `README.md` for details):
-  - `C:\ProgramData\l2c_master_<timestamp>.log` exists and contains `OUTCOME: SUCCESS`.
-  - `bootstrap` is disabled.
-  - The `\L2C\CreatePrimaryAdmin` scheduled task is removed.
-  - Winlogon temporary values are cleaned up (for example `DefaultPassword` absent and autologon disabled).
-  - `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `.primaryadmin.pw` are removed on the normal success path.
-  - If `%WINDIR%\Panther\_needs_reboot.flag` exists and Stage B succeeded in normal mode, Stage B consumes the flag and performs one controlled reboot.
+- confirm the intended path behaves as expected;
+- check the relevant runtime evidence (`PreOOBE.log`, `SetupComplete.log`, and, when applicable, `l2c_master_<timestamp>.log`);
+- confirm the observed machine state matches the expected outcome for that path.
 
-### Recovery-path smoke (gate closed)
+When a change affects runtime behavior, include a short validation note in the PR and attach relevant evidence excerpts when useful.
 
-Pick one deliberate gate failure and confirm the run stays fail-closed (no Stage B registration / no autologon priming):
+For the detailed validation procedure and smoke scenarios, see `docs/VALIDATION.md`.
 
-- Remove `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, or make it empty, or break its ACL/attributes so `ValidateSecrets.ps1` reports `primaryadmin=0`.
-- Verify `SetupComplete.log` shows the combined gate did not pass and that SetupComplete entered recovery mode (skipping extra registrations).
-- Confirm the `\L2C\CreatePrimaryAdmin` task is not registered and Winlogon autologon is not primed by SetupComplete.
-- Confirm secrets are preserved for operator investigation (recovery entrypoint remains available).
+## Agent-assisted editing
 
-### Attach evidence to PRs (when relevant)
+If you use Codex CLI or another coding agent in this repository, follow `AGENTS.md` and `docs/INTERACTION_CONTRACT.md`.
 
-Include small excerpts (or the full files when diagnosing) from:
-
-- `%WINDIR%\Panther\PreOOBE.log`
-- `%WINDIR%\Panther\SetupComplete.log`
-- `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
-- `C:\ProgramData\l2c_master_<timestamp>.log` (normal or recovery outcome)
-  - If Stage B retained `bootstrap` / the executor task / secrets unexpectedly, look for:
-    - `HARD FAIL: Logon policy restore verification failed, refusing to teardown executor/bootstrap.`
-    - `Teardown blocked due to logon policy restore verification failure; bootstrap/task/secrets retained.`
-    - `OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)`
-
-## Using Codex CLI in this repo
-
-This repo is designed to be edited with Codex CLI under strict constraints.
-
-- Canonical execution and quoting rules live in `docs/INTERACTION_CONTRACT.md`. Follow it when drafting prompts and when interpreting agent output.
-- `AGENTS.md` defines the runbook and invariants. Do not introduce changes that break the reboot model (flag-based), secret handling, or recovery posture.
-- Keep scope tight: allow-list the exact files Codex may touch. Do not expand scope mid-task.
-- Minimal diffs only. No reformatting outside the hunks required by the change.
-- Temporary helper scripts (if needed) must live under `<workspace>\.codex_tmp\` only.
-- Codex must not perform state-changing Git operations (commit, push, merge, checkout, restore). Read-only Git commands (for example `git status`, `git diff`) are OK when needed for situational awareness.
-- Preserve repository encoding and line endings (scripts CRLF, Markdown LF). UTF-8 without BOM, no NUL bytes. CI enforces ASCII-only for tracked `*.cmd`/`*.ps1` ("ASCII Only Guard").
-- Prefer Windows-native tooling and pinned Windows PowerShell 5.1 execution rules as documented (avoid PowerShell 7+, avoid multi-layer quoting tricks).
+Do not let agent-generated changes expand scope, break repository invariants, or bypass the repository's execution, encoding, and line-ending rules.
 
 ## Shell rules (.cmd/.ps1) and minimal-diff
 
@@ -91,6 +58,7 @@ This repo is designed to be edited with Codex CLI under strict constraints.
   - No Delayed Expansion.
   - Test return codes via `%ERRORLEVEL%`.
   - Use `goto` and `call :sub` for control flow.
+  - Inside parenthesized blocks, `%VAR%` expansion happens at parse time, not at execution time; do not rely on changing values or return-code-dependent logic there, and prefer `call :sub` when state must be captured safely.
 - PowerShell target:
   - Windows PowerShell 5.1.
   - Avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets.
@@ -105,28 +73,17 @@ This repo is designed to be edited with Codex CLI under strict constraints.
   - Each block should be copy-pastable and executable in one go.
   - Avoid multi-command blocks and mixed shells inside a single fenced block.
 
-## VS Code tips
-
-- Set `CRLF` for scripts and `LF` for Markdown in the status bar.
-- If your global Git EOL settings conflict with the repo defaults, align them before contributing:
-
-```powershell
-git config core.autocrlf false
-```
-```powershell
-git add --renormalize
-```
-
 ## Before opening a PR
 
-* ✅ EOL checked; no LF-only lines in scripts.
-* ✅ PowerShell 5.1 style rules respected.
-* ✅ Docs updated if behavior or policies changed (`README.md`, `DECISIONS.md`, `SECURITY.md`, `docs/AUDIT_CHECKLIST.md`).
-* ✅ Doc references validated: any referenced repo paths in docs still exist (no drift from renames/moves).
-* ✅ PR title and commits use conventional prefixes.
+- ✅ EOL checked; no LF-only lines in scripts.
+- ✅ PowerShell 5.1 style rules respected.
+- ✅ Repository preflight checks run successfully.
+- ✅ Docs updated for every affected document role when the PR changes behavior, boundaries, validation scope, recovery handling, security posture, or system explanation. Use `docs/GUIDE.md` to identify the affected documents.
+- ✅ Doc references validated: any referenced repo paths in docs still exist (no drift from renames/moves).
+- ✅ PR title and commits use conventional prefixes.
 
 ## CI and checks
 
-* The EOL guard runs on every PR. See the Checks tab for logs.
-* If it fails, fix line endings and push to the same branch; the check will re-run automatically.
-* Docs link validation is manual (no automated link checker): when editing docs, verify that referenced repo paths (for example `AGENTS.md`, `docs/INTERACTION_CONTRACT.md`, `.github/workflows/eol-guard.yml`) still exist and match the current tree.
+- The EOL guard runs on every PR. See the Checks tab for logs.
+- If it fails, fix line endings and push to the same branch; the check will re-run automatically.
+- Docs link validation is manual (no automated link checker): when editing docs, verify that referenced repo paths (for example `AGENTS.md`, `docs/INTERACTION_CONTRACT.md`, `.github/workflows/eol-guard.yml`) still exist and match the current tree.

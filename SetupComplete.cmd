@@ -1044,7 +1044,7 @@ if "%FAILED%"=="1" (
   call :log "[WARN] SetupComplete entered recovery mode; skipping extra registrations"
   call :log "[WARN] *** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***"
   call :log "[WARN] Recovery active, operator action required. Teardown blocked; executor/bootstrap and secrets may be retained until manual resolution."
-  call :log "[WARN] See README.md Recovery runbook."
+  call :log "[WARN] See docs/OPERATIONS.md for recovery handling and docs/TROUBLESHOOTING.md for diagnosis."
 )
 
 :: ------------ mark reboot requirement via panther flag ------------

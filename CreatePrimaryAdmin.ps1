@@ -686,7 +686,7 @@ if ($isRecovery) {
   Write-SetupLog ("Stage B running in recovery mode (StageA RC={0})" -f $StageA_RC) 'WARN'
   Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
   Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'
-  Write-SetupLog 'See README.md Recovery runbook.' 'WARN'
+  Write-SetupLog 'See docs/OPERATIONS.md for recovery handling and docs/TROUBLESHOOTING.md for diagnosis.' 'WARN'
 } else {
   Write-SetupLog "Begin B: Autologon cleanup & policy restore"
 }
@@ -954,7 +954,7 @@ try {
   if ($isRecovery) {
     Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
     Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'
-    Write-SetupLog 'See README.md Recovery runbook.' 'WARN'
+    Write-SetupLog 'See docs/OPERATIONS.md for recovery handling and docs/TROUBLESHOOTING.md for diagnosis.' 'WARN'
   }
   if ($SecretCleanupError) {
     Write-SetupLog "End B (FAIL - secret cleanup error)" 'ERROR'
@@ -992,7 +992,7 @@ catch {
   if ($isRecovery) {
     Write-SetupLog '*** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***' 'WARN'
     Write-SetupLog 'Teardown blocked, bootstrap/task/secrets retained until manual resolution.' 'WARN'
-    Write-SetupLog 'See README.md Recovery runbook.' 'WARN'
+    Write-SetupLog 'See docs/OPERATIONS.md for recovery handling and docs/TROUBLESHOOTING.md for diagnosis.' 'WARN'
   }
   if ($rc -eq 0) { $rc = 2 }
 }
