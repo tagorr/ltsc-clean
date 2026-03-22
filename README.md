@@ -45,17 +45,17 @@ Not a fit:
 ## Start here
 
 1. Confirm that your system and environment fit the supported LTSC baseline.
-2. Follow `docs/QUICK_START.md` for the initial setup path.
-3. Go to `docs/OPERATIONS.md` for post-run checks and operator handling.
+2. Follow [Quick Start](docs/QUICK_START.md) for the initial setup path.
+3. Go to [Operations](docs/OPERATIONS.md) for post-run checks and operator handling.
 
 ## Documentation map
 
-- `docs/GUIDE.md` - documentation guide and reading map
-- `docs/QUICK_START.md` - minimal setup path
-- `docs/PIPELINE_FLOW.md` - runtime sequence and stage flow
-- `docs/OPERATIONS.md` and `docs/TROUBLESHOOTING.md` - operations, troubleshooting and recovery guidance
-- `SECURITY.md` and `DECISIONS.md` - security posture, design rationale and trade-offs
-- `docs/VALIDATION.md` and `docs/AUDIT_CHECKLIST.md` - validation and audit checks
+- [Guide](docs/GUIDE.md) - documentation guide and reading map
+- [Quick Start](docs/QUICK_START.md) - minimal setup path
+- [Pipeline Flow](docs/PIPELINE_FLOW.md) - runtime sequence and stage flow
+- [Operations](docs/OPERATIONS.md) and [Troubleshooting](docs/TROUBLESHOOTING.md) - operations, troubleshooting and recovery guidance
+- [Security](SECURITY.md) and [Decisions](DECISIONS.md) - security posture, design rationale and trade-offs
+- [Validation](docs/VALIDATION.md) and [Audit Checklist](docs/AUDIT_CHECKLIST.md) - validation and audit checks
 
 ## Key trade-offs
 
@@ -68,9 +68,9 @@ These baseline decisions come with explicit trade-offs:
 
 ## Contributing
 
-For repository changes, start with `CONTRIBUTING.md`.
+For repository changes, start with [Contributing](CONTRIBUTING.md).
 
-For Codex CLI or other agent-assisted work, follow `AGENTS.md` and `docs/INTERACTION_CONTRACT.md`.
+For Codex CLI or other agent-assisted work, follow [AGENTS.md](AGENTS.md) and the [Interaction Contract](docs/INTERACTION_CONTRACT.md).
 
 ## License
 
