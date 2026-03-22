@@ -119,7 +119,7 @@ If the flag remains after a degraded or failed run, treat it as a sign of retain
 
 Use these documents when the question moves beyond troubleshooting itself:
 
-- `docs/OPERATIONS.md`, for routine handling, post-run verification, and operator hygiene;
-- `docs/PIPELINE_FLOW.md`, to understand where the happy-path sequence should have continued;
-- `SECURITY.md`, for secret exposure windows, temporary clear-text storage, and security posture;
-- `DECISIONS.md`, for design rationale and non-goals.
+- [Operations](OPERATIONS.md), for routine handling, post-run verification, and operator hygiene;
+- [Pipeline Flow](PIPELINE_FLOW.md), to understand where the happy-path sequence should have continued;
+- [Security](../SECURITY.md), for secret exposure windows, temporary clear-text storage, and security posture;
+- [Decisions](../DECISIONS.md), for design rationale and non-goals.

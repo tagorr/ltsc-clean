@@ -44,11 +44,11 @@ At minimum:
 
 When a change affects runtime behavior, include a short validation note in the PR and attach relevant evidence excerpts when useful.
 
-For the detailed validation procedure and smoke scenarios, see `docs/VALIDATION.md`.
+For the detailed validation procedure and smoke scenarios, see [Validation](docs/VALIDATION.md).
 
 ## Agent-assisted editing
 
-If you use Codex CLI or another coding agent in this repository, follow `AGENTS.md` and `docs/INTERACTION_CONTRACT.md`.
+If you use Codex CLI or another coding agent in this repository, follow [AGENTS.md](AGENTS.md) and the [Interaction Contract](docs/INTERACTION_CONTRACT.md).
 
 Do not let agent-generated changes expand scope, break repository invariants, or bypass the repository's execution, encoding, and line-ending rules.
 
@@ -78,7 +78,7 @@ Do not let agent-generated changes expand scope, break repository invariants, or
 - ✅ EOL checked; no LF-only lines in scripts.
 - ✅ PowerShell 5.1 style rules respected.
 - ✅ Repository preflight checks run successfully.
-- ✅ Docs updated for every affected document role when the PR changes behavior, boundaries, validation scope, recovery handling, security posture, or system explanation. Use `docs/GUIDE.md` to identify the affected documents.
+- ✅ Docs updated for every affected document role when the PR changes behavior, boundaries, validation scope, recovery handling, security posture, or system explanation. Use the [Guide](docs/GUIDE.md) to identify the affected documents.
 - ✅ Doc references validated: any referenced repo paths in docs still exist (no drift from renames/moves).
 - ✅ PR title and commits use conventional prefixes.
 

@@ -20,7 +20,7 @@ Use this document to prepare and run the baseline for the first time. It covers:
   - `ValidateSecrets.ps1`  
   - `CreatePrimaryAdmin.ps1`  
 - Create `%WINDIR%\Setup\Scripts\.primaryadmin.pw`; 
-- Follow the secret-handling rules in `docs/OPERATIONS.md`.  
+- Follow the secret-handling rules in [Operations](OPERATIONS.md).  
 
 Disk and partition selection remains intentionally manual because `Autounattend.xml` does not define `DiskConfiguration` or `InstallTo*`.
 
@@ -50,6 +50,6 @@ If the flow:
 
 refer to:
 
-- `docs/TROUBLESHOOTING.md` for failure analysis and recovery;
-- `docs/OPERATIONS.md` for operator procedures;
-- `docs/PIPELINE_FLOW.md` for runtime sequence and handoff logic.
+- [Troubleshooting](TROUBLESHOOTING.md) for failure analysis and recovery;
+- [Operations](OPERATIONS.md) for operator procedures;
+- [Pipeline Flow](PIPELINE_FLOW.md) for runtime sequence and handoff logic.
