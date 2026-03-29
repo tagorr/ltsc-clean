@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/tagorr/ltsc-clean/blob/main/SECURITY.md
+    about: Please do not report security issues publicly. Follow SECURITY.md.
+  - name: Documentation guide
+    url: https://github.com/tagorr/ltsc-clean/blob/main/docs/GUIDE.md
+    about: Start here if your question is about the documentation map or where a topic is covered.

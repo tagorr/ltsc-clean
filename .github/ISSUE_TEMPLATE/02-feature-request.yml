@@ -1,0 +1,51 @@
+name: Feature request
+description: Propose a new capability, policy, documentation surface, or improvement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for proposed improvements to the baseline, documentation system, validation flow, or repository ergonomics.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or need
+      description: What concrete problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the proposed improvement clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundaries and risks
+      description: What repository areas, execution stages, or contracts could this affect?
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you consider?
+
+  - type: textarea
+    id: docs-impact
+    attributes:
+      label: Documentation impact
+      description: Which docs would likely need updates if this is accepted?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked whether this was already discussed in existing issues or docs
+          required: true
