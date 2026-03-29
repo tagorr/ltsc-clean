@@ -1,0 +1,101 @@
+name: Bug report
+description: Report a reproducible bug, runtime mismatch, or recovery/continuation problem
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for reproducible runtime problems, script failures, CI mismatches, or documented-behavior drift.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where does the problem appear?
+      options:
+        - PreOOBE.cmd
+        - SetupComplete.cmd
+        - CreatePrimaryAdmin.ps1
+        - BootstrapLocalAdmin.ps1
+        - ValidateSecrets.ps1
+        - Autounattend.xml
+        - Documentation
+        - CI / repository checks
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem briefly and concretely.
+      placeholder: SetupComplete finished, but expected continuation was not armed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: List the exact steps to reproduce the issue.
+      placeholder: |
+        1. Prepare image / VM
+        2. Place files
+        3. Run setup
+        4. Observe failure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS edition/build, VM vs bare metal, relevant baseline inputs, and any deviations from documented setup.
+      placeholder: |
+        Windows 10 Enterprise LTSC 2021 21H2
+        Hyper-V VM
+        Fresh image
+        No enterprise integration
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or evidence
+      description: Paste short relevant excerpts from Panther logs or other evidence. Do not paste secrets.
+      render: shell
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Related documentation
+      description: Link the exact documentation page/section if this looks like doc drift or a contract mismatch.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked the relevant documentation before filing this issue
+          required: true
+        - label: I am not including passwords, tokens, or secret file contents
+          required: true

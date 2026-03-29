@@ -1,0 +1,50 @@
+name: Question or documentation request
+description: Ask a usage, fit, design, or documentation question
+title: "[Question]: "
+labels: ["question", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for questions about supported use, documentation, trade-offs, or interpretation of repository behavior.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Question type
+      options:
+        - Usage / fit
+        - Documentation clarification
+        - Design rationale
+        - Validation / audit interpretation
+        - Recovery / troubleshooting guidance
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Ask the question as clearly and specifically as possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What were you trying to do, read, or understand?
+
+  - type: textarea
+    id: docs-read
+    attributes:
+      label: What you already checked
+      description: List the relevant README/docs pages you already read.
+      placeholder: README.md, docs/GUIDE.md, docs/QUICK_START.md, docs/OPERATIONS.md
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment, if relevant
+      description: Only fill this if the question depends on your runtime environment.
