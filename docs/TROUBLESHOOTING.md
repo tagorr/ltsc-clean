@@ -45,7 +45,7 @@ Check:
 
 Focus on the meaning of the evidence rather than on any single line in isolation:
 
-- `OUTCOME: SUCCESS` together with completed cleanup and restoration supports normal finalization;
+- `OUTCOME: SUCCESS` together with completed cleanup and restoration, including a disabled `bootstrap` account and a removed `\L2C\CreatePrimaryAdmin` task, supports normal finalization;
 - any final fail or aborted outcome means the machine must not be treated as finalized;
 - retained task state, retained secrets, an enabled `bootstrap` account, or reboot suppression indicate retained recovery state rather than normal completion.
 

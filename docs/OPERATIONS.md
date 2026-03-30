@@ -28,7 +28,7 @@ Before installation, prepare:
 
 Treat the secret files under `%WINDIR%\Setup\Scripts` as temporary workflow inputs, not as steady-state configuration.
 
-`.primaryadmin.pw` is operator-supplied. `.bootstrap.pw` is pipeline-generated for the temporary `bootstrap` account. In the normal completed path, both files are expected to be removed during finalization. If either file remains after degraded, interrupted, or recovery execution, treat it as retained recovery state.
+`.primaryadmin.pw` is operator-supplied. `.bootstrap.pw` is pipeline-generated for the temporary `bootstrap` account. In the normal completed path, both files are expected to be removed during finalization. If either file remains after degraded, interrupted, or recovery execution, or if `bootstrap` is still enabled or `\L2C\CreatePrimaryAdmin` is still present, treat it as retained recovery state.
 
 ### Primary admin secret contract
 

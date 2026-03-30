@@ -96,7 +96,7 @@ Its role is broader than helper logic. It formalizes a trust gate that the rest 
 
 Its Stage A establishes the permanent local administrator state.
 
-Its Stage B verifies whether cleanup and restoration are safe, performs or preserves teardown accordingly, emits the master outcome log, and decides whether reboot signaling may be consumed or must remain retained.
+Its Stage B verifies whether cleanup and restoration are safe, performs or preserves teardown accordingly, treats executor teardown as a required postcondition for normal success, emits the master outcome log, and decides whether reboot signaling may be consumed or must remain retained.
 
 This script owns the true end-state boundary of the system.
 

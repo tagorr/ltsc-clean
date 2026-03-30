@@ -819,6 +819,10 @@ try {
   }
 
   $TeardownEligible = (-not $isRecovery -and $WinlogonSanitizedOk -and $LogonPolicyRestoredOk)
+  $bootstrapRC = -1
+  $taskDeleteRC = -1
+  $ExecutorTeardownOk = $false
+  $ExecutorTeardownFailureSummary = $null
 
   if ($TeardownEligible) {
     Write-Verbose "Stage B: deactivating bootstrap account"
@@ -827,24 +831,38 @@ try {
     if ($bootstrapRC -eq 0) {
       Write-SetupLog "bootstrap deactivated"
     } else {
-      Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
+      Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'ERROR'
     }
     $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
 
     Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
-    $taskDeleteRC = -1
     try {
       & "$env:SystemRoot\System32\schtasks.exe" /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
       $taskDeleteRC = $LASTEXITCODE
       if ($taskDeleteRC -eq 0) {
         Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
       } elseif ($taskDeleteRC -ne 0) {
-        Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
+        Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'ERROR'
       }
     } catch {
-      Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
+      Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'ERROR'
     }
     $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
+
+    $executorTeardownFailures = New-Object System.Collections.Generic.List[string]
+    if ($bootstrapRC -ne 0) {
+      [void]$executorTeardownFailures.Add(("bootstrap disable failed (rc={0})" -f $bootstrapRC))
+    }
+    if ($taskDeleteRC -ne 0) {
+      [void]$executorTeardownFailures.Add(("scheduled task deletion failed (rc={0})" -f $taskDeleteRC))
+    }
+    if ($executorTeardownFailures.Count -eq 0) {
+      $ExecutorTeardownOk = $true
+    } else {
+      $ExecutorTeardownFailureSummary = $executorTeardownFailures -join '; '
+      Write-SetupLog ("Finalization failure: temporary privileged surfaces not fully removed; normal success blocked. {0}" -f $ExecutorTeardownFailureSummary) 'ERROR'
+      $finalLogEntries += ("[{0}] Executor teardown failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $ExecutorTeardownFailureSummary)
+    }
   } elseif ($isRecovery) {
     Write-SetupLog "Recovery mode: bootstrap account remains enabled and scheduled task retained" 'WARN'
   } elseif (-not $WinlogonSanitizedOk) {
@@ -930,6 +948,8 @@ try {
     $outcomeLine = 'OUTCOME: FAIL - Winlogon cleanup verification failed (executor/bootstrap retained)'
   } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
     $outcomeLine = 'OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)'
+  } elseif ($StageA_Succeeded -and $TeardownEligible -and (-not $ExecutorTeardownOk)) {
+    $outcomeLine = ("OUTCOME: FAIL - executor teardown incomplete ({0})" -f $ExecutorTeardownFailureSummary)
   } elseif ($StageA_Succeeded) {
     $outcomeLine = 'OUTCOME: SUCCESS'
   } else {
@@ -938,7 +958,7 @@ try {
   $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
   $sw.WriteLine($outcomeLine)
   $sw.Dispose()
-  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
+  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) -or ($StageA_Succeeded -and $TeardownEligible -and (-not $ExecutorTeardownOk))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
   if ($outcomeLine -eq 'OUTCOME: SUCCESS') {
     $preOobeMarker = Join-Path $env:WINDIR 'Panther\preoobe_warnings.flag'
@@ -967,6 +987,10 @@ try {
   } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
     Write-SetupLog "End B (FAIL - logon policy restore verification failed)" 'ERROR'
     if ($rc -eq 0) { $rc = 6 }
+    $StageB_Succeeded = $false
+  } elseif ($StageA_Succeeded -and $TeardownEligible -and (-not $ExecutorTeardownOk)) {
+    Write-SetupLog ("End B (FAIL - executor teardown incomplete: {0})" -f $ExecutorTeardownFailureSummary) 'ERROR'
+    if ($rc -eq 0) { $rc = 7 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded) {
     Write-SetupLog "End B (SUCCESS)"
