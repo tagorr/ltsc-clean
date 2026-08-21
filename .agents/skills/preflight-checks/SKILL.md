@@ -1,28 +1,35 @@
 ---
 name: Preflight Checks (LTSC clean)
-description: Run tools/preflight.ps1 before proposing or finalizing repo changes to validate static guardrails.
+description: Run tools/preflight.ps1 after tracked edits or for PR readiness to validate static repository invariants.
 ---
 
 Read and follow AGENTS.md and docs/INTERACTION_CONTRACT.md.
 
 # Preflight Checks (LTSC clean)
 
-Run the repo preflight script from the repository root before proposing edits or finalizing changes.
+Use the repository preflight as static repository and PR-readiness validation. It does not replace runtime validation required by `docs/VALIDATION.md`.
 
 ## When to use
 
-- After changing deployment scripts or core runbook documentation, before finalizing.
-- Before proposing changes in this repository.
+- When explicitly requested by the Owner.
+- After relevant tracked edits, before finalizing the change.
+- During PR-readiness validation and before opening a PR.
+
+Do not require preflight before read-only analysis, design proposals, or the start of every edit.
 
 ## What it checks
 
-- Parse-only PowerShell validation for `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, and `ValidateSecrets.ps1`.
-- Required recovery/log anchor strings (preferred docs first, then tracked text files).
-- Working tree summary and a conservative heuristic guardrail for potential flow-control edits (skips with INFO if git is unavailable).
+- Git worktree and comparison-base prerequisites.
+- Windows PowerShell 5.1 parse-only validation for the tracked runtime PowerShell scripts.
+- Committed branch-delta and current tracked working-tree `git diff --check` coverage.
+- Tracked-file EOL, UTF-8/BOM/NUL, and script ASCII invariants.
+- Tracked and untracked `.codex_tmp` status plus concise working-tree information.
 
 ## Run
 
 - `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools\preflight.ps1`
+
+This launcher selects Windows PowerShell 5.1 so parser checks use the repository's supported runtime. It is not a general shell requirement for Codex.
 
 ## Output expectations
 
