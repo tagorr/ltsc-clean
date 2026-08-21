@@ -8,17 +8,17 @@
 
 **Owner-controlled areas** (default: out of scope for agents)
 
-The allow-list in this document applies to agent-initiated edits by default. The Owner may explicitly authorize edits outside the allow-list for a specific task/PR, and such exceptions must be documented in the PR description (including the exact paths).
+The allow-list in this document is the default scope for agent-initiated edits. The Owner may explicitly authorize exact additional paths for one specific task/PR; that authorization overrides the default restriction only for that task and must be documented in the PR description. A one-off authorization does not add the path to the permanent default allow-list. Permanently adding a path to the default scope requires a separate update to this document.
 Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not create, modify, or delete files in these areas unless the current task explicitly includes those paths in its allow-list.
 
 
 **Forbidden:**
 
-- Any edits by agents to files that are not listed in the “Allowed to edit” section above.
-- Introducing new files for agents to touch without, in the same PR:
-  - adding them to the “Allowed to edit” list in `AGENTS.md`, and
-  - (recommended) backing the change with an ADR that explains why the new file exists.
-- Carve-out (Interaction Contract): temporary execution scripts MAY be created/updated only under the repository root’s `.codex_tmp\` directory (repository root obtained via `git rev-parse --show-toplevel`). This carve-out is for temporary execution scripts only and does not allow creating any new files elsewhere.
+- Any edits by agents to files that are neither listed in the “Allowed to edit” section above nor explicitly authorized by the Owner for the current task/PR under the exception above.
+- Adding a path to the permanent default agent edit scope without, in the same PR:
+  - adding it to the “Allowed to edit” list in `AGENTS.md`, and
+  - (recommended) backing the change with an ADR that explains why the path belongs in the permanent default scope.
+- Carve-out (Interaction Contract): when temporary Codex-created files are genuinely needed, they MAY be created only under the repository root's `.codex_tmp\` directory. This carve-out does not allow creating new files elsewhere.
 
 ## Roles and responsibilities
 
@@ -30,93 +30,30 @@ Files under `tools/` and `.agents/skills/` are owner-controlled. Agents must not
 ## Invariants
 
 * **No immediate reboots** inside `SetupComplete.cmd`. Reboot requirements are signaled only via `%WINDIR%\Panther\_needs_reboot.flag` (`Panther flag`) when `RC ∈ {3010, 1641}` or `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`. `SetupComplete.cmd` never calls `shutdown.exe`.
-* **EOL:** scripts (`.cmd/.ps1`) use CRLF; documentation (`.md`) uses LF.
 * Documentation must match actual behavior (paths, logs, steps). Use `README.md` as the front door, `docs/GUIDE.md` as the documentation router, `DECISIONS.md` for rationale and trade-offs, `SECURITY.md` for security posture, and the relevant `docs/*` owner document for procedural or operational detail.
-* **CLI/PowerShell style (project-wide):** Commands are authored for **Windows PowerShell 5.1**; external tools are allowed (`reg.exe`, `schtasks.exe`, `shutdown.exe`) with **PowerShell-style** suppression only; do not add an extra `cmd.exe /c` wrapper inside emitted step commands (the harness already runs every step via `cmd.exe /c "<line>"`) (this does not discourage standalone CMD steps defined by `docs/INTERACTION_CONTRACT.md`); `reg.exe` uses classic `HKLM\...` paths, PowerShell cmdlets use the registry provider (`HKLM:\...`). Full rules: see **docs/INTERACTION_CONTRACT.md**.
-* Use `reg.exe` directly. Always inspect `$LASTEXITCODE` after each call. For `DELETE`, return codes `{0,2}` are treated as success.
-* In `.cmd` files, direct PowerShell syntax is **not allowed**. Use it only via pinned Windows PowerShell 5.1 script invocation as defined in `docs/INTERACTION_CONTRACT.md`.
-* In `.cmd` files `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
+
+### Tracked Windows runtime code
+
+These rules govern the installation scripts that run on the supported Windows target. They do not prescribe how Codex executes tools.
+
+* Tracked PowerShell scripts and PowerShell commands launched by tracked runtime code must remain compatible with **Windows PowerShell 5.1**.
+* When tracked PowerShell runtime code uses `reg.exe`, use classic registry paths such as `HKLM\...` and inspect `$LASTEXITCODE`. PowerShell registry cmdlets use provider paths such as `HKLM:\...`. Preserve the existing `Reg-Del` idempotency semantics in `CreatePrimaryAdmin.ps1`, including `{0,2}` as successful delete outcomes.
+* In tracked `.cmd` files, `EnableDelayedExpansion` is forbidden. Use plain `%VAR%` expansion and implement branching via labels and subroutines (`goto`, `call :sub`) without relying on delayed expansion.
 * **CMD parse-time expansion:** inside any parenthesized `(...)` block, it is forbidden to read `%VAR%` for variables that may be set/modified within the same block (including changes caused by `call :sub` invoked from that block). Only acceptable fixes: move the read/log/branch outside the `(...)` block, or use CALL-expansion with `%%VAR%%` (example: `call :log "resolved_path=%%OUT_PATH%%"`).
 
-## Codex CLI Contract
+## Codex repository contract
 
-Codex CLI runs locally against this repository’s working copy. Follow these rules.
-`docs/INTERACTION_CONTRACT.md` is the canonical command-execution contract for shell selection, quoting, probes, and exit-code handling. If there is a conflict, follow `docs/INTERACTION_CONTRACT.md`.
+`docs/INTERACTION_CONTRACT.md` is the canonical contract for repository-operation safety and integrity.
 
-### Scope
-
-* Single source of truth: `main`.
-* Environment: Windows 10/11, PowerShell 5.1, `cmd.exe`, Git for Windows.
-* All work MUST be performed from the repository root (workspace root).
-* Do not rely on persistent environment variables across runner steps. Within a single Scripted-mode `.ps1`, setting `$env:` is allowed for that script’s process tree.
-* Allowed files: only those explicitly requested in the prompt or listed in this contract. Minimal diffs only.
-
-### Command contract
-
-* CMD steps: the harness executes each step as:
-
-  `cmd.exe /c "<line>"`
-
-  The agent MUST emit only `<line>` (the inner command line) and MUST NOT include `cmd.exe /c` inside emitted steps.
-
-* In emitted inline CMD `<line>`, forbid any quoting characters: do not use `"` or `'`. If quoting would be needed, use Scripted mode instead. This rule applies to the emitted `<line>` only, not to PowerShell script contents.
-
-* Do not use command chaining operators (`&&`, `||`, command-separator `&`) in emitted CMD `<line>`.
-* Do not use pipes `|` in emitted CMD `<line>`.
-* Cleanup MUST NOT use force delete flags (for example: `del /f`). Use `del /q <absolute-probe-path>` for deleting a just-executed `.codex_tmp\*.ps1` probe. See Mandatory bootstrap for emitted CMD `<line>` path normalization (backslashes only).
-* Inline `git grep` is restricted to single-token fixed-string searches only: use `git grep -n -F -e <token> -- <paths...>`. Do not use regex modes (`-E`, `-P`, `--extended-regexp`, `--basic-regexp`, `--perl-regexp`) and do not use regex constructs (for example `[[:space:]]`, `\s`, `.*`) to emulate multi-word matching. Anything beyond a single literal token must use Scripted mode.
-* Hard stop: any emitted `<line>` invoking `powershell.exe` with `-Command` is forbidden (no read-only exceptions: viewing, searching, printing line ranges, formatting output). See `docs/INTERACTION_CONTRACT.md` → `## Forbidden patterns`.
-* Replacement: create or update exactly one single-use `.ps1` probe under the repo-rooted `.codex_tmp\` and execute it only via pinned Windows PowerShell 5.1 using `-File` with an absolute repo-rooted path (no nested shells, no command strings, no extra helper scripts). See `docs/INTERACTION_CONTRACT.md` → `## Execution model (Windows-native)` and `## Diagnostics and probes`.
-* Treat CMD metacharacters as hard triggers to Scripted mode; in inline emitted `<line>`, the following forms/patterns are forbidden: `|`, `>`, `>>`, `<`, `&`, `&&`, `||`, `(`, `)`, `^`, `!`.
-* Inline CWD management is forbidden: do not emit `cd`, `pushd`, or `popd`; use `Set-Location` inside the temporary `.ps1` instead.
-* If an inline step fails with symptoms consistent with argv splitting or quoting fragility, do not retry inline by adding quoting/escaping; switch to Scripted mode immediately.
-* CMD redirection is forbidden (even when writing under `.codex_tmp`).
-* Scripted mode: run temporary execution scripts via Windows PowerShell 5.1 explicitly (full pinned path) and `-File` (NOT `-Command`):
-
-  Forbidden:
-  - `pwsh`
-  - PowerShell 7+
-  - `powershell` without the pinned full path
-
-  ```cmd
-  %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\repo\.codex_tmp\step.ps1
-  ```
-
-  CWD may drift between harness steps; do not rely on stable CWD. Mandatory bootstrap (Scripted mode): emit `git rev-parse --show-toplevel` to print the repository root path, STOP if it fails, and require it contains no whitespace (no quoting workarounds). Use absolute paths rooted at that printed value only for `.codex_tmp` script launch and cleanup; do not embed the printed repository root as a constant inside probe scripts. Replace `C:\repo` with the exact value printed earlier by `git rev-parse --show-toplevel` when constructing absolute launcher/cleanup paths. For emitted CMD <line> absolute paths (launcher and cleanup), normalize the repo root to backslashes (\) first (do not use forward slashes). For system paths, use `%SystemRoot%` (no drive-letter hardcoding). The repository root drive letter comes from the exact value printed earlier by `git rev-parse --show-toplevel` (so `C:\repo` is example form only).
-
-Additionally, every temporary .ps1 probe MUST re-derive the repository root at runtime inside the probe via git rev-parse --show-toplevel, remove only the trailing CR/LF (for example: TrimEnd("`r","`n"); do NOT use .Trim()), and Set-Location
-to it; the probe MUST NOT hardcode the repository root or infer it from $PSScriptRoot, $MyInvocation, $PWD, the current working directory as the source of truth for repo root, or the
-probe launcher path.
-
-* If a command needs pipes, redirections, chaining, conditional logic, output parsing, or "quoting gymnastics", it MUST be done in Scripted mode via a temporary `.ps1` under `.codex_tmp` executed with `-File`.
-
-* Temporary execution `.ps1` scripts under `.codex_tmp` are single-use probes: one file only, no helper scripts/modules/subfolders; probes SHOULD prefer stdout/stderr only (at most ONE diagnostic log file under `.codex_tmp\...` when necessary, with explicit UTF-8 encoding).
-* Preferred probes and retry limits: see `docs/INTERACTION_CONTRACT.md` → `## Diagnostics and probes` → `### Blessed probe primitives` and `### Retry model (bounded; non-escalating)`.
-
-* Never run Git from inside `.git` subfolders.
-
-* Before a risky step, print `git rev-parse --show-toplevel` (or the explicit path you will operate on) and a short marker. Print the full command only when it is short and safe (no secrets; no quoting soup). Rely on the step's exit code, do NOT add extra "check the previous step" steps (for example `if errorlevel`). For searches, the explicit `RC=1` normalization rule is defined in `docs/INTERACTION_CONTRACT.md`.
-
-### Shell roles
-
-* Use CMD for `.cmd` semantics and simple commands where CMD parsing is safe.
-* Use Windows PowerShell 5.1 (full path) as the outer shell for brittle tasks (search, regex, quoting-heavy commands, structured parsing, pipelines/metacharacters), per `docs/INTERACTION_CONTRACT.md`.
-* Search defaults: use `git grep` scoped to explicit paths (tracked files by default); `rg` is optional only and must be constrained. Do not use `findstr` as a default search tool. If any probe needs branching on grep output, do it in Scripted mode and normalize `git grep` RC=1 explicitly (per `docs/INTERACTION_CONTRACT.md` → “Diagnostics and probes”).
+* Work only in the Owner-selected current branch. Do not switch branches.
 
 ### EOL/BOM policy
 
 * `*.md` stored with LF. `.cmd/.ps1` stored with CRLF.
-* UTF-8 without BOM everywhere. Zero bytes are forbidden.
-* CI guard enforces the EOL policy in GitHub (CLGuard). Treat .gitattributes as the source of truth for LF vs CRLF expectations.
+* Tracked text files use UTF-8 without BOM. Zero bytes are forbidden in tracked text files.
+* Tracked `.cmd` and `.ps1` files are ASCII-only.
+* The GitHub EOL guard enforces the EOL policy. Treat .gitattributes as the source of truth for LF vs CRLF expectations.
 * UTF-8 without BOM and “no NUL bytes” are required invariants; GitHub CI enforces them for a conservative set of tracked text-like files (see `.github/workflows/eol-guard.yml`). In-repo local hooks do not enforce them.
-
-### Minimal-diff rule
-
-Touch only what is required. No reformatting outside changed hunks. Preserve existing EOLs.
-
-### Session hygiene
-
-Prefer one task per CLI session. If scope or shell rules change, start a fresh session.
 
 ## Policies
 
@@ -138,10 +75,10 @@ Prefer one task per CLI session. If scope or shell rules change, start a fresh s
 
 ### Reboot orchestration guardrails
 
-* `SetupComplete.cmd` is the only stage that decides whether the pipeline requires a reboot, and it may only communicate that decision via the `Panther flag`.
-* Stage B of `CreatePrimaryAdmin.ps1` is the only unattended stage allowed to read the `Panther flag` and, in normal mode, call `shutdown.exe` automatically. It may delete the flag only when Stage B completes successfully in normal mode; on failure or in recovery it must suppress automatic reboot and may leave the flag in place as a diagnostic marker.
-* Codex CLI must not introduce inline `shutdown.exe` calls in other scripts; the `Panther flag` remains the single reboot signal.
-* In normal mode, when Stage B completes successfully and the `Panther flag` is present, Stage B logs the pending reboot, finishes its cleanup, deletes the flag, and performs a single controlled reboot.
+* `SetupComplete.cmd` is the only stage that originates and records a deferred reboot requirement, and it may communicate that requirement only through the `Panther flag`.
+* Stage B of `CreatePrimaryAdmin.ps1` is the only unattended stage allowed to interpret the `Panther flag` and make the final automatic reboot decision. In normal mode it uses the marker semantics together with current pending-reboot evidence. It may delete the flag only when Stage B completes successfully in normal mode; on failure or in recovery it must suppress automatic reboot and may leave the flag in place as a diagnostic marker.
+* No tracked script other than Stage B of `CreatePrimaryAdmin.ps1` may call `shutdown.exe` automatically; the `Panther flag` remains the single reboot signal.
+* After Stage B completes successfully in normal mode, a `force-reboot` marker is consumed for reboot. Otherwise, when current pending-reboot state is true, Stage B consumes the flag and reboots; when the flag is stale and current pending-reboot state is false, Stage B clears the flag without rebooting; when pending-reboot state is unknown because of probe errors, Stage B consumes the flag and reboots conservatively.
 * In recovery mode, or if Stage B fails, it never calls `shutdown.exe`. It only logs the presence of the `Panther flag` and the fact that automatic reboot was suppressed, and it may leave the flag in place for operators or later manual runs (see DECISIONS.md for details).
 * When editing docs or code, keep the reboot model flag-based end to end and do not add new decision points in other scripts or tasks.
 
@@ -178,7 +115,7 @@ In other words, for full audits the checklist defines the minimum guaranteed cov
 For narrow, file-scoped edits (small bugfixes, refactors, localized doc touch-ups), Codex:
 
 - does not have to load `docs/AUDIT_CHECKLIST.md` into context;
-- still must respect the general invariants from this document (EOL, encodings, minimal diffs, sandbox only, no surprise file scope expansion).
+- still must follow the applicable rules in this document and `docs/INTERACTION_CONTRACT.md`.
 
 ## PR rules
 
@@ -220,10 +157,9 @@ Disclaimer: this is a manual engineering test. Inside `SetupComplete.cmd` no reb
 
 1. `PreOOBE.cmd` (specialize pass) applies early privacy and security policies and runs `BootstrapLocalAdmin.ps1`. Bootstrap creates or refreshes the temporary `bootstrap` admin, writes `%WINDIR%\Setup\Scripts\.bootstrap.pw` with ACL restricted to SYSTEM and the local Administrators group, and stops there. It does not touch Winlogon, passwordless settings, or scheduled tasks.
 2. `SetupComplete.cmd` runs in the SetupComplete phase, before the first interactive logon, performs DISM servicing, and applies DISM return-code policy. Known benign servicing codes are treated as warnings, `3010`/`1641` are treated as "reboot required" success outcomes, and unexpected DISM errors set `FAILED=1` and `DISM_HARD_FAIL=1`. A hard-fail stops further DISM-dependent work for the remainder of the run (skips additional feature/capability/cleanup operations), but the script still reaches the final aggregation and exits with `FINAL_RC` (first fatal RC via `L2C_FIRST_BAD_RC`, otherwise `1` if `FAILED=1`, otherwise `2` if `L2C_AUTOLOGON_DEGRADED==1`, otherwise `0`). The human-readable final marker can therefore be `[FINAL] FAIL (FINAL_RC=...)`, `[FINAL] DEGRADED manual_login_required=1`, `[FINAL] SUCCESS`, or `[FINAL] SUCCESS_WITH_HARDENING_WARNINGS`; when hardening warnings exist the log also emits `[HARDENING] warn_count_unique=<n> file=<artifact>` plus the warning lines from the warning file without changing that RC by itself. After its servicing section, `SetupComplete.cmd` runs the Stage B gateway (secret validation + gate + optional Stage B scheduling/Winlogon priming) before evaluating/writing the `Panther flag`; when `FAILED=1` it logs `SetupComplete entered recovery mode; skipping extra registrations` and does not schedule/prime Stage B.
-3. On the first logon the SYSTEM task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`. Stage A creates or repairs the primary admin account and ensures membership in the local Administrators group. Stage B always runs afterwards, collapses the temporary Winlogon autologon and verifies post-action that `DefaultPassword` is absent and autologon values are disabled; verification failures (or read errors) are treated as a hard-fail that keeps `bootstrap` enabled and the scheduled task retained. Stage B restores `DisableCAD=0` and `Ngc\DevicePasswordLessBuildVersion` mode-aware (`2` in normal mode, `0` in recovery), best-effort deletes `HKLM\SOFTWARE\L2C\AutologonPrimed`, attempts to delete `.bootstrap.pw` and `.primaryadmin.pw` only when `TeardownEligible` is true (normal mode and both Winlogon cleanup and logon policy restore are verified; otherwise preserves both secrets), and writes `C:\ProgramData\l2c_master_<ts>.log`. In the normal success path it also disables the `bootstrap` account and deletes the `\L2C\CreatePrimaryAdmin` scheduled task so that the temporary bootstrap entry point is removed. If the `Panther flag` exists and Stage B completes successfully in normal mode, Stage B then logs the pending reboot, deletes the flag, and performs a single controlled reboot. In recovery or failure paths, Stage B leaves the `bootstrap` account and scheduled task in place so that you can sign in again under `bootstrap` and rerun the pipeline, still logs the presence of the flag and that the automatic reboot was suppressed, does not call `shutdown.exe`, and may leave the flag in place as a diagnostic marker recorded in the master log.
+3. On the first logon the SYSTEM task `\L2C\CreatePrimaryAdmin` runs `CreatePrimaryAdmin.ps1`. Stage A creates or repairs the primary admin account and ensures membership in the local Administrators group. Stage B always runs afterwards, collapses the temporary Winlogon autologon and verifies post-action that `DefaultPassword` is absent and autologon values are disabled; verification failures (or read errors) are treated as a hard-fail that keeps `bootstrap` enabled and the scheduled task retained. Stage B restores `DisableCAD=0` and `Ngc\DevicePasswordLessBuildVersion` mode-aware (`2` in normal mode, `0` in recovery), best-effort deletes `HKLM\SOFTWARE\L2C\AutologonPrimed`, attempts to delete `.bootstrap.pw` and `.primaryadmin.pw` only when `TeardownEligible` is true (normal mode and both Winlogon cleanup and logon policy restore are verified; otherwise preserves both secrets), and writes `C:\ProgramData\l2c_master_<ts>.log`. In the normal success path it also disables the `bootstrap` account and deletes the `\L2C\CreatePrimaryAdmin` scheduled task so that the temporary bootstrap entry point is removed. If the `Panther flag` exists after Stage B completes successfully in normal mode, Stage B interprets the marker together with current pending-reboot evidence: a `force-reboot` marker or pending-reboot state of true causes a controlled reboot, a stale flag with pending-reboot state false is cleared without rebooting, and an unknown pending-reboot state caused by probe errors triggers a conservative reboot. In recovery or failure paths, Stage B leaves the `bootstrap` account and scheduled task in place so that you can sign in again under `bootstrap` and rerun the pipeline, still logs the presence of the flag and that the automatic reboot was suppressed, does not call `shutdown.exe`, and may leave the flag in place as a diagnostic marker recorded in the master log.
 
 **Repeat validation (snapshots / new VM):**
 
 * Run `schtasks /Query /TN "\L2C\CreatePrimaryAdmin"`. If the task is missing, register it again using the command shown in Step 1 of this manual smoke path. Ensure that `.bootstrap.pw` is absent before a manual rerun, or that it contains a lab password with correct ACL and attributes.
 * Run `schtasks /Run /TN "\L2C\CreatePrimaryAdmin"` and verify that Stage B again cleans Winlogon state and, on success, removes the scheduled task and produces a fresh `l2c_master_<ts>.log`.
-
