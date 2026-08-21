@@ -10,27 +10,26 @@ Thanks for your interest in contributing!
 - Run the repository preflight checks from the repository root before opening a PR.
 - Make sure **CI is green** before requesting review.
 
-## PowerShell 5.1 CLI rules (project-specific)
+## Tracked Windows runtime code
 
-These rules apply to interactive Windows PowerShell 5.1 commands and to project `.ps1` scripts. They do not replace normal CMD syntax in `.cmd` files.
+These requirements apply to tracked installation scripts that run on the supported Windows target. They do not prescribe how contributors or agents execute ordinary maintenance commands.
 
-- Use **Windows PowerShell 5.1**. Do **not** use PowerShell 7 syntax or features.
-- External tools (`reg.exe`, `schtasks.exe`, `shutdown.exe`) are allowed, but suppression is **only** in PowerShell style: `| Out-Null 2>$null`. After external tools, check `$LASTEXITCODE`, not `$?`.
-- Registry paths:
-  - `reg.exe` uses classic paths, for example `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
-  - PowerShell cmdlets (`New/Set/Remove-ItemProperty`) use provider paths, for example `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
-- Do not mix `reg.exe` and PowerShell cmdlets in one logical block **without a clear reason**.
-- Reboot via `shutdown.exe /r /t 0` (add `/f` only if needed).
-- ASCII quotes only in code examples: `' " - /`. No smart quotes.
-- Documentation is UTF-8. For copy/paste command blocks, prefer ASCII punctuation (plain quotes and hyphens) to avoid issues in non-UTF8 environments.
-- All examples and snippets must be compatible with Windows PowerShell 5.1.
-- Do not use `cmd /c` unless it is explicitly required.
+- Tracked PowerShell scripts, PowerShell launched by tracked runtime code, and runtime PowerShell examples must remain compatible with **Windows PowerShell 5.1**.
+- In tracked PowerShell runtime code:
+  - After invoking an external executable whose status controls runtime behavior, inspect `$LASTEXITCODE`.
+  - `reg.exe` uses classic paths such as `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`; PowerShell registry cmdlets use provider paths such as `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`.
+  - Avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets, and do not place secrets on external process command lines.
+- In tracked `.cmd` files:
+  - Do not enable delayed expansion.
+  - Test return codes only where `%ERRORLEVEL%` reflects the intended command.
+  - Inside parenthesized blocks, do not use ordinary `%ERRORLEVEL%` or `%VAR%` expansion for values that may change within the block; move the read or branch outside the block, or use the permitted CALL-expansion pattern.
+  - Use labels and subroutines (`goto`, `call :sub`) where appropriate for runtime-safe state handling and control flow.
 
-## Line endings (EOL)
+## Line endings and tracked-file integrity
 
-- Scripts `*.ps1`, `*.cmd` **must use CRLF**.
-- Markdown `*.md` **should use LF**.
-- This is enforced by `.gitattributes` and an EOL CI guard (`.github/workflows/eol-guard.yml`).
+- Tracked `*.ps1`, `*.cmd`, and `*.bat` files use CRLF; tracked `*.md` files use LF.
+- `.gitattributes` is the source of truth for EOL expectations.
+- Tracked text files use UTF-8 without BOM and contain no NUL bytes. Tracked `.cmd` and `.ps1` files are ASCII-only.
 
 ## Validation before PR
 
@@ -50,40 +49,30 @@ For the detailed validation procedure and smoke scenarios, see [Validation](docs
 
 If you use Codex CLI or another coding agent in this repository, follow [AGENTS.md](AGENTS.md) and the [Interaction Contract](docs/INTERACTION_CONTRACT.md).
 
-Do not let agent-generated changes expand scope, break repository invariants, or bypass the repository's execution, encoding, and line-ending rules.
+Do not let agent-generated changes expand scope or bypass repository runtime, validation, or tracked-file integrity requirements.
 
-## Shell rules (.cmd/.ps1) and minimal-diff
+## Minimal-diff and documentation conventions
 
-- `.cmd` guidelines:
-  - No Delayed Expansion.
-  - Test return codes via `%ERRORLEVEL%`.
-  - Use `goto` and `call :sub` for control flow.
-  - Inside parenthesized blocks, `%VAR%` expansion happens at parse time, not at execution time; do not rely on changing values or return-code-dependent logic there, and prefer `call :sub` when state must be captured safely.
-- PowerShell target:
-  - Windows PowerShell 5.1.
-  - Avoid `$ExecutionContext.InvokeCommand.ExpandString` for secrets.
-  - Prefer plain arguments or files for passing secrets.
-- Minimal-diff principle:
-  - Change only the lines required by the PR scope.
-  - Avoid cosmetic edits outside the relevant hunks.
+- Change only the lines required by the PR scope; avoid cosmetic edits outside the relevant hunks.
 
 - Docs convention:
   - In Markdown, use **one command per fenced code block**.
   - Use an explicit language tag: `powershell` or `cmd`.
   - Each block should be copy-pastable and executable in one go.
   - Avoid multi-command blocks and mixed shells inside a single fenced block.
+  - For copy-paste shell snippets, prefer plain ASCII quotes and hyphens where that improves portability.
 
 ## Before opening a PR
 
-- ✅ EOL checked; no LF-only lines in scripts.
-- ✅ PowerShell 5.1 style rules respected.
+- ✅ Tracked-file integrity requirements checked.
+- ✅ Tracked runtime PowerShell remains Windows PowerShell 5.1 compatible.
 - ✅ Repository preflight checks run successfully.
 - ✅ Docs updated for every affected document role when the PR changes behavior, boundaries, validation scope, recovery handling, security posture, or system explanation. Use the [Guide](docs/GUIDE.md) to identify the affected documents.
 - ✅ Doc references validated: any referenced repo paths in docs still exist (no drift from renames/moves).
-- ✅ PR title and commits use conventional prefixes.
+- ✅ Commit and squash subjects use conventional prefixes; PR titles may be human-readable.
 
 ## CI and checks
 
-- The EOL guard runs on every PR. See the Checks tab for logs.
-- If it fails, fix line endings and push to the same branch; the check will re-run automatically.
-- Docs link validation is manual (no automated link checker): when editing docs, verify that referenced repo paths (for example `AGENTS.md`, `docs/INTERACTION_CONTRACT.md`, `.github/workflows/eol-guard.yml`) still exist and match the current tree.
+- The EOL/BOM/NUL guard runs on pull requests; the ASCII Only Guard runs on pull requests and pushes. See the Checks tab for logs.
+- If a guard fails, fix the affected tracked-file integrity issue and push to the same branch; the check will re-run automatically.
+- Docs link validation is manual (no automated link checker): when editing docs, verify that referenced repo paths (for example `AGENTS.md`, `docs/INTERACTION_CONTRACT.md`, `.github/workflows/eol-guard.yml`, `.github/workflows/ascii-only.yml`) still exist and match the current tree.
