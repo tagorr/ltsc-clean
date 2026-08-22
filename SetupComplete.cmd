@@ -1,6 +1,6 @@
 @echo off
 REM SPDX-License-Identifier: MIT
-REM Windows 10 LTSC 2021 - Clean ^& Quiet Baseline (Official Tools Only)
+REM Windows 11 LTSC 2024 - Clean ^& Quiet Baseline (Official Tools Only)
 setlocal EnableExtensions
 
 :: ------------ logging ------------
@@ -56,8 +56,8 @@ call :log "----- SetupComplete started -----"
 
 :: --- compatibility controls ---
 set "REQUIRED_EDITION=EnterpriseS"
-set "REQUIRED_DV=21H2"
-set "MIN_BUILD=19044"
+set "REQUIRED_DV=24H2"
+set "MIN_BUILD=26100"
 set "STRICT_DISPLAYVERSION=1"  :: 1 = abort on DV mismatch, 0 = warn and continue
 
 :: ------------ platform gate ------------
