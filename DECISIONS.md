@@ -134,6 +134,8 @@ The same idempotent script is intentionally retained under `%WINDIR%\Setup\Scrip
 
 This is a deliberate trade-off, not an omission.
 
+The baseline also uses the supported Windows Security machine policy to suppress the notification-area presentation and removes only the standard `Run\SecurityHealth` tray autorun registration. This is a narrow quieting change: it does not disable Windows Security or Defender services or local protection, and it avoids broader component removal or unsupported blocking techniques.
+
 ### Telemetry, diagnostics, and Windows Error Reporting
 
 The baseline adopts the lowest supported enterprise telemetry posture, `AllowTelemetry=0`, and suppresses feedback, CEIP, diagnostics, and Windows Error Reporting through supported policy and task controls.

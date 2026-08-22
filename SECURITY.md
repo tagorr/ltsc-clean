@@ -31,6 +31,8 @@ The two Defender privacy values are written directly to the machine policy regis
 
 SmartScreen is disabled for Windows Shell and the Edge policy layer to minimize silent outbound reputation/data flows. Those settings remain enforced through registry policy and orchestration in `SetupComplete.cmd`.
 
+The Windows Security notification-area presentation is suppressed through the supported machine policy `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray\HideSystray=1`. `SetupComplete.cmd` also removes only the standard machine-wide `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\SecurityHealth` autorun entry for `%windir%\system32\SecurityHealthSystray.exe`. This is presentation and autorun cleanup only; this suppression does not disable or otherwise modify Windows Security, `SecurityHealthService`, `wscsvc`, `WinDefend`, or Microsoft Defender local protections.
+
 ### Edge Browser Removal and Update Suppression
 
 Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardening layer. Edge SmartScreen policies are still set to disabled before removal, EdgeUpdate services/tasks are disabled best-effort to reduce browser resurrection, and WebView2 runtime is not removed.

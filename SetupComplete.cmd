@@ -190,6 +190,52 @@ set "REGVERIFY_EXP_DEC="
 set "REGVERIFY_ACT_DEC="
 goto :eof
 
+:l2c_securityhealth_autorun_cleanup
+set "L2C_SECURITY_HEALTH_PARENT_RC="
+set "L2C_SECURITY_HEALTH_VALUE_RC="
+set "L2C_SECURITY_HEALTH_DELETE_RC="
+set "L2C_SECURITY_HEALTH_VERIFY_RC="
+call :log "[INFO] WINDOWS_SECURITY_TRAY_AUTORUN_DELETE_ATTEMPT key=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run name=SecurityHealth"
+
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" >nul 2>&1
+set "L2C_SECURITY_HEALTH_PARENT_RC=%ERRORLEVEL%"
+if not "%L2C_SECURITY_HEALTH_PARENT_RC%"=="0" goto :l2c_securityhealth_state_unknown
+
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v SecurityHealth >nul 2>&1
+set "L2C_SECURITY_HEALTH_VALUE_RC=%ERRORLEVEL%"
+if not "%L2C_SECURITY_HEALTH_VALUE_RC%"=="0" (
+  call :log "[INFO] WINDOWS_SECURITY_TRAY_AUTORUN_ALREADY_ABSENT query_rc=%L2C_SECURITY_HEALTH_VALUE_RC% parent_query_rc=%L2C_SECURITY_HEALTH_PARENT_RC% key=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run name=SecurityHealth"
+  goto :l2c_securityhealth_cleanup
+)
+
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v SecurityHealth /f >nul 2>&1
+set "L2C_SECURITY_HEALTH_DELETE_RC=%ERRORLEVEL%"
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v SecurityHealth >nul 2>&1
+set "L2C_SECURITY_HEALTH_VERIFY_RC=%ERRORLEVEL%"
+if "%L2C_SECURITY_HEALTH_VERIFY_RC%"=="0" (
+  call :log "[WARN] WINDOWS_SECURITY_TRAY_AUTORUN_FINAL_STATE_PRESENT delete_rc=%L2C_SECURITY_HEALTH_DELETE_RC% verify_rc=%L2C_SECURITY_HEALTH_VERIFY_RC% key=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run name=SecurityHealth"
+  call :hardwarn Windows Security tray autorun final state remains present delete_rc=%L2C_SECURITY_HEALTH_DELETE_RC% verify_rc=%L2C_SECURITY_HEALTH_VERIFY_RC%
+  goto :l2c_securityhealth_cleanup
+)
+
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" >nul 2>&1
+set "L2C_SECURITY_HEALTH_PARENT_RC=%ERRORLEVEL%"
+if "%L2C_SECURITY_HEALTH_PARENT_RC%"=="0" (
+  call :log "[INFO] WINDOWS_SECURITY_TRAY_AUTORUN_DELETE_OK final_state=absent delete_rc=%L2C_SECURITY_HEALTH_DELETE_RC% verify_rc=%L2C_SECURITY_HEALTH_VERIFY_RC% parent_query_rc=%L2C_SECURITY_HEALTH_PARENT_RC% key=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run name=SecurityHealth"
+  goto :l2c_securityhealth_cleanup
+)
+
+:l2c_securityhealth_state_unknown
+call :log "[WARN] WINDOWS_SECURITY_TRAY_AUTORUN_STATE_UNKNOWN parent_query_rc=%L2C_SECURITY_HEALTH_PARENT_RC% value_query_rc=%L2C_SECURITY_HEALTH_VALUE_RC% delete_rc=%L2C_SECURITY_HEALTH_DELETE_RC% verify_rc=%L2C_SECURITY_HEALTH_VERIFY_RC% key=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run name=SecurityHealth"
+call :hardwarn Windows Security tray autorun final state could not be established reliably parent_query_rc=%L2C_SECURITY_HEALTH_PARENT_RC% value_query_rc=%L2C_SECURITY_HEALTH_VALUE_RC% delete_rc=%L2C_SECURITY_HEALTH_DELETE_RC% verify_rc=%L2C_SECURITY_HEALTH_VERIFY_RC%
+
+:l2c_securityhealth_cleanup
+set "L2C_SECURITY_HEALTH_PARENT_RC="
+set "L2C_SECURITY_HEALTH_VALUE_RC="
+set "L2C_SECURITY_HEALTH_DELETE_RC="
+set "L2C_SECURITY_HEALTH_VERIFY_RC="
+exit /b 0
+
 :hardwarn_cached
 if not defined HARDWARN_MSG exit /b 0
 if not defined HARDENING_WARN_FILE exit /b 0
@@ -762,6 +808,9 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
+REM ------------ Windows Security notification-area cleanup (best-effort) ------------
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray" "HideSystray" "REG_DWORD" "1"
+call :l2c_securityhealth_autorun_cleanup
 call :configure_defender_privacy
 
 :: ------------ Early Edge browser removal (guarantee layer) ------------
