@@ -11,7 +11,7 @@ The baseline uses only supported Microsoft mechanisms and favors deterministic, 
 ## Intentional trade-offs
 
 - SmartScreen policy layers are disabled for Windows Shell and Edge.
-- Microsoft Defender local protections remain enabled, while cloud/reputation verdict paths and sample submission are disabled by policy.
+- Microsoft Defender local protections remain enabled, while the baseline applies machine policy to disable cloud/MAPS participation and automatic sample submission and reports when the effective privacy posture cannot be verified.
 - Delivery Optimization is set to mode 0 (HTTP-only, no peer-to-peer).
 - Windows Update runs in notify-only mode. No drivers, no preview builds, no other Microsoft products, no OS upgrade offers.
 - WPAD is disabled via policies on WinINET and WinHTTP. The WinHTTP Auto-Proxy service is not forcibly disabled.
@@ -21,9 +21,15 @@ The baseline uses only supported Microsoft mechanisms and favors deterministic, 
 
 ### Defender and SmartScreen Baseline
 
-This baseline does not attempt to disable Microsoft Defender local endpoint protections. Local protections remain ON, while cloud/reputation-driven verdict paths and automatic sample submission are explicitly disabled via policy.
+This baseline does not attempt to disable Microsoft Defender Antivirus or its local endpoint protections. Real-time protection, behavior monitoring, IOAV protection, and PUA protection remain enabled. `ConfigureDefenderPrivacy.ps1` is the single runtime owner of the machine-policy values `SpynetReporting=0` and `SubmitSamplesConsent=2`.
 
-SmartScreen is disabled for Windows Shell and the Edge policy layer to minimize silent outbound reputation/data flows. These settings are enforced via registry policy and orchestration in `SetupComplete.cmd`.
+Successful registry mutation is not treated as proof that Defender currently honors the intended posture. The component separately verifies `IsTamperProtected=False`, effective `MAPSReporting=0`, and effective `SubmitSamplesConsent=2`. It observes Tamper Protection but never disables or bypasses it. A posture mismatch, technical component failure, or missing runtime component becomes a non-fatal hardening warning in `SetupComplete.cmd`; it is not by itself a trusted-continuation failure.
+
+Windows Security may visibly warn when Tamper Protection is Off. This warning must not be confused with Microsoft Defender Antivirus or its local endpoint protections being disabled.
+
+The two Defender privacy values are written directly to the machine policy registry, not to Local GPO `Registry.pol`. The corresponding Administrative Template settings may therefore appear as Not Configured in `gpedit.msc` even when both the registry policy and Defender effective state are correct. This path is separate from `UserBaselinePolicies.txt` and its Local GPO User Configuration import.
+
+SmartScreen is disabled for Windows Shell and the Edge policy layer to minimize silent outbound reputation/data flows. Those settings remain enforced through registry policy and orchestration in `SetupComplete.cmd`.
 
 ### Edge Browser Removal and Update Suppression
 
@@ -32,7 +38,7 @@ Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardenin
 - Windows Shell SmartScreen: `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen=0`
 - Edge SmartScreen policies: `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenDnsRequestsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenForTrustedDownloadsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenPuaEnabled=0`
 - Defender local protections ON: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableIOAVProtection=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\PUAProtection=1`
-- Defender cloud/reputation/data OFF: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SubmitSamplesConsent=2`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\DisableBlockAtFirstSeen=1`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\LocalSettingOverrideSpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine\MpCloudBlockLevel=0`
+- Defender cloud/privacy policy: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SubmitSamplesConsent=2`
 - Edge lifecycle: early best-effort uninstall via Edge `setup.exe --uninstall --system-level --force-uninstall`; EdgeUpdate services/tasks disabled best-effort; WebView2 not removed
 - UX hygiene: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\DisableEdgeDesktopShortcutCreation=1`
 
@@ -50,7 +56,7 @@ Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardenin
 - Use least-privilege accounts for daily work; avoid local admin where possible.
 - If a proxy is introduced later, configure it explicitly: `netsh winhttp set proxy` or a supported policy. With WPAD disabled, auto-discovery will not occur.
 - Consider periodic offline AV scans or a trusted third-party endpoint if organizational policy requires it.
-- If you later re-enable Defender's real-time features, consider testing Attack Surface Reduction (ASR) rules on a VM first.
+- If you add Attack Surface Reduction (ASR) rules to the existing Defender local-protection posture, test them on a VM first.
 
 ## Compatibility controls & safety
 

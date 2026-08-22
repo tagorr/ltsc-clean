@@ -35,13 +35,14 @@ Instead, execution is split across bounded stages with distinct responsibilities
 
 - `PreOOBE.cmd` prepares pre-OOBE state
 - `SetupComplete.cmd` applies baseline servicing and system-wide policy as `SYSTEM`
+- `ConfigureDefenderPrivacy.ps1` implements the bounded Defender cloud/privacy profile under SetupComplete orchestration and remains available for later verification
 - `CreatePrimaryAdmin.ps1` finalizes the primary admin path and cleanup logic
 
 After OOBE, Windows executes `SetupComplete.cmd` as `SYSTEM`. This staged design keeps the pipeline easier to reason about, easier to recover, and easier to audit.
 
 ### Servicing and policy application run in SetupComplete
 
-Servicing, machine-level policy application, and system-wide Local GPO User Configuration are intentionally handled in `SetupComplete.cmd`.
+Servicing, machine-level policy orchestration, and system-wide Local GPO User Configuration are intentionally handled in `SetupComplete.cmd`.
 
 DISM operations and system-wide policy controls run there, including the main baseline posture for components such as Edge, Delivery Optimization, telemetry reduction, OneDrive, and selected optional features.
 
@@ -49,7 +50,7 @@ For the four repository-owned user settings in `UserBaselinePolicies.txt`, `Setu
 
 `UserBaselinePolicies.txt` is tracked by this repository. `LGPO.exe` is external operator-managed tooling and is not acquired or lifecycle-managed by the baseline.
 
-This is a deliberate architectural decision. It concentrates baseline servicing and policy application inside one explicit orchestration boundary and makes outcomes easier to observe.
+This deliberate architecture concentrates baseline servicing and policy orchestration inside one explicit boundary and makes outcomes easier to observe. Bounded components such as `ConfigureDefenderPrivacy.ps1` can own one reusable policy profile without taking over orchestration.
 
 ### Compatibility is enforced explicitly
 
@@ -121,7 +122,15 @@ The baseline does not remove WebView2 runtime. This keeps browser suppression se
 
 SmartScreen policy layers are disabled for Windows Shell and Edge.
 
-Windows Defender retains local endpoint protections, while cloud- and reputation-based verdicts and automatic sample submission are disabled by policy. This preserves local protective value while reducing silent outbound reputation and sample flows.
+Windows Defender retains local endpoint protections, while cloud/MAPS participation and automatic sample submission are disabled by policy. This preserves local protective value while reducing silent outbound reputation and sample flows.
+
+`SetupComplete.cmd` remains the orchestration owner, but `ConfigureDefenderPrivacy.ps1` is the single implementation owner of `SpynetReporting=0` and `SubmitSamplesConsent=2`. Fresh deployments do not explicitly configure `DisableBlockAtFirstSeen`, `LocalSettingOverrideSpynetReporting`, or `MpCloudBlockLevel`: `DisableBlockAtFirstSeen=1` was removed after observed `DefenderTamperingRestore` / Defender auto-heal behavior made explicit enforcement counterproductive, while `LocalSettingOverrideSpynetReporting` and `MpCloudBlockLevel` are not required for the current two-value privacy contract. The component does not add migration or cleanup behavior for systems produced by older baselines.
+
+The component writes the two machine policy registry values directly rather than creating corresponding Local GPO `Registry.pol` state. This keeps the machine-level Defender privacy profile separate from the `UserBaselinePolicies.txt` Local GPO User Configuration path; `gpedit.msc` may therefore show the related Administrative Template settings as Not Configured even when the owned registry values are correct.
+
+Registry verification proves only that the baseline wrote the policy it owns. The component separately queries Defender for `IsTamperProtected`, `MAPSReporting`, and effective `SubmitSamplesConsent`. It never disables or bypasses Tamper Protection. A point-in-time effective mismatch or technical failure is intentionally surfaced as a non-fatal hardening warning rather than closing the trusted-continuation gate.
+
+The same idempotent script is intentionally retained under `%WINDIR%\Setup\Scripts` so an operator can recheck the final state after provisioning and rerun the profile from an elevated Windows PowerShell session if remediation remains necessary. The design does not assume that Tamper Protection will transition automatically after every deployment.
 
 This is a deliberate trade-off, not an omission.
 
@@ -175,6 +184,8 @@ The baseline does not attempt to do the following:
 
 - Disable `WinHttpAutoProxySvc` as part of WPAD control
 - Remove WebView2 as part of Edge suppression
+- Disable or bypass Microsoft Defender Tamper Protection
+- Migrate or clean historical Defender policy values from older LTSC-clean installations
 - Write user-scoped configuration under `HKCU` from `SYSTEM` context
 - Deny or delete system folders as a feature-blocking technique
 - Auto-generate or derive the primary local admin password
@@ -188,7 +199,7 @@ These limits are intentional. They keep the baseline narrow in scope, easier to 
 
 The baseline adopts a small number of deliberate trade-offs.
 
-SmartScreen policy layers are disabled, and Defender keeps local protections while cloud- and reputation-based verdicts are turned off. This reduces some protection surface in exchange for a quieter machine and fewer silent outbound reputation and sample flows.
+SmartScreen policy layers are disabled, and Defender keeps local protections while the baseline targets cloud/MAPS and automatic sample submission off. If Defender's point-in-time effective state cannot be guaranteed, the result remains visible as a non-fatal hardening warning. This reduces some protection surface in exchange for a quieter machine and fewer silent outbound reputation and sample flows.
 
 WPAD is disabled by default. If a machine later enters an environment that requires proxy use, that proxy must be configured explicitly rather than discovered automatically.
 

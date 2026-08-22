@@ -4,7 +4,7 @@
 
 ## Allowed to edit
 
-`SetupComplete.cmd`, `UserBaselinePolicies.txt`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`, `docs/VALIDATION.md`, `docs/GUIDE.md`, `docs/QUICK_START.md`, `docs/PIPELINE_FLOW.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
+`SetupComplete.cmd`, `UserBaselinePolicies.txt`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `ConfigureDefenderPrivacy.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`, `docs/VALIDATION.md`, `docs/GUIDE.md`, `docs/QUICK_START.md`, `docs/PIPELINE_FLOW.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
 
 **Owner-controlled areas** (default: out of scope for agents)
 
@@ -65,6 +65,7 @@ These rules govern the installation scripts that run on the supported Windows ta
   * Any other RC → fatal servicing error; log it, set `FAILED=1` and `DISM_HARD_FAIL=1`, and capture the first fatal return code in `L2C_FIRST_BAD_RC` via `:track_rc`. Once `DISM_HARD_FAIL` is set, further DISM feature/capability/cleanup calls must be skipped for the rest of the run.
 * **DISM log:** single path for all calls — `%WINDIR%\Logs\DISM\SetupComplete-DISM.log` (use `/LogPath` + `/LogLevel:4`).
 * **Logs:** `%WINDIR%\Panther\PreOOBE.log`, `%WINDIR%\Panther\SetupComplete.log` (timestamped logger-written lines are normally ISO-8601; some lines may be un-timestamped), and the DISM log above.
+* **Defender privacy profile:** `ConfigureDefenderPrivacy.ps1` is the single runtime owner of machine-policy `SpynetReporting=0` and `SubmitSamplesConsent=2`. It verifies those registry values separately from the effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state, never disables or bypasses Tamper Protection, and returns `0` for a fully verified posture, `2` for a posture warning, or `1` for a technical failure. `SetupComplete.cmd` converts exit `2`, technical nonzero results, or a missing component into non-fatal hardening warnings only; those outcomes do not close the trusted-continuation gate. The component uses direct machine policy registry values rather than Local GPO `Registry.pol`, remains available for an elevated manual rerun, and does not manage or clean up `DisableBlockAtFirstSeen`, `LocalSettingOverrideSpynetReporting`, or `MpCloudBlockLevel` from historical installations.
 * **Winlogon:** `HKLM\...\Winlogon\IgnoreShiftOverride` = **REG_SZ "0"** (not `REG_DWORD`), with no intermediate `"1"`.
 * **Bootstrap/primary-admin chain:** `BootstrapLocalAdmin.ps1` must resolve the local Administrators group locale-agnostically via SID `S-1-5-32-544`; use the resolved group identity/name for LocalAccounts group membership operations; and set ACLs on `.bootstrap.pw` using locale-agnostic principals (SID-based principals are acceptable; `NTAccount` translation is optional).
 * **No secret-on-CLI (bootstrap):** `BootstrapLocalAdmin.ps1` must not pass the bootstrap password as an argument on an external process command line (no `net.exe user <password>`); it uses `Microsoft.PowerShell.LocalAccounts` cmdlets with a `SecureString` password.

@@ -20,6 +20,7 @@ Before installation, prepare:
   - `PreOOBE.cmd`
   - `SetupComplete.cmd`
   - `BootstrapLocalAdmin.ps1`
+  - `ConfigureDefenderPrivacy.ps1`
   - `ValidateSecrets.ps1`
   - `CreatePrimaryAdmin.ps1`
   - `UserBaselinePolicies.txt`
@@ -77,7 +78,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 ### What each log shows
 
 - `PreOOBE.log` shows specialize-phase policy work, bootstrap provisioning status, and bootstrap output lines that help confirm whether early bootstrap completed cleanly.
-- `SetupComplete.log` shows the mandatory Local GPO User Configuration import, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, and the SetupComplete-side outcome for the current run.
+- `SetupComplete.log` shows the mandatory Local GPO User Configuration import, `[DEFENDER-PRIVACY]` policy/effective-state results and any hardening warning, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, and the SetupComplete-side outcome for the current run.
 - `l2c_master_<timestamp>.log`, if present, is the main evidence for Stage A and Stage B outcome, per-secret cleanup state, finalization progress, and reboot handling after continuation.
 - `SetupComplete-DISM.log` is the consolidated DISM servicing trace for SetupComplete-time servicing work.
 
@@ -86,6 +87,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 Before deciding how far the run progressed, check whether:
 
 - `SetupComplete.log` shows `[SECTION] System-wide Local GPO User Configuration baseline` followed by `[INFO] Local GPO User Configuration baseline import succeeded rc=0` on the normal path;
+- `SetupComplete.log` shows the Defender privacy policy and effective-state result that was observable when the component ran, plus any corresponding hardening-warning summary;
 - `SetupComplete.log` shows the expected current-run outcome;
 - the Stage B master log, if present, shows the expected Stage A and Stage B outcome;
 - secret cleanup states match the observed secret-file state;
@@ -113,6 +115,39 @@ The following actions are not supported in this state:
 A manual-login continuation is a bounded degraded path, not normal unattended completion. Before proceeding, verify the current-run logs and the actual machine state.
 
 Use `docs/TROUBLESHOOTING.md` when the remaining state must be diagnosed or interpreted in detail.
+
+### Defender privacy final-state verification and remediation
+
+A Defender privacy posture warning during SetupComplete is a point-in-time, non-fatal hardening result. Allow the normal provisioning reboot to complete before deciding whether remediation is needed, then use the retained `ConfigureDefenderPrivacy.ps1` as the canonical machine-readable final verification entry point from an already elevated Windows PowerShell session. It independently verifies the owned policy registry values and the effective Defender state; the underlying `Get-MpComputerStatus` and `Get-MpPreference` values remain useful for interpreting the result.
+
+The desired final state is:
+
+- `IsTamperProtected=False`;
+- `MAPSReporting=0`;
+- effective `SubmitSamplesConsent=2`;
+- policy `SpynetReporting=0` and policy `SubmitSamplesConsent=2`;
+- Microsoft Defender Antivirus, real-time protection, behavior monitoring, and IOAV protection enabled;
+- `PUAProtection=1`.
+
+Windows Security may visibly warn because Tamper Protection is Off. That warning does not mean Microsoft Defender Antivirus or its local protections are disabled.
+
+If Tamper Protection is already Off and effective MAPS/sample state is `0` / `2`, no Tamper Protection remediation is required, even if SetupComplete recorded an earlier posture warning.
+
+If Tamper Protection remains On or effective MAPS/sample state differs from `0` / `2`, the operator may turn Tamper Protection Off manually in Windows Security and rerun the retained component, which reapplies its two owned policy values and verifies the current effective state. The current Windows PowerShell session must already be elevated; the script does not self-elevate and does not disable Tamper Protection.
+
+```powershell
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$env:WINDIR\Setup\Scripts\ConfigureDefenderPrivacy.ps1"
+```
+
+Read `$LASTEXITCODE` immediately after the command:
+
+- `0` means both owned registry policy values and the desired effective Defender privacy posture were verified;
+- `2` means policy application and state inspection completed, but the effective privacy posture is not currently guaranteed; inspect Tamper Protection and effective MAPS/sample state;
+- `1` means a technical execution or verification failure.
+
+`-ExecutionPolicy Bypass` applies only to the spawned Windows PowerShell process and does not permanently change PowerShell execution policy.
+
+The component directly manages machine policy registry values; it does not write corresponding Local GPO `Registry.pol` state. `gpedit.msc` may therefore show the related Administrative Template settings as Not Configured even when both the owned policy values and Defender effective state are correct. Do not use that display alone as failure evidence, and do not conflate this machine-level profile with `UserBaselinePolicies.txt`.
 
 ### Retained recovery state
 
@@ -159,7 +194,9 @@ For a normal completed run, confirm the following:
 - the `\L2C\CreatePrimaryAdmin` task has been removed;
 - `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
+- `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available;
 - the machine Local GPO User Configuration contains the four entries defined by `UserBaselinePolicies.txt`;
+- after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;
 - temporary Winlogon and logon-policy changes have been restored;
 - the system is ready for use, or completes with a controlled reboot if a reboot is still required.
 

@@ -93,6 +93,8 @@ Core evidence anchors:
 - `%ProgramData%\l2c_master_<timestamp>.log`, when Stage B or continuation ran
 - the observed machine state after the run
 
+For Defender privacy-profile validation, also preserve the relevant Microsoft Defender Operational event evidence when it is used to explain a state transition. Event evidence supports what changed, but must not be used to invent an unproven cause.
+
 Use the logs to confirm what the pipeline says happened. Use the machine state to confirm that the observed result matches that evidence.
 
 As a practical minimum:
@@ -151,6 +153,36 @@ Confirm that:
 - normal no-change outcomes are still treated as success where appropriate;
 - rerun behavior does not produce misleading completion or cleanup semantics.
 
+### Defender privacy-profile validation
+
+Use this scenario when changing the Defender privacy component, its SetupComplete integration, or its documented contract.
+
+Static validation must confirm that the repository preflight includes and passes the Windows PowerShell 5.1 parse check for `ConfigureDefenderPrivacy.ps1`.
+
+On a clean supported deployment, confirm that:
+
+- `ConfigureDefenderPrivacy.ps1` applies and verifies policy `SpynetReporting=0` and `SubmitSamplesConsent=2`;
+- the policy registry result is reported separately from effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state;
+- Tamper Protection enabled or an effective-state mismatch produces exit `2` and a non-fatal SetupComplete hardening warning;
+- a technical nonzero result or missing component is also non-fatal to trusted continuation;
+- the Defender warning alone does not block secret validation, primary-admin provisioning, Stage A, Stage B, cleanup, continuation, or reboot;
+- final Defender state is checked after the normal provisioning reboot;
+- Microsoft Defender Antivirus, real-time protection, behavior monitoring, IOAV protection, and PUA protection remain enabled;
+- the retained script can be rerun safely from an elevated Windows PowerShell session;
+- repeated execution remains safe, and the verified policy/effective state survives `gpupdate /target:computer /force` and a later normal reboot without requiring another script execution.
+
+Completed clean-deployment validation established the following significant empirical behavior:
+
+- during SetupComplete, both owned policy values verified successfully, effective MAPS/sample state was already `0` / `2`, and `IsTamperProtected` was True;
+- the component therefore produced the posture-warning outcome, SetupComplete recorded one Defender privacy hardening warning, finished `SUCCESS_WITH_HARDENING_WARNINGS`, and returned `0`;
+- Stage A, Stage B, cleanup, continuation, and the required reboot still completed successfully;
+- without operator Tamper Protection action or a manual component rerun, Microsoft Defender Operational Event ID 5007 later recorded `HKLM\SOFTWARE\Microsoft\Windows Defender\Features\TamperProtection` changing from `0x1` to `0x0` during provisioning/reboot;
+- after reboot, `IsTamperProtected=False`, effective MAPS/sample state was `0` / `2`, both owned policy values remained `0` / `2`, local Defender protections remained enabled, and the component remained installed;
+- a subsequent elevated manual execution returned PASS for policy verification, PASS for effective-state verification, and exit `0`;
+- the verified state survived a forced computer-policy refresh and another normal reboot.
+
+This evidence proves that the automatic Tamper Protection transition occurred in the tested clean deployment. It does not establish the internal cause and does not guarantee that the same transition will occur after every deployment. The SetupComplete warning remains accurate because it reports the effective state observable when the component runs.
+
 ## Scenario Selection by Change Type
 
 Use this section to choose the minimum meaningful validation scope.
@@ -163,6 +195,9 @@ Use this section to choose the minimum meaningful validation scope.
 
 - change to setup scripting that affects one bounded path:
   - targeted runtime validation.
+
+- change to the Defender privacy profile or its SetupComplete integration:
+  - targeted runtime validation covering the component's policy/effective-state distinction, non-fatal warning path, final post-reboot state, and retained-script rerun.
 
 - change to SetupComplete flow, continuation logic, or scheduled-task behavior:
   - happy-path smoke plus one deliberate blocked or degraded scenario relevant to that boundary.

@@ -12,6 +12,8 @@ The baseline assumes prepared Windows installation media and uses `Autounattend.
 
 Runtime scripts are staged under `%WINDIR%\Setup\Scripts`.
 
+`%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` is a repository-tracked runtime component that is intentionally retained after deployment for elevated post-deployment verification or remediation.
+
 `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is the repository-tracked Local GPO User Configuration payload.
 
 `%WINDIR%\Setup\Scripts\LGPO.exe` is a required operator-supplied Microsoft tool. It is external to the repository and is not acquired automatically by the baseline.
@@ -115,6 +117,9 @@ After the early setup path completes, control reaches `SetupComplete.cmd`.
 * imports the complete system-wide Local GPO User Configuration payload once through `LGPO.exe /t` as `SYSTEM`;
 * runs the main servicing and hardening workload;
 * applies the majority of the post-install baseline configuration;
+* keeps Defender real-time protection, behavior monitoring, IOAV protection, and PUA protection enabled;
+* invokes `ConfigureDefenderPrivacy.ps1` through the pinned Windows PowerShell 5.1 executable;
+* captures the component's `[DEFENDER-PRIVACY]` output in `SetupComplete.log`;
 * tracks fatal failures, hardening warnings, and degraded continuation conditions.
 
 **Normal exit**
@@ -125,10 +130,12 @@ If the platform gate and post-install flow remain valid, the pipeline moves to s
 * unsupported platform conditions stop the flow in a fail state;
 * a missing LGPO executable, missing policy payload, or non-zero import result stops the flow through the shared final return-code path before the normal workload, secret gate, Stage B scheduling, or autologon priming;
 * fatal servicing failures stop the flow in a fail state;
+* Defender privacy exit `0` logs successful verification and continues normally;
+* Defender privacy exit `2`, a technical nonzero result, or a missing component becomes a non-fatal hardening warning and does not by itself close the continuation gate or block subsequent secret and primary-admin stages;
 * non-fatal issues can still allow continuation with warnings or a degraded later handoff.
 
 **Flow meaning**
-This is the main control layer of the baseline. A successful import establishes persistent system-wide Local GPO User Configuration that Windows later processes for user profiles. These settings are not implemented through direct `HKCU` writes from `SYSTEM`, `gpupdate`, or a first-logon helper. `SetupComplete.cmd` then does the heavy post-install work and decides whether the system is ready for the first-logon finalization path.
+This is the main control layer of the baseline. A successful import establishes persistent system-wide Local GPO User Configuration that Windows later processes for user profiles. These settings are not implemented through direct `HKCU` writes from `SYSTEM`, `gpupdate`, or a first-logon helper. The separate Defender privacy component directly manages two machine policy registry values rather than Local GPO `Registry.pol`. `SetupComplete.cmd` then does the heavy post-install work and decides whether the system is ready for the first-logon finalization path. A Defender privacy warning describes the effective state observed when the component ran and does not predict the final post-provisioning Tamper Protection state.
 
 ---
 
@@ -259,6 +266,7 @@ In the normal successful path:
 * the scheduled finalization task has been removed;
 * `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 * `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
+* `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available for elevated post-deployment verification or remediation;
 * temporary Winlogon and logon-policy changes have been restored;
 * the machine is left either stable or in a controlled post-finalization reboot transition.
 
@@ -281,7 +289,7 @@ The permanent local-admin end state is reached, or intentionally not claimed, on
 
 ### Required Inputs and Generated Runtime Artifacts
 
-The runtime path depends on a small set of inputs and transient artifacts that do not all play the same role. `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is the repository-tracked Local GPO User Configuration payload. `%WINDIR%\Setup\Scripts\LGPO.exe` is an external operator-supplied Microsoft tool. Both are mandatory for the early Local GPO import; if either is missing, normal orchestration stops before the secret gate and finalization preparation.
+The runtime path depends on a small set of inputs and transient artifacts that do not all play the same role. `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is the repository-tracked Local GPO User Configuration payload. `%WINDIR%\Setup\Scripts\LGPO.exe` is an external operator-supplied Microsoft tool. Both are mandatory for the early Local GPO import; if either is missing, normal orchestration stops before the secret gate and finalization preparation. `ConfigureDefenderPrivacy.ps1` is a separate repository-tracked runtime input and remains installed after successful finalization as an operational entry point rather than a transient artifact.
 
 `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is a required external input. The finalization path cannot succeed unless that secret is present, readable under the expected boundary, and acceptable to the validation logic.
 
@@ -292,7 +300,7 @@ Other runtime artifacts are created to support controlled continuation, validati
 
 ### SetupComplete as Orchestration, not Finalization
 
-`SetupComplete.cmd` is the main post-install orchestration layer of the baseline, but it is not the same thing as final system completion. Its role is to apply the supported-platform gate, import the mandatory Local GPO User Configuration baseline, run the main servicing and hardening workload, validate secrets and execution boundaries, and decide whether the first-logon continuation can be armed normally, degraded into a manual-login path, or blocked before the handoff can be trusted.
+`SetupComplete.cmd` is the main post-install orchestration layer of the baseline, but it is not the same thing as final system completion. Its role is to apply the supported-platform gate, import the mandatory Local GPO User Configuration baseline, run the main servicing and hardening workload including the subordinate Defender privacy component, validate secrets and execution boundaries, and decide whether the first-logon continuation can be armed normally, degraded into a manual-login path, or blocked before the handoff can be trusted. Defender privacy posture or technical warnings remain hardening results and do not by themselves change that continuation decision.
 
 This distinction matters because a successful end of `SetupComplete.cmd` does not by itself mean that the permanent local-admin end state already exists. At that point, the system may be prepared for finalization, may require a degraded continuation path, or may remain in recovery posture. The true finalized state depends on what happens later in `CreatePrimaryAdmin.ps1`, not merely on whether setup reached the end of its post-install control layer.
 

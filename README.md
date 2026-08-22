@@ -38,7 +38,7 @@ Not a fit:
 
 2. **`PreOOBE.cmd`** prepares early machine state before the user logon boundary.
 
-3. **`SetupComplete.cmd`** applies the baseline, checks the required continuation conditions, and prepares the finalization handoff.
+3. **`SetupComplete.cmd`** applies the baseline, invokes the retained `ConfigureDefenderPrivacy.ps1` component, checks the required continuation conditions, and prepares the finalization handoff.
 
 4. **`CreatePrimaryAdmin.ps1`** completes permanent admin finalization, then either tears down temporary state or preserves recovery-signaling state.
 
@@ -62,7 +62,7 @@ Not a fit:
 These baseline decisions come with explicit trade-offs:
 
 - SmartScreen policy layers are disabled, reducing prompts and reputation-based checks at the cost of SmartScreen-based protection.
-- Microsoft Defender remains enabled locally, but cloud-delivered and reputation-based protection are not part of the baseline.
+- Microsoft Defender local protections remain enabled. The retained privacy component configures cloud/MAPS and automatic sample submission off, and reports a non-fatal warning when the point-in-time effective posture cannot be verified; see [Operations](docs/OPERATIONS.md) for post-deployment verification and remediation.
 - Automatic component cleanup is not forced, preserving predictability and reversibility at the cost of a larger system footprint.
 - With WPAD disabled, proxy configuration must be made explicitly later.
 

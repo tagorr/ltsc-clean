@@ -76,13 +76,25 @@ Its role is to establish a tightly scoped temporary bridge, not the permanent ma
 
 `SetupComplete.cmd` is the central orchestration component.
 
-It performs platform compatibility gating, imports the mandatory system-wide Local GPO User Configuration baseline, applies the main baseline configuration, runs secret validation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
+It performs platform compatibility gating, imports the mandatory system-wide Local GPO User Configuration baseline, applies the main baseline configuration, invokes the subordinate Defender privacy component, runs secret validation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
 
 Immediately after the platform gate, it executes the operator-supplied Microsoft `LGPO.exe` as `SYSTEM` to import the repository-tracked `UserBaselinePolicies.txt` payload. Successful import is required before the normal workload continues. The resulting persistent Local GPO User Configuration is processed by Windows for user profiles rather than being implemented through direct `HKCU` writes from `SYSTEM`.
 
 It is a critical architectural boundary because it determines whether continuation is armed, degraded, or blocked.
 
 It is not the final completion boundary.
+
+### `ConfigureDefenderPrivacy.ps1`
+
+`ConfigureDefenderPrivacy.ps1` is the machine-level Defender privacy component subordinate to SetupComplete orchestration.
+
+`SetupComplete.cmd` invokes it through the pinned Windows PowerShell 5.1 executable and captures its `[DEFENDER-PRIVACY]` output in `%WINDIR%\Panther\SetupComplete.log`. The same script is intentionally retained under `%WINDIR%\Setup\Scripts` for later execution from an already elevated Windows PowerShell session; this manual reuse is not a separate pipeline stage.
+
+The component is the single implementation owner of machine-policy `SpynetReporting=0` and `SubmitSamplesConsent=2`. It verifies those registry values separately from Defender's effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state. It observes but never disables or bypasses Tamper Protection.
+
+Exit `0` means the effective posture was fully verified, exit `2` means policy application and state inspection succeeded but the effective posture could not be guaranteed, and exit `1` means a technical execution or verification failure. `SetupComplete.cmd` converts exit `2`, technical nonzero results, or a missing component into hardening warnings rather than trusted-continuation failures.
+
+The component writes direct machine policy registry values, not Local GPO `Registry.pol`, and remains separate from the `UserBaselinePolicies.txt` Local GPO User Configuration path.
 
 ### `ValidateSecrets.ps1`
 
@@ -107,6 +119,8 @@ This script owns the true end-state boundary of the system.
 The system moves through a fixed handoff chain:
 
 `Autounattend.xml` -> `PreOOBE.cmd` -> `BootstrapLocalAdmin.ps1` -> `SetupComplete.cmd` -> `CreatePrimaryAdmin.ps1` Stage A -> `CreatePrimaryAdmin.ps1` Stage B
+
+Within the `SetupComplete.cmd` orchestration boundary, control calls `ConfigureDefenderPrivacy.ps1` and then returns to the normal SetupComplete flow. The component is therefore subordinate work inside an existing stage, not an additional handoff stage.
 
 What matters architecturally is not sequence alone, but which component owns the system at each boundary and what may be handed off to the next one.
 
@@ -159,6 +173,8 @@ Trusted continuation depends on a compound chain of conditions, including:
 - successful continuation marker or equivalent state confirmation
 
 Architecturally, what matters is not any single condition in isolation, but the ordered success of the gate as a whole.
+
+The Defender privacy component is intentionally outside this compound gate. Its posture warning, technical nonzero result, or absence may produce a hardening warning, but does not by itself block secret validation, executor registration, autologon preparation, or later finalization.
 
 ### Normal continuation
 
@@ -238,6 +254,8 @@ These enter the system from outside the pipeline itself.
 
 Successful import produces persistent system-wide Local GPO User Configuration that Windows processes for user profiles. This policy path does not require direct `HKCU` writes from `SYSTEM`, `gpupdate`, or a first-logon helper.
 
+`ConfigureDefenderPrivacy.ps1` is also staged as a runtime input, but its lifecycle is different from temporary bridge and executor artifacts. It remains installed after normal finalization as a deliberate operational verification/remediation entry point; it is not a secret, a continuation artifact, or retained recovery residue.
+
 ### Generated bridge artifacts
 
 These exist to carry the system from one boundary to the next.
@@ -268,6 +286,8 @@ These preserve reviewable evidence of what each phase actually did.
 - `%WINDIR%\Panther\SetupComplete.log`
 - `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`
 - `%ProgramData%\l2c_master_<timestamp>.log`
+
+The Defender component's `[DEFENDER-PRIVACY]` policy and effective-state results are captured in `SetupComplete.log`, together with any resulting hardening-warning summary.
 
 ### Retained recovery artifacts
 

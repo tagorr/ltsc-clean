@@ -17,6 +17,7 @@ Use this document to prepare and run the baseline for the first time. It covers:
   - `PreOOBE.cmd`  
   - `SetupComplete.cmd`  
   - `BootstrapLocalAdmin.ps1`  
+  - `ConfigureDefenderPrivacy.ps1`
   - `ValidateSecrets.ps1`  
   - `CreatePrimaryAdmin.ps1`  
   - `UserBaselinePolicies.txt`
@@ -39,6 +40,9 @@ Disk and partition selection remains intentionally manual because `Autounattend.
 - the `\L2C\CreatePrimaryAdmin` task has been removed;
 - `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
+- `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available for elevated post-deployment verification or remediation;
+- Microsoft Defender Antivirus and its local protections remain enabled;
+- after the normal provisioning reboot, the final Defender privacy state is checked as described in [Operations](OPERATIONS.md); a SetupComplete Defender privacy hardening warning does not by itself mean deployment failed;
 - temporary Winlogon and logon-policy changes have been restored;
 - the system is ready for use, or performs a controlled reboot if one is still required.
 

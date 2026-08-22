@@ -32,6 +32,20 @@ Interpretation:
 
 A normal logon screen does not always mean that autologon failed. AutoAdminLogon targets the console session, so in environments such as Hyper-V Enhanced Session or other RDP-based views, a logon screen can be expected even when the continuation path was armed correctly.
 
+## Symptom: Defender Privacy Hardening Warning
+
+Use this section when `SetupComplete.log` contains `[DEFENDER-PRIVACY]` WARN or ERROR output, a Defender privacy hardening warning, or a final `SUCCESS_WITH_HARDENING_WARNINGS` result associated with this component.
+
+Interpret the evidence by category:
+
+- exit `2` means the component applied and verified its owned policy and inspected Defender state, but the effective privacy posture could not be guaranteed at that point in time;
+- a technical nonzero or missing-script warning means configuration or verification could not be completed reliably and requires investigation;
+- neither warning category is, by itself, a pipeline or trusted-continuation failure, so it can coexist with successful secret validation, Stage A, Stage B, cleanup, and finalization.
+
+Allow the normal provisioning reboot to complete and inspect the final Defender state before deciding whether remediation is required. If Tamper Protection is already Off and effective MAPS/sample state is `0` / `2`, no Tamper Protection remediation is needed even if SetupComplete recorded an earlier warning. If the final state still does not match, use the canonical verification and remediation procedure in [Operations](OPERATIONS.md).
+
+A change in Tamper Protection during provisioning may be visible in Microsoft Defender Operational event evidence. Treat such a transition as observed behavior only; do not infer its internal cause or assume that it must recur on another deployment.
+
 ## Symptom: Stage B Ran but the Final State Is Not Correct
 
 Use this section when Stage B appears to have run, but the resulting machine state does not match the expected final state.
