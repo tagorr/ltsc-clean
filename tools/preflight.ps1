@@ -60,7 +60,7 @@ function Test-PowerShellParsing {
         [Parameter(Mandatory = $true)][string]$RepoRoot
     )
 
-    foreach ($target in @('BootstrapLocalAdmin.ps1', 'CreatePrimaryAdmin.ps1', 'ValidateSecrets.ps1')) {
+    foreach ($target in @('BootstrapLocalAdmin.ps1', 'ConfigureDefenderPrivacy.ps1', 'CreatePrimaryAdmin.ps1', 'ValidateSecrets.ps1')) {
         $problems = New-Object System.Collections.Generic.List[string]
         $fullPath = Join-Path -Path $RepoRoot -ChildPath $target
 

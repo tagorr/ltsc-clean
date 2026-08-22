@@ -9,6 +9,7 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Critical repository files preserve the encoding, line endings, and file integrity required by the project.
 * [ ] No file damage is present that would break parsing, execution, or auditability.
 * [ ] PowerShell scripts remain structurally valid for Windows PowerShell 5.1 execution.
+* [ ] The repository preflight PowerShell 5.1 parse targets include `ConfigureDefenderPrivacy.ps1`.
 * [ ] CMD scripts do not rely on unsafe multi-line parse-time `%VAR%` expansion in control-flow-critical blocks.
 
 ### 1.1. Unattended entry contract
@@ -105,6 +106,18 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Reboot-required servicing RCs (`3010`, `1641`) feed into the reboot-signaling path without changing ownership of reboot execution.
 * [ ] The reboot flag path and signaling logic are explicit and deterministic.
 * [ ] `SetupComplete.cmd` may signal reboot need, but does not consume the final reboot as a Stage B substitute.
+
+#### 4.6. Defender privacy component
+
+* [ ] `ConfigureDefenderPrivacy.ps1` is the single runtime implementation owner of machine-policy `SpynetReporting=0` and `SubmitSamplesConsent=2`.
+* [ ] Fresh-deployment logic does not explicitly configure or clean up `DisableBlockAtFirstSeen`, `LocalSettingOverrideSpynetReporting`, or `MpCloudBlockLevel`.
+* [ ] The component verifies its owned registry policy separately from effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state.
+* [ ] The component observes but never disables or bypasses Tamper Protection.
+* [ ] Exit `0` means the effective privacy posture was fully verified, exit `2` means policy/state inspection succeeded but effective posture is not guaranteed, and exit `1` means a technical execution or verification failure.
+* [ ] `SetupComplete.cmd` invokes the component through the pinned Windows PowerShell 5.1 executable with `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File` and captures output in `%WINDIR%\Panther\SetupComplete.log`.
+* [ ] Exit `2`, technical nonzero results, and a missing component route through the existing non-fatal hardening-warning machinery without setting `FAILED`, `DISM_HARD_FAIL`, or fatal `L2C_FIRST_BAD_RC`, and without closing the trusted-continuation gate.
+* [ ] The same idempotent component remains available under `%WINDIR%\Setup\Scripts` for an elevated post-deployment rerun.
+* [ ] The two machine policy registry values remain separate from `UserBaselinePolicies.txt` and Local GPO `Registry.pol`; `gpedit.msc` display state is not used as the runtime source of truth.
 
 ---
 
