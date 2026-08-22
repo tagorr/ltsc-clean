@@ -1,0 +1,19 @@
+User
+Software\Policies\Microsoft\Windows\CloudContent
+DisableWindowsSpotlightFeatures
+DWORD:1
+
+User
+Software\Microsoft\Windows\CurrentVersion\Policies\Explorer
+HideSCAMeetNow
+DWORD:1
+
+User
+Control Panel\International\User Profile
+HttpAcceptLanguageOptOut
+DWORD:1
+
+User
+Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+Start_TrackProgs
+DWORD:0

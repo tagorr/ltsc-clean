@@ -4,7 +4,7 @@
 
 ## Allowed to edit
 
-`SetupComplete.cmd`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`, `docs/VALIDATION.md`, `docs/GUIDE.md`, `docs/QUICK_START.md`, `docs/PIPELINE_FLOW.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
+`SetupComplete.cmd`, `UserBaselinePolicies.txt`, `PreOOBE.cmd`, `BootstrapLocalAdmin.ps1`, `CreatePrimaryAdmin.ps1`, `ValidateSecrets.ps1`, `README.md`, `DECISIONS.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/AUDIT_CHECKLIST.md`, `docs/INTERACTION_CONTRACT.md`, `docs/VALIDATION.md`, `docs/GUIDE.md`, `docs/QUICK_START.md`, `docs/PIPELINE_FLOW.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
 
 **Owner-controlled areas** (default: out of scope for agents)
 
