@@ -682,6 +682,31 @@ set "L2C_PW_SCAN="
 set "L2C_PW_CHAR_TEST="
 exit /b 0
 
+:configure_defender_privacy
+set "DEFENDER_PRIVACY_SCRIPT=%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1"
+if not exist "%DEFENDER_PRIVACY_SCRIPT%" goto :defender_privacy_missing
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%DEFENDER_PRIVACY_SCRIPT%" >>"%LOG%" 2>&1
+set "DEFENDER_PRIVACY_RC=%ERRORLEVEL%"
+if "%DEFENDER_PRIVACY_RC%"=="0" goto :defender_privacy_pass
+if "%DEFENDER_PRIVACY_RC%"=="2" goto :defender_privacy_posture_warn
+call :log "[WARN] Defender privacy configuration or verification encountered a technical error rc=%DEFENDER_PRIVACY_RC%"
+call :hardwarn Defender privacy configuration or verification technical error rc=%DEFENDER_PRIVACY_RC%
+exit /b 0
+
+:defender_privacy_missing
+call :log "[WARN] Defender privacy component missing: %DEFENDER_PRIVACY_SCRIPT%"
+call :hardwarn Defender privacy component missing at runtime
+exit /b 0
+
+:defender_privacy_posture_warn
+call :log "[WARN] Defender privacy posture is not fully enforced rc=2; operator remediation may be required"
+call :hardwarn Defender privacy posture not fully enforced rc=2 operator remediation may be required
+exit /b 0
+
+:defender_privacy_pass
+call :log "[INFO] Defender privacy profile verification succeeded rc=0"
+exit /b 0
+
 :main
 
 :: ------------ system-wide Local GPO User Configuration baseline ------------
@@ -737,11 +762,7 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SpynetReporting" "REG_DWORD" "0"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "SubmitSamplesConsent" "REG_DWORD" "2"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "DisableBlockAtFirstSeen" "REG_DWORD" "1"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" "LocalSettingOverrideSpynetReporting" "REG_DWORD" "0"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine" "MpCloudBlockLevel" "REG_DWORD" "0"
+call :configure_defender_privacy
 
 :: ------------ Early Edge browser removal (guarantee layer) ------------
 call :edge_remove
