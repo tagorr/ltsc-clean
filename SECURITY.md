@@ -56,6 +56,14 @@ Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardenin
 
 The baseline uses a fail-closed platform compatibility posture by default. Best-effort compatibility is an explicit opt-out for forks or experiments and carries the risk that some steps may not apply or may behave differently on nearby Windows versions.
 
+## Local GPO external-tool trust boundary
+
+The operator must stage a trusted Microsoft `LGPO.exe` at `%WINDIR%\Setup\Scripts\LGPO.exe`. `SetupComplete.cmd` executes that binary as `SYSTEM` to import the repository-tracked `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` payload.
+
+The repository does not acquire, download, version-check, hash-check, or Authenticode-check `LGPO.exe`. Selecting and staging the trusted binary is therefore an operator responsibility. Missing inputs or a non-zero import result fail closed before the normal baseline workload continues.
+
+The non-admin tamper-boundary validation used later for Stage B preparation does not validate `LGPO.exe` before this early import and must not be treated as doing so.
+
 ## Logs
 
 The baseline writes technical logs to `%WINDIR%\Panther\PreOOBE.log` and `%WINDIR%\Panther\SetupComplete.log`. DISM activity, when used, is additionally recorded in `%WINDIR%\Logs\DISM\SetupComplete-DISM.log`.

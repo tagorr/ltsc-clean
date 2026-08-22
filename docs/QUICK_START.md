@@ -19,6 +19,8 @@ Use this document to prepare and run the baseline for the first time. It covers:
   - `BootstrapLocalAdmin.ps1`  
   - `ValidateSecrets.ps1`  
   - `CreatePrimaryAdmin.ps1`  
+  - `UserBaselinePolicies.txt`
+- Stage a trusted Microsoft `LGPO.exe` as `%WINDIR%\Setup\Scripts\LGPO.exe`; it is operator-supplied and is not tracked or automatically acquired by this repository;
 - Create `%WINDIR%\Setup\Scripts\.primaryadmin.pw`; 
 - Follow the secret-handling rules in [Operations](OPERATIONS.md).  
 

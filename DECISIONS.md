@@ -41,11 +41,15 @@ After OOBE, Windows executes `SetupComplete.cmd` as `SYSTEM`. This staged design
 
 ### Servicing and policy application run in SetupComplete
 
-Servicing and machine-level policy application are intentionally moved into `SetupComplete.cmd`.
+Servicing, machine-level policy application, and system-wide Local GPO User Configuration are intentionally handled in `SetupComplete.cmd`.
 
 DISM operations and system-wide policy controls run there, including the main baseline posture for components such as Edge, Delivery Optimization, telemetry reduction, OneDrive, and selected optional features.
 
-This is a deliberate architectural decision. It concentrates machine-level changes inside one explicit orchestration boundary and makes outcomes easier to observe.
+For the four repository-owned user settings in `UserBaselinePolicies.txt`, `SetupComplete.cmd` uses the operator-supplied Microsoft `LGPO.exe` tool to import a system-wide Local GPO User Configuration payload as `SYSTEM`. Windows policy processing then applies that Local GPO state to user profiles; `SetupComplete.cmd` does not write those values directly to `HKCU`.
+
+`UserBaselinePolicies.txt` is tracked by this repository. `LGPO.exe` is external operator-managed tooling and is not acquired or lifecycle-managed by the baseline.
+
+This is a deliberate architectural decision. It concentrates baseline servicing and policy application inside one explicit orchestration boundary and makes outcomes easier to observe.
 
 ### Compatibility is enforced explicitly
 

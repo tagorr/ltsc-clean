@@ -51,6 +51,12 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] `SetupComplete.cmd` preserves a deterministic fail-closed control model for servicing, validation, scheduling, and final RC selection.
 * [ ] Servicing logic, secret validation, Stage B scheduling, and reboot signaling remain clearly ordered.
 * [ ] Platform-gate mismatches fail closed and flow to the shared final return-code path.
+* [ ] The mandatory system-wide Local GPO User Configuration gate runs after the platform gate and before the normal baseline workload.
+* [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is treated as the required tracked four-entry policy payload.
+* [ ] `UserBaselinePolicies.txt` contains exactly the approved `DisableWindowsSpotlightFeatures=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0` DWORD values under their intended User Configuration registry paths.
+* [ ] `SetupComplete.cmd` invokes one `LGPO.exe /t` import for the complete payload.
+* [ ] A missing LGPO executable, missing payload, or non-zero import RC fails closed, stops normal baseline processing, and preserves the existing first-fatal-RC and final-RC contract.
+* [ ] The Local GPO User Configuration mechanism does not directly write these settings to `HKCU`, run `gpupdate`, or add a first-logon helper.
 * [ ] The final RC contract remains deterministic:
   * [ ] fatal servicing failure cannot be masked by later success states;
   * [ ] closed-gate / fail state does not collapse into silent success;
@@ -76,6 +82,8 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Autologon priming follows an all-or-nothing model.
 * [ ] `SetupComplete.cmd` creates the Stage B executor before committing Winlogon password state.
 * [ ] If priming fails after partial setup begins, failure is recorded and rollback is attempted.
+* [ ] A failure before temporary logon-policy relaxation is attempted does not invoke its rollback path.
+* [ ] A failure after temporary logon-policy relaxation is attempted retains the existing rollback behavior.
 * [ ] Partial priming failure does not collapse into silent success-like continuation.
 
 #### 4.4. Stage B task registration and tamper boundary
