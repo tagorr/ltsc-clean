@@ -76,7 +76,9 @@ Its role is to establish a tightly scoped temporary bridge, not the permanent ma
 
 `SetupComplete.cmd` is the central orchestration component.
 
-It performs platform compatibility gating, applies the main baseline configuration, runs secret validation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
+It performs platform compatibility gating, imports the mandatory system-wide Local GPO User Configuration baseline, applies the main baseline configuration, runs secret validation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
+
+Immediately after the platform gate, it executes the operator-supplied Microsoft `LGPO.exe` as `SYSTEM` to import the repository-tracked `UserBaselinePolicies.txt` payload. Successful import is required before the normal workload continues. The resulting persistent Local GPO User Configuration is processed by Windows for user profiles rather than being implemented through direct `HKCU` writes from `SYSTEM`.
 
 It is a critical architectural boundary because it determines whether continuation is armed, degraded, or blocked.
 
@@ -147,6 +149,7 @@ The architecture does not treat “next step in sequence” as sufficient proof 
 Trusted continuation depends on a compound chain of conditions, including:
 
 - supported platform compatibility
+- successful import of the required system-wide Local GPO User Configuration payload
 - required secret presence
 - secret ACL and attribute validity
 - secret content validity
@@ -189,6 +192,8 @@ These are different secret classes and are handled differently by the system.
 
 The early pipeline runs within Windows setup-related contexts.
 
+As part of early orchestration, `SetupComplete.cmd` runs the operator-supplied `LGPO.exe` as `SYSTEM`. The operator is responsible for staging that external Microsoft tool, while `UserBaselinePolicies.txt` is tracked by the repository.
+
 The finalization executor runs as `SYSTEM` at highest privilege so that secrets do not need to be carried through task arguments or weaker transport surfaces.
 
 This separation is part of the privilege model.
@@ -227,7 +232,11 @@ These enter the system from outside the pipeline itself.
 - installation media
 - `Autounattend.xml`
 - staged runtime scripts
+- repository-tracked `UserBaselinePolicies.txt`
+- operator-supplied `LGPO.exe`
 - `.primaryadmin.pw`
+
+Successful import produces persistent system-wide Local GPO User Configuration that Windows processes for user profiles. This policy path does not require direct `HKCU` writes from `SYSTEM`, `gpupdate`, or a first-logon helper.
 
 ### Generated bridge artifacts
 

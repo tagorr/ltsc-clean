@@ -21,6 +21,7 @@ set "REBOOT_REQUESTED=0"
 set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=0"
 set "L2C_AUTOLOGON_ARMED=0"
 set "L2C_AUTOLOGON_DEGRADED=0"
+set "L2C_TEMP_LOGON_TWEAKS_ATTEMPTED=0"
 set "STAGEB_SKIPPED_GATE=0"
 set "STAGEB_NOT_SCHEDULED=0"
 set "FAILED=0"
@@ -317,6 +318,7 @@ goto :eof
 
 :l2c_temp_logon_tweaks
 REM Best-effort. Do not hard-fail if these cannot be applied.
+set "L2C_TEMP_LOGON_TWEAKS_ATTEMPTED=1"
 reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_TWEAK_FAILED rc=%RC% key=%SYS% name=DisableCAD value=1"
@@ -681,6 +683,30 @@ set "L2C_PW_CHAR_TEST="
 exit /b 0
 
 :main
+
+:: ------------ system-wide Local GPO User Configuration baseline ------------
+call :log "[SECTION] System-wide Local GPO User Configuration baseline"
+set "L2C_LGPO_EXE=%WINDIR%\Setup\Scripts\LGPO.exe"
+set "L2C_USER_BASELINE_PAYLOAD=%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt"
+if not exist "%L2C_LGPO_EXE%" (
+  call :log "[ERROR] Required LGPO executable missing: %L2C_LGPO_EXE%"
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
+if not exist "%L2C_USER_BASELINE_PAYLOAD%" (
+  call :log "[ERROR] Required Local GPO User Configuration payload missing: %L2C_USER_BASELINE_PAYLOAD%"
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
+"%L2C_LGPO_EXE%" /t "%L2C_USER_BASELINE_PAYLOAD%"
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+  call :log "[ERROR] Local GPO User Configuration baseline import failed rc=%RC%"
+  if not defined L2C_FIRST_BAD_RC set "L2C_FIRST_BAD_RC=%RC%"
+  set "FAILED=1"
+  goto :l2c_final_rc
+)
+call :log "[INFO] Local GPO User Configuration baseline import succeeded rc=0"
 
 :: ------------ Edge Update policies ------------
 call :log "[SECTION] Edge Update policies"
@@ -1076,8 +1102,8 @@ set "FINAL_RC=0"
 if defined L2C_FIRST_BAD_RC set "FINAL_RC=%L2C_FIRST_BAD_RC%"
 if "%FINAL_RC%"=="0" if "%FAILED%"=="1" set "FINAL_RC=1"
 
-REM if the final RC is not 0, roll back temporary logon policies
-if not "%FINAL_RC%"=="0" (
+REM if the final RC is not 0 and temporary logon tweaks were attempted, roll them back
+if not "%FINAL_RC%"=="0" if "%L2C_TEMP_LOGON_TWEAKS_ATTEMPTED%"=="1" (
   call :l2c_temp_logon_rollback
 )
 

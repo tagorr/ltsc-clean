@@ -22,6 +22,8 @@ Before installation, prepare:
   - `BootstrapLocalAdmin.ps1`
   - `ValidateSecrets.ps1`
   - `CreatePrimaryAdmin.ps1`
+  - `UserBaselinePolicies.txt`
+- a trusted operator-supplied Microsoft `LGPO.exe` staged as `%WINDIR%\Setup\Scripts\LGPO.exe`; this executable is not tracked or automatically acquired by the repository;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` as the required operator-supplied secret input.
 
 ## Secret Handling Rules
@@ -75,7 +77,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 ### What each log shows
 
 - `PreOOBE.log` shows specialize-phase policy work, bootstrap provisioning status, and bootstrap output lines that help confirm whether early bootstrap completed cleanly.
-- `SetupComplete.log` shows secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, and the SetupComplete-side outcome for the current run.
+- `SetupComplete.log` shows the mandatory Local GPO User Configuration import, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, and the SetupComplete-side outcome for the current run.
 - `l2c_master_<timestamp>.log`, if present, is the main evidence for Stage A and Stage B outcome, per-secret cleanup state, finalization progress, and reboot handling after continuation.
 - `SetupComplete-DISM.log` is the consolidated DISM servicing trace for SetupComplete-time servicing work.
 
@@ -83,6 +85,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 
 Before deciding how far the run progressed, check whether:
 
+- `SetupComplete.log` shows `[SECTION] System-wide Local GPO User Configuration baseline` followed by `[INFO] Local GPO User Configuration baseline import succeeded rc=0` on the normal path;
 - `SetupComplete.log` shows the expected current-run outcome;
 - the Stage B master log, if present, shows the expected Stage A and Stage B outcome;
 - secret cleanup states match the observed secret-file state;
@@ -156,6 +159,7 @@ For a normal completed run, confirm the following:
 - the `\L2C\CreatePrimaryAdmin` task has been removed;
 - `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
+- the machine Local GPO User Configuration contains the four entries defined by `UserBaselinePolicies.txt`;
 - temporary Winlogon and logon-policy changes have been restored;
 - the system is ready for use, or completes with a controlled reboot if a reboot is still required.
 
@@ -163,7 +167,7 @@ For a normal completed run, confirm the following:
 
 Also confirm that the logs support the observed end state:
 
-- `SetupComplete.log` reflects the expected SetupComplete outcome for the current run;
+- `SetupComplete.log` confirms the successful Local GPO User Configuration import and reflects the expected SetupComplete outcome for the current run;
 - the Stage B master log, if present, reflects the expected Stage A and Stage B outcome;
 - secret cleanup states match the observed file state;
 - reboot-flag handling in the logs matches the final machine state.

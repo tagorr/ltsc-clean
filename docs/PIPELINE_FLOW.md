@@ -12,6 +12,10 @@ The baseline assumes prepared Windows installation media and uses `Autounattend.
 
 Runtime scripts are staged under `%WINDIR%\Setup\Scripts`.
 
+`%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is the repository-tracked Local GPO User Configuration payload.
+
+`%WINDIR%\Setup\Scripts\LGPO.exe` is a required operator-supplied Microsoft tool. It is external to the repository and is not acquired automatically by the baseline.
+
 `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is a required external input and must be present before the finalization path can succeed.
 
 `%WINDIR%\Setup\Scripts\.bootstrap.pw` is not an external input. It is generated during the flow by `BootstrapLocalAdmin.ps1`.
@@ -107,6 +111,8 @@ After the early setup path completes, control reaches `SetupComplete.cmd`.
 * opens `%WINDIR%\Panther\SetupComplete.log`;
 * applies the supported LTSC platform gate;
 * stops early if the platform contract is not met;
+* requires `LGPO.exe` and `UserBaselinePolicies.txt` under `%WINDIR%\Setup\Scripts`;
+* imports the complete system-wide Local GPO User Configuration payload once through `LGPO.exe /t` as `SYSTEM`;
 * runs the main servicing and hardening workload;
 * applies the majority of the post-install baseline configuration;
 * tracks fatal failures, hardening warnings, and degraded continuation conditions.
@@ -117,11 +123,12 @@ If the platform gate and post-install flow remain valid, the pipeline moves to s
 **Important alternate exit**
 
 * unsupported platform conditions stop the flow in a fail state;
+* a missing LGPO executable, missing policy payload, or non-zero import result stops the flow through the shared final return-code path before the normal workload, secret gate, Stage B scheduling, or autologon priming;
 * fatal servicing failures stop the flow in a fail state;
 * non-fatal issues can still allow continuation with warnings or a degraded later handoff.
 
 **Flow meaning**
-This is the main control layer of the baseline. It does the heavy post-install work and decides whether the system is ready for the first-logon finalization path.
+This is the main control layer of the baseline. A successful import establishes persistent system-wide Local GPO User Configuration that Windows later processes for user profiles. These settings are not implemented through direct `HKCU` writes from `SYSTEM`, `gpupdate`, or a first-logon helper. `SetupComplete.cmd` then does the heavy post-install work and decides whether the system is ready for the first-logon finalization path.
 
 ---
 
@@ -166,6 +173,7 @@ The flow reaches the first interactive logon boundary.
 **What happens here**
 
 * the temporary `bootstrap` account reaches the logon boundary;
+* Windows policy processing materializes the imported Local GPO User Configuration for the user profile without a baseline first-logon helper or manual `gpupdate`;
 * if the continuation was armed successfully, the scheduled task `\L2C\CreatePrimaryAdmin` is triggered;
 * `CreatePrimaryAdmin.ps1` starts under `SYSTEM`;
 * control moves from setup-driven orchestration into final account completion.
@@ -273,7 +281,9 @@ The permanent local-admin end state is reached, or intentionally not claimed, on
 
 ### Required Inputs and Generated Runtime Artifacts
 
-The runtime path depends on a small set of inputs and transient artifacts that do not all play the same role. `%WINDIR%\Setup\Scripts\.primaryadmin.pw` is a required external input. The finalization path cannot succeed unless that secret is present, readable under the expected boundary, and acceptable to the validation logic.
+The runtime path depends on a small set of inputs and transient artifacts that do not all play the same role. `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is the repository-tracked Local GPO User Configuration payload. `%WINDIR%\Setup\Scripts\LGPO.exe` is an external operator-supplied Microsoft tool. Both are mandatory for the early Local GPO import; if either is missing, normal orchestration stops before the secret gate and finalization preparation.
+
+`%WINDIR%\Setup\Scripts\.primaryadmin.pw` is a required external input. The finalization path cannot succeed unless that secret is present, readable under the expected boundary, and acceptable to the validation logic.
 
 By contrast, `%WINDIR%\Setup\Scripts\.bootstrap.pw` is generated inside the flow by `BootstrapLocalAdmin.ps1`. It exists only to support the temporary bootstrap bridge between early setup and later finalization. In the normal successful path, it is not part of the desired end state and should be removed during cleanup.
 
@@ -282,7 +292,7 @@ Other runtime artifacts are created to support controlled continuation, validati
 
 ### SetupComplete as Orchestration, not Finalization
 
-`SetupComplete.cmd` is the main post-install orchestration layer of the baseline, but it is not the same thing as final system completion. Its role is to apply the supported-platform gate, run the main servicing and hardening workload, validate secrets and execution boundaries, and decide whether the first-logon continuation can be armed normally, degraded into a manual-login path, or blocked before the handoff can be trusted.
+`SetupComplete.cmd` is the main post-install orchestration layer of the baseline, but it is not the same thing as final system completion. Its role is to apply the supported-platform gate, import the mandatory Local GPO User Configuration baseline, run the main servicing and hardening workload, validate secrets and execution boundaries, and decide whether the first-logon continuation can be armed normally, degraded into a manual-login path, or blocked before the handoff can be trusted.
 
 This distinction matters because a successful end of `SetupComplete.cmd` does not by itself mean that the permanent local-admin end state already exists. At that point, the system may be prepared for finalization, may require a degraded continuation path, or may remain in recovery posture. The true finalized state depends on what happens later in `CreatePrimaryAdmin.ps1`, not merely on whether setup reached the end of its post-install control layer.
 
