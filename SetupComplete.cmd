@@ -14,7 +14,7 @@ if exist "%REBOOT_FLAG%" (
 
 :: ------------ config flags ------------
 set "LOG_TS_ENGINE=POWERSHELL"
-set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
+set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=1"
 set "REBOOT_FLAG_CONTENT=need-reboot"
 set "NEEDS_REBOOT=0"
 set "REBOOT_REQUESTED=0"
