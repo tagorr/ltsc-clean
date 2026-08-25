@@ -122,7 +122,7 @@ A Defender privacy posture warning during SetupComplete is a point-in-time, non-
 
 The desired final state is:
 
-- `IsTamperProtected=False`;
+- observed `IsTamperProtected` state (`True` or `False`);
 - `MAPSReporting=0`;
 - effective `SubmitSamplesConsent=2`;
 - policy `SpynetReporting=0` and policy `SubmitSamplesConsent=2`;
@@ -131,9 +131,9 @@ The desired final state is:
 
 Windows Security may visibly warn because Tamper Protection is Off. That warning does not mean Microsoft Defender Antivirus or its local protections are disabled.
 
-If Tamper Protection is already Off and effective MAPS/sample state is `0` / `2`, no Tamper Protection remediation is required, even if SetupComplete recorded an earlier posture warning.
+`IsTamperProtected` may be either `True` or `False`; no Tamper Protection remediation is required when effective MAPS/sample state is `0` / `2`, even if SetupComplete recorded an earlier posture warning.
 
-If Tamper Protection remains On or effective MAPS/sample state differs from `0` / `2`, the operator may turn Tamper Protection Off manually in Windows Security and rerun the retained component, which reapplies its two owned policy values and verifies the current effective state. The current Windows PowerShell session must already be elevated; the script does not self-elevate and does not disable Tamper Protection.
+If effective MAPS/sample state differs from `0` / `2`, inspect the effective Defender policy state and rerun the retained component from an already elevated Windows PowerShell session after resolving the policy enforcement issue. The component does not self-elevate and does not disable or bypass Tamper Protection.
 
 ```powershell
 & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$env:WINDIR\Setup\Scripts\ConfigureDefenderPrivacy.ps1"
@@ -142,7 +142,7 @@ If Tamper Protection remains On or effective MAPS/sample state differs from `0` 
 Read `$LASTEXITCODE` immediately after the command:
 
 - `0` means both owned registry policy values and the desired effective Defender privacy posture were verified;
-- `2` means policy application and state inspection completed, but the effective privacy posture is not currently guaranteed; inspect Tamper Protection and effective MAPS/sample state;
+- `2` means policy application and state inspection completed, but effective `MAPSReporting` or `SubmitSamplesConsent` did not match the required values; inspect the observed Tamper Protection state and effective MAPS/sample state;
 - `1` means a technical execution or verification failure.
 
 `-ExecutionPolicy Bypass` applies only to the spawned Windows PowerShell process and does not permanently change PowerShell execution policy.

@@ -23,7 +23,7 @@ The baseline uses only supported Microsoft mechanisms and favors deterministic, 
 
 This baseline does not attempt to disable Microsoft Defender Antivirus or its local endpoint protections. Real-time protection, behavior monitoring, IOAV protection, and PUA protection remain enabled. `ConfigureDefenderPrivacy.ps1` is the single runtime owner of the machine-policy values `SpynetReporting=0` and `SubmitSamplesConsent=2`.
 
-Successful registry mutation is not treated as proof that Defender currently honors the intended posture. The component separately verifies `IsTamperProtected=False`, effective `MAPSReporting=0`, and effective `SubmitSamplesConsent=2`. It observes Tamper Protection but never disables or bypasses it. A posture mismatch, technical component failure, or missing runtime component becomes a non-fatal hardening warning in `SetupComplete.cmd`; it is not by itself a trusted-continuation failure.
+Successful registry mutation is not treated as proof that Defender currently honors the intended posture. The component separately observes `IsTamperProtected` and verifies effective `MAPSReporting=0` and effective `SubmitSamplesConsent=2`; either Tamper Protection value is compatible with successful privacy verification. Tamper Protection is observation-only and is never disabled or bypassed by this component. A genuine effective MAPS/sample mismatch, technical component failure, or missing runtime component becomes a non-fatal hardening warning in `SetupComplete.cmd`; it is not by itself a trusted-continuation failure.
 
 Windows Security may visibly warn when Tamper Protection is Off. This warning must not be confused with Microsoft Defender Antivirus or its local endpoint protections being disabled.
 

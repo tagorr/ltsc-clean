@@ -103,17 +103,12 @@ try {
     $mapsReporting = [int]$preference.MAPSReporting
     $submitSamplesConsent = [int]$preference.SubmitSamplesConsent
 
-    if ($isTamperProtected) {
-        Write-DefenderPrivacyStatus -Level WARN -Message ("effective posture not guaranteed IsTamperProtected=True MAPSReporting={0} SubmitSamplesConsent={1}; recheck after reboot; if Tamper Protection remains enabled, turn it off manually and rerun this script" -f $mapsReporting, $submitSamplesConsent)
-        exit 2
-    }
-
     if ($mapsReporting -ne 0 -or $submitSamplesConsent -ne 2) {
-        Write-DefenderPrivacyStatus -Level WARN -Message ("effective Defender state mismatch IsTamperProtected=False MAPSReporting={0} SubmitSamplesConsent={1}; rerun this script after resolving Defender policy enforcement" -f $mapsReporting, $submitSamplesConsent)
+        Write-DefenderPrivacyStatus -Level WARN -Message ("effective Defender state mismatch IsTamperProtected={0} MAPSReporting={1} SubmitSamplesConsent={2}; rerun this script after resolving Defender policy enforcement" -f $isTamperProtected, $mapsReporting, $submitSamplesConsent)
         exit 2
     }
 
-    Write-DefenderPrivacyStatus -Level PASS -Message 'effective state verified IsTamperProtected=False MAPSReporting=0 SubmitSamplesConsent=2'
+    Write-DefenderPrivacyStatus -Level PASS -Message ("effective state verified IsTamperProtected={0} MAPSReporting=0 SubmitSamplesConsent=2" -f $isTamperProtected)
     exit 0
 } catch {
     $exceptionMessage = $_.Exception.Message -replace '[\r\n]+', ' '
