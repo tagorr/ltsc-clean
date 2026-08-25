@@ -212,17 +212,19 @@ This is the real handoff between setup orchestration and final system completion
 * if Stage A created a new account and then failed, attempts rollback of that newly created account;
 * performs **Stage B**, which removes temporary autologon state;
 * restores temporary logon policy changes;
-* verifies that cleanup and restoration actually succeeded;
-* if teardown is safe, disables `bootstrap`, removes the scheduled task, and removes both secret files;
+* attempts to disable `bootstrap` and remove the scheduled task;
+* independently verifies the executor postconditions: `bootstrap` is disabled and the `\L2C\CreatePrimaryAdmin` task is absent;
+* if `TeardownEligible` and executor teardown are both verified, removes both secret files;
 * writes the final master outcome log.
 
 **Normal exit**
-The temporary execution bridge is removed and the machine reaches its intended finalized local-admin state.
+The temporary execution bridge is removed and the machine reaches its intended finalized local-admin state; the existing Panther reboot marker is consumed and the machine performs a controlled reboot before normal manual `primaryadmin` sign-in.
 
 **Important alternate exit**
 
 * if Stage A fails, Stage B enters a recovery-oriented path instead of normal teardown;
 * if Winlogon cleanup or logon-policy restoration cannot be verified, transient artifacts are intentionally retained;
+* if executor teardown cannot be verified, both secret files are retained, normal success is blocked, and automatic reboot is suppressed;
 * if secret cleanup fails, the final outcome is not treated as a clean success.
 
 **Flow meaning**
@@ -244,7 +246,7 @@ This is the point where the pipeline either becomes a finalized local baseline o
 * if finalization succeeded, evaluates the reboot signal and handles reboot conservatively.
 
 **Normal exit**
-The machine ends either in a stable post-finalization state or in a controlled reboot transition that follows successful finalization.
+The successful normal path consumes the existing `force-reboot` marker and performs a controlled reboot after successful finalization; after reboot, Windows presents the normal sign-in screen for manual `primaryadmin` sign-in.
 
 **Important alternate exit**
 
@@ -268,7 +270,7 @@ In the normal successful path:
 * `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
 * `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available for elevated post-deployment verification or remediation;
 * temporary Winlogon and logon-policy changes have been restored;
-* the machine is left either stable or in a controlled post-finalization reboot transition.
+* the existing Panther reboot marker is consumed and the machine performs a controlled reboot; after reboot, Windows presents the normal sign-in screen for manual `primaryadmin` sign-in.
 
 If the flow cannot safely reach that state, the project prefers a visible degraded or recovery posture over a falsely clean success.
 

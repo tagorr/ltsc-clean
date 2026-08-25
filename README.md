@@ -1,6 +1,6 @@
-# Windows 10 LTSC 2021 Baseline
+# Windows 11 Enterprise LTSC 2024 Baseline
 
-This repository defines and applies a controlled baseline for Windows 10 Enterprise LTSC 2021, with a clean, quiet and predictable system profile built on supported Microsoft mechanisms.
+This repository defines and applies a controlled baseline for Windows 11 Enterprise LTSC 2024 (EnterpriseS, 24H2, build 26100+), with a clean, quiet and predictable system profile built on supported Microsoft mechanisms.
 
 It uses a staged deployment pipeline that treats continuation, cleanup, and recovery as explicit, verifiable states.
 
@@ -20,7 +20,7 @@ This baseline is intended for a specific system and operating context.
 
 Good fit:
 
-- Windows 10 Enterprise LTSC 2021 systems
+- Windows 11 Enterprise LTSC 2024 systems
 - standalone or simple-network environments without enterprise integration by default
 - operators who want deterministic setup and reviewable outcomes
 - workflows where the primary local admin secret is supplied explicitly by the operator

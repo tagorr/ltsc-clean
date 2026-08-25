@@ -70,7 +70,7 @@ body:
       label: Environment
       description: Include OS edition/build, VM vs bare metal, relevant baseline inputs, and any deviations from documented setup.
       placeholder: |
-        Windows 10 Enterprise LTSC 2021 21H2
+        Windows 11 Enterprise LTSC 2024 24H2
         Hyper-V VM
         Fresh image
         No enterprise integration

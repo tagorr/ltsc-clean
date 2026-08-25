@@ -52,6 +52,7 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] `SetupComplete.cmd` preserves a deterministic fail-closed control model for servicing, validation, scheduling, and final RC selection.
 * [ ] Servicing logic, secret validation, Stage B scheduling, and reboot signaling remain clearly ordered.
 * [ ] Platform-gate mismatches fail closed and flow to the shared final return-code path.
+* [ ] The platform gate requires `EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, and `STRICT_DISPLAYVERSION=1`.
 * [ ] The mandatory system-wide Local GPO User Configuration gate runs after the platform gate and before the normal baseline workload.
 * [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is treated as the required tracked four-entry policy payload.
 * [ ] `UserBaselinePolicies.txt` contains exactly the approved `DisableWindowsSpotlightFeatures=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0` DWORD values under their intended User Configuration registry paths.
@@ -135,6 +136,9 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Stage B owns post-logon finalization and teardown decisions.
 * [ ] Stage B resets temporary Winlogon autologon state and restores temporary policy relaxations according to mode.
 * [ ] Teardown and cleanup occur only when verification confirms that they are safe and eligible.
+* [ ] Stage B independently verifies that `bootstrap` is disabled and `\L2C\CreatePrimaryAdmin` is absent; mutation return codes are diagnostic evidence rather than final-state proof.
+* [ ] `BootstrapDisabledVerified`, `ContinuationTaskAbsentVerified`, and `ExecutorTeardownVerified` are required for normal executor teardown completion.
+* [ ] False or unproven executor teardown blocks normal Stage B success, normal-path secret deletion, and automatic post-success reboot.
 * [ ] When teardown is not eligible, Stage B preserves the recovery posture required for controlled follow-up.
 * [ ] Stage B alone may consume a pending reboot on the normal success path; recovery posture suppresses automatic reboot consumption.
 

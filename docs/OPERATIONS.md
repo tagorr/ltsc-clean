@@ -14,7 +14,7 @@ Use `docs/TROUBLESHOOTING.md` for diagnosis, failure analysis, and recovery work
 
 Before installation, prepare:
 
-- supported Windows 10 LTSC 2021 installation media;
+- supported Windows 11 Enterprise LTSC 2024 installation media;
 - `Autounattend.xml` at the media root;
 - these baseline files under `%WINDIR%\Setup\Scripts`:
   - `PreOOBE.cmd`
@@ -198,7 +198,7 @@ For a normal completed run, confirm the following:
 - the machine Local GPO User Configuration contains the four entries defined by `UserBaselinePolicies.txt`;
 - after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;
 - temporary Winlogon and logon-policy changes have been restored;
-- the system is ready for use, or completes with a controlled reboot if a reboot is still required.
+- after successful Stage B, the existing controlled reboot occurs; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually.
 
 ### Evidence checks
 
