@@ -19,7 +19,7 @@ jobs:
           set -euo pipefail
           offenders=$(
             git ls-files -z -- '*.ps1' '*.cmd' '*.bat' \
-            | xargs -0 -I{} sh -c "awk '(/\r$/){next} {exit 1} END{exit 0}' '{}' || echo '{}'"
+            | xargs -0 -I{} sh -c "awk '(/\r$/){next} {bad=1} END{exit bad}' '{}' || echo '{}'"
           )
           if [ -n "$offenders" ]; then
             echo "::error::Found LF-only line endings in scripts (expect CRLF):"
