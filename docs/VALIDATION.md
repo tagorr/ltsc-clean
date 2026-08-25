@@ -163,7 +163,7 @@ On a clean supported deployment, confirm that:
 
 - `ConfigureDefenderPrivacy.ps1` applies and verifies policy `SpynetReporting=0` and `SubmitSamplesConsent=2`;
 - the policy registry result is reported separately from effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state;
-- Tamper Protection enabled or an effective-state mismatch produces exit `2` and a non-fatal SetupComplete hardening warning;
+- an effective `MAPSReporting` or `SubmitSamplesConsent` mismatch produces exit `2` and a non-fatal SetupComplete hardening warning; `IsTamperProtected` is observed only and either value is acceptable;
 - a technical nonzero result or missing component is also non-fatal to trusted continuation;
 - the Defender warning alone does not block secret validation, primary-admin provisioning, Stage A, Stage B, cleanup, continuation, or reboot;
 - final Defender state is checked after the normal provisioning reboot;
@@ -174,14 +174,14 @@ On a clean supported deployment, confirm that:
 Completed clean-deployment validation established the following significant empirical behavior:
 
 - during SetupComplete, both owned policy values verified successfully, effective MAPS/sample state was already `0` / `2`, and `IsTamperProtected` was True;
-- the component therefore produced the posture-warning outcome, SetupComplete recorded one Defender privacy hardening warning, finished `SUCCESS_WITH_HARDENING_WARNINGS`, and returned `0`;
+- the prior component run produced the posture-warning outcome, and SetupComplete recorded one Defender privacy hardening warning, finished `SUCCESS_WITH_HARDENING_WARNINGS`, and returned `0`; that outcome reflected the superseded Tamper Protection gate, not the current contract;
 - Stage A, Stage B, cleanup, continuation, and the required reboot still completed successfully;
 - without operator Tamper Protection action or a manual component rerun, Microsoft Defender Operational Event ID 5007 later recorded `HKLM\SOFTWARE\Microsoft\Windows Defender\Features\TamperProtection` changing from `0x1` to `0x0` during provisioning/reboot;
-- after reboot, `IsTamperProtected=False`, effective MAPS/sample state was `0` / `2`, both owned policy values remained `0` / `2`, local Defender protections remained enabled, and the component remained installed;
+- after reboot, the observed `IsTamperProtected` state was `False`, effective MAPS/sample state was `0` / `2`, both owned policy values remained `0` / `2`, local Defender protections remained enabled, and the component remained installed;
 - a subsequent elevated manual execution returned PASS for policy verification, PASS for effective-state verification, and exit `0`;
 - the verified state survived a forced computer-policy refresh and another normal reboot.
 
-This evidence proves that the automatic Tamper Protection transition occurred in the tested clean deployment. It does not establish the internal cause and does not guarantee that the same transition will occur after every deployment. The SetupComplete warning remains accurate because it reports the effective state observable when the component runs.
+This evidence documents an automatic Tamper Protection transition observed in the tested clean deployment. It does not establish the internal cause, guarantee that the transition will recur, or make the observed `False` state a requirement. Under the current contract, Tamper Protection remains diagnostic only; effective privacy success depends on the MAPS/sample values, and only their mismatch produces the posture warning.
 
 ## Scenario Selection by Change Type
 
