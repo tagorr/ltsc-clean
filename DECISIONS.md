@@ -8,9 +8,9 @@ It records the key decisions, rationale, and scope boundaries that define the pr
 
 ## Baseline principles and scope
 
-This project defines a lean, predictable Windows 10 LTSC 2021 baseline designed to reduce background activity and telemetry while keeping default workstation behavior quiet, legible, and stable.
+This project defines a lean, predictable Windows 11 Enterprise LTSC 2024 baseline designed to reduce background activity and telemetry while keeping default workstation behavior quiet, legible, and stable.
 
-The supported target is Windows 10 Enterprise LTSC 2021, version 21H2. Closely aligned Enterprise variants are in scope only where the same documented policy assumptions remain valid.
+The supported target is Windows 11 Enterprise LTSC 2024 (`EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, with strict display-version enforcement). Closely aligned Enterprise variants are not treated as supported unless they satisfy the exact runtime gate.
 
 The baseline is intended for standalone or simple-network environments. It is not designed around corporate integration requirements or environments that depend on automatic proxy discovery by default.
 
@@ -59,10 +59,11 @@ The baseline does not treat broad version similarity as sufficient evidence of c
 It validates the supported platform explicitly against the expected baseline:
 
 - `EditionID=EnterpriseS`
-- `DisplayVersion=21H2`
-- `CurrentBuild >= 19044`
+- `DisplayVersion=24H2`
+- `CurrentBuild >= 26100`
+- `STRICT_DISPLAYVERSION=1`
 
-Edition and build mismatches are treated as unsupported. `DisplayVersion` checking is strict by default, with opt-out allowed only where separately documented.
+Edition and build mismatches are treated as unsupported. `DisplayVersion` checking is strict in the current baseline.
 
 This compatibility posture is intentional. The baseline prefers a fail-closed outcome over claiming support where policy behavior, telemetry semantics, or servicing assumptions may differ.
 

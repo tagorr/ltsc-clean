@@ -10,7 +10,7 @@ It makes the system readable as a whole: its components, state transitions, runt
 
 ## System overview
 
-This repository implements a controlled Windows 10 LTSC 2021 baseline through a staged setup pipeline.
+This repository implements a controlled Windows 11 Enterprise LTSC 2024 baseline through a staged setup pipeline.
 
 The system begins with a deliberately narrow unattended entry and then moves through early preparation, post-install orchestration, and first-logon finalization.
 
@@ -39,7 +39,7 @@ A state in which the pipeline does not trust the handoff enough to arm continuat
 The phase that establishes permanent local-admin state, restores temporary state where required, and determines whether the machine can be truthfully considered finalized. In this project, `CreatePrimaryAdmin.ps1` owns finalization.
 
 **Verified completion**  
-A final state in which the permanent intended state was established, temporary continuation state was restored or removed where appropriate, cleanup was performed only when verified safe, and the evidence surfaces support the claim of completion.
+A final state in which the permanent intended state was established, temporary continuation state was restored or removed where appropriate, executor teardown was independently verified (`bootstrap` disabled and `\L2C\CreatePrimaryAdmin` absent), cleanup was performed only when verified safe, and the evidence surfaces support the claim of completion.
 
 **Retained recovery-signaling state**  
 A deliberate non-clean state in which selected temporary or control artifacts remain present so the system stays inspectable and recoverable instead of claiming a falsely clean success.
@@ -110,7 +110,7 @@ Its role is broader than helper logic. It formalizes a trust gate that the rest 
 
 Its Stage A establishes the permanent local administrator state.
 
-Its Stage B verifies whether cleanup and restoration are safe, performs or preserves teardown accordingly, emits the master outcome log, and decides whether reboot signaling may be consumed or must remain retained.
+Its Stage B restores and verifies the temporary logon state required to establish teardown eligibility, derives whether executor teardown may proceed, attempts executor teardown and independently verifies the final postconditions (`bootstrap` disabled and `\L2C\CreatePrimaryAdmin` absent), performs normal-path secret cleanup only when teardown eligibility and executor verification are both satisfied, emits the master outcome log, and decides whether reboot signaling may be consumed or must remain retained.
 
 This script owns the true end-state boundary of the system.
 
@@ -326,7 +326,7 @@ A machine is truthfully finalized only when:
 - cleanup was performed only when verified safe
 - the evidence surfaces support the claimed outcome
 
-Cleanup is therefore part of completion semantics, not a cosmetic afterthought.
+Cleanup is therefore part of completion semantics, not a cosmetic afterthought. Normal success and normal-path secret deletion require verified executor teardown.
 
 ### Degraded continuation
 
@@ -350,7 +350,7 @@ Instead, it may record deferred reboot requirement through the Panther reboot fl
 
 That signal is interpreted later by finalization logic.
 
-Stage B is the only place where reboot signaling may be consumed or suppressed as part of the verified completion path.
+Stage B is the only place where reboot signaling may be consumed or suppressed as part of the verified completion path. In the current normal baseline, successful Stage B consumes the existing marker and performs the controlled reboot; failure and recovery paths suppress it.
 
 The distinction between:
 - reboot requested

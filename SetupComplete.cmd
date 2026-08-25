@@ -1,6 +1,6 @@
 @echo off
 REM SPDX-License-Identifier: MIT
-REM Windows 10 LTSC 2021 - Clean ^& Quiet Baseline (Official Tools Only)
+REM Windows 11 LTSC 2024 - Clean ^& Quiet Baseline (Official Tools Only)
 setlocal EnableExtensions
 
 :: ------------ logging ------------
@@ -14,7 +14,7 @@ if exist "%REBOOT_FLAG%" (
 
 :: ------------ config flags ------------
 set "LOG_TS_ENGINE=POWERSHELL"
-set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=0"
+set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=1"
 set "REBOOT_FLAG_CONTENT=need-reboot"
 set "NEEDS_REBOOT=0"
 set "REBOOT_REQUESTED=0"
@@ -56,8 +56,8 @@ call :log "----- SetupComplete started -----"
 
 :: --- compatibility controls ---
 set "REQUIRED_EDITION=EnterpriseS"
-set "REQUIRED_DV=21H2"
-set "MIN_BUILD=19044"
+set "REQUIRED_DV=24H2"
+set "MIN_BUILD=26100"
 set "STRICT_DISPLAYVERSION=1"  :: 1 = abort on DV mismatch, 0 = warn and continue
 
 :: ------------ platform gate ------------
@@ -394,6 +394,35 @@ if defined DISM_HARD_FAIL (
   goto :eof
 )
 if not defined FN goto :eof
+set "_feature_state="
+set "_feature_probe_out="
+set "_feature_probe_rc="
+if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+set "_feature_probe_out=%SystemRoot%\Temp\l2c_feature_probe_%RANDOM%_%RANDOM%.txt"
+if exist "%_feature_probe_out%" del /f /q "%_feature_probe_out%" >nul 2>&1
+call :log "[INFO] %LG% - probing feature state"
+call :run_dism_capture_nonfatal "%_feature_probe_out%" /Get-FeatureInfo /FeatureName:%FN% /English
+set "_feature_probe_rc=%L2C_LAST_DISM_RC%"
+if "%_feature_probe_rc%"=="-2146498548" goto :_feature_probe_absent
+if "%_feature_probe_rc%"=="2148468748" goto :_feature_probe_absent
+if not "%_feature_probe_rc%"=="0" goto :_feature_probe_unexpected
+for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_feature_probe_out%"') do set "_feature_state=%%S"
+if not defined _feature_state goto :_feature_probe_unproven
+set "_feature_state=%_feature_state: =%"
+if /I "%_feature_state%"=="Disabled" goto :_feature_probe_disabled
+if /I "%_feature_state%"=="Enabled" goto :_feature_probe_enabled
+goto :_feature_probe_unproven
+
+:_feature_probe_absent
+call :log "[INFO] %LG% feature absent in current image; skip disable (probe RC=%_feature_probe_rc%)"
+goto :_feature_disable_cleanup
+
+:_feature_probe_disabled
+call :log "[INFO] %LG% feature state=Disabled; skip disable"
+goto :_feature_disable_cleanup
+
+:_feature_probe_enabled
+call :log "[INFO] %LG% feature state=Enabled"
 call :log "[INFO] %LG% - attempting disable"
 call :run_dism /Disable-Feature /FeatureName:%FN%
 set "RC=%ERRORLEVEL%"
@@ -401,6 +430,26 @@ if defined DISM_HARD_FAIL (
   set "FAILED=1"
   call :log "[ERROR] %LG% disable failed (RC=%RC%)"
 )
+goto :_feature_disable_cleanup
+
+:_feature_probe_unexpected
+call :log "[ERROR] %LG% feature state probe failed (RC=%_feature_probe_rc%)"
+set "L2C_DISM_RC=%_feature_probe_rc%"
+call :dism_fatal
+goto :_feature_disable_cleanup
+
+:_feature_probe_unproven
+call :log "[ERROR] %LG% feature state probe did not prove Enabled or Disabled (state=%_feature_state%)"
+set "L2C_DISM_RC=1"
+call :dism_fatal
+goto :_feature_disable_cleanup
+
+:_feature_disable_cleanup
+if defined _feature_probe_out if exist "%_feature_probe_out%" del /f /q "%_feature_probe_out%" >nul 2>&1
+if defined _feature_probe_out if exist "%_feature_probe_out%" call :hardwarn DISM feature probe output cleanup failed file=%_feature_probe_out%
+set "_feature_state="
+set "_feature_probe_out="
+set "_feature_probe_rc="
 goto :eof
 
 :remove_capability
@@ -822,6 +871,8 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Repo
 REM -- Services: disable and log (WerSvc is disabled; queue handled by task) --
 REM call :svc_disable "WerSvc"
 REM -- Scheduled Tasks: CEIP / Appraiser / StartupAppTask / DiskDiagnostic / WER Queue --
+call :task_disable "\Microsoft\Windows\Application Experience\MareBackup"
+call :task_disable "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser Exp"
 call :task_disable "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser"
 call :task_disable "\Microsoft\Windows\Application Experience\ProgramDataUpdater"
 call :task_disable "\Microsoft\Windows\Application Experience\StartupAppTask"
@@ -887,28 +938,26 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGam
 call :svc_disable "XblGameSave"
 call :svc_disable "XboxGipSvc"
 call :svc_disable "XboxNetApiSvc"
-:: Optional removal of Xbox Game Bar if present (harmless on LTSC if missing)
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-AppxPackage -AllUsers *XboxGamingOverlay* ^| Remove-AppxPackage" >nul 2>&1
 
 :: ------------ Features (DISM /Disable-Feature) ------------
 call :log "[SECTION] Features"
 call :disable_feature_if_enabled "SMB1Protocol"                      "feat_smb1"
 call :disable_feature_if_enabled "MicrosoftWindowsPowerShellV2"      "feat_ps2"
 call :disable_feature_if_enabled "Printing-XPSServices-Features"     "feat_xps"
-call :disable_feature_if_enabled "FaxServicesClientPackage"          "feat_fax"
-call :disable_feature_if_enabled "ScanManagement"                    "feat_scan"
 call :disable_feature_if_enabled "WorkFolders-Client"                "feat_workfolders"
-call :disable_feature_if_enabled "AppCompatStepsRecorder"            "feat_psr"
 call :disable_feature_if_enabled "MSRDC-Infrastructure"              "feat_rdc"
-call :disable_feature_if_enabled "Internet-Explorer-Optional-amd64"  "feat_ie"
 call :disable_feature_if_enabled "WindowsMediaPlayer"                "feat_wmp"
 call :disable_feature_if_enabled "TelnetClient"                      "feat_telnet"
 call :disable_feature_if_enabled "TFTP"                              "feat_tftp"
-call :disable_feature_if_enabled "RemoteAssistance"                  "feat_ra"
+
+:: ------------ Remote Assistance behavior policy and firewall ------------
+call :log "[SECTION] Remote Assistance behavior policy and firewall"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowToGetHelp" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowUnsolicited" "REG_DWORD" "0"
+call :fw_disable_remote_assistance
 
 :: ------------ Capabilities (DISM /Remove-Capability) ------------
 call :log "[SECTION] Capabilities"
-call :remove_capability "App.Support.QuickAssist~~~~0.0.1.0" "QuickAssist"
 call :remove_capability "SNMP.Client~~~~0.0.1.0"             "SNMP.Client"
 call :remove_capability "WMI-SNMP-Provider.Client~~~~0.0.1.0"       "WMI.SNMP.Provider"
 
@@ -1829,6 +1878,54 @@ exit /b 0
   )
   set "TS=%DATE% %TIME%"
 goto :eof
+
+:fw_disable_remote_assistance
+set "RA_FW_GROUP=Remote Assistance"
+set "RA_FW_QUERY_FILE=%SystemRoot%\Temp\l2c_remote_assistance_firewall_%RANDOM%_%RANDOM%.txt"
+set "RA_FW_SET_RC="
+set "RA_FW_QUERY_RC="
+call :log "[STEP] Disable firewall rule group: %RA_FW_GROUP%"
+if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+netsh advfirewall firewall set rule group="%RA_FW_GROUP%" new enable=no >nul 2>&1
+set "RA_FW_SET_RC=%ERRORLEVEL%"
+if not "%RA_FW_SET_RC%"=="0" goto :fw_disable_remote_assistance_set_failed
+goto :fw_disable_remote_assistance_verify
+
+:fw_disable_remote_assistance_set_failed
+call :log "[WARN] Remote Assistance firewall group disable failed rc=%RA_FW_SET_RC%"
+call :hardwarn Remote Assistance firewall group disable failed rc=%RA_FW_SET_RC%
+goto :fw_disable_remote_assistance_verify
+
+:fw_disable_remote_assistance_verify
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $rules=@(Get-NetFirewallRule -DisplayGroup 'Remote Assistance' -ErrorAction Stop); if ($rules.Count -eq 0) { exit 3 }; foreach ($rule in $rules) { if ([string]$rule.Enabled -eq 'True') { exit 2 } }; exit 0" >"%RA_FW_QUERY_FILE%" 2>&1
+set "RA_FW_QUERY_RC=%ERRORLEVEL%"
+if "%RA_FW_QUERY_RC%"=="2" goto :fw_disable_remote_assistance_enabled
+if not "%RA_FW_QUERY_RC%"=="0" goto :fw_disable_remote_assistance_query_failed
+if not "%RA_FW_SET_RC%"=="0" goto :fw_disable_remote_assistance_mutation_failed_postcondition
+call :log "[OK] Remote Assistance firewall group verified disabled (no enabled rules found)"
+goto :fw_disable_remote_assistance_cleanup
+
+:fw_disable_remote_assistance_query_failed
+call :log "[WARN] Remote Assistance firewall group verification query failed rc=%RA_FW_QUERY_RC%"
+call :hardwarn Remote Assistance firewall group verification query failed rc=%RA_FW_QUERY_RC%
+goto :fw_disable_remote_assistance_cleanup
+
+:fw_disable_remote_assistance_enabled
+call :log "[WARN] Remote Assistance firewall group verification found enabled rules"
+call :hardwarn Remote Assistance firewall group verification found enabled rules
+goto :fw_disable_remote_assistance_cleanup
+
+:fw_disable_remote_assistance_mutation_failed_postcondition
+call :log "[WARN] Remote Assistance firewall group has no enabled rules, but disable command failed rc=%RA_FW_SET_RC%"
+goto :fw_disable_remote_assistance_cleanup
+
+:fw_disable_remote_assistance_cleanup
+del /q "%RA_FW_QUERY_FILE%" >nul 2>&1
+set "RA_FW_GROUP="
+set "RA_FW_QUERY_FILE="
+set "RA_FW_SET_RC="
+set "RA_FW_QUERY_RC="
+exit /b 0
 
 :fw_block_diagtrack
 setlocal EnableExtensions

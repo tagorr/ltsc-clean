@@ -231,6 +231,64 @@ function Test-ZeroDisabled([object]$Value) {
   }
 }
 
+function Test-BootstrapDisabled {
+  $reasons = New-Object System.Collections.Generic.List[string]
+  $state = 'unknown'
+  try {
+    $users = @(Get-LocalUser -Name 'bootstrap' -ErrorAction Stop)
+    if ($users.Count -eq 0) {
+      $state = 'missing'
+      [void]$reasons.Add('bootstrap account missing')
+    } elseif ($users.Count -ne 1) {
+      $state = 'ambiguous'
+      [void]$reasons.Add(('bootstrap account query returned {0} objects' -f $users.Count))
+    } else {
+      $enabled = $users[0].PSObject.Properties['Enabled']
+      if ($null -eq $enabled -or $enabled.Value -isnot [bool]) {
+        $state = 'unknown'
+        [void]$reasons.Add('bootstrap Enabled state missing or unusable')
+      } elseif ($enabled.Value) {
+        $state = 'enabled'
+        [void]$reasons.Add('bootstrap account still enabled')
+      } else {
+        $state = 'disabled'
+      }
+    }
+  } catch {
+    $isMissing = $false
+    try { $isMissing = ($_.CategoryInfo -and $_.CategoryInfo.Category -eq 'ObjectNotFound') } catch {}
+    if ($isMissing) {
+      $state = 'missing'
+      [void]$reasons.Add('bootstrap account missing')
+    } else {
+      $state = 'error'
+      $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+      [void]$reasons.Add(('bootstrap verification/read failure: {0}' -f $msg))
+    }
+  }
+  return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); State = $state; Reasons = @($reasons) }
+}
+
+function Test-ContinuationTaskAbsent {
+  $reasons = New-Object System.Collections.Generic.List[string]
+  $state = 'unknown'
+  try {
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop)
+    $matches = @($tasks | Where-Object { $_.TaskPath -eq '\L2C\' -and $_.TaskName -eq 'CreatePrimaryAdmin' })
+    if ($matches.Count -gt 0) {
+      $state = 'present'
+      [void]$reasons.Add('continuation task still registered (TaskPath=\L2C\ TaskName=CreatePrimaryAdmin)')
+    } else {
+      $state = 'absent'
+    }
+  } catch {
+    $state = 'error'
+    $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+    [void]$reasons.Add(('scheduled-task verification/read failure: {0}' -f $msg))
+  }
+  return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); State = $state; Reasons = @($reasons) }
+}
+
 function Test-WinlogonSanitized([string]$WinlogonKeyPath) {
   $reasons = New-Object System.Collections.Generic.List[string]
 
@@ -531,6 +589,9 @@ $StageB_Succeeded = $false
 $WinlogonSanitizedOk = $true
 $LogonPolicyRestoredOk = $true
 $TeardownEligible = $false
+$BootstrapDisabledVerified = $false
+$ContinuationTaskAbsentVerified = $false
+$ExecutorTeardownVerified = $false
 
 Write-SetupLog "Begin A: Primary admin creation/config"
 try {
@@ -825,11 +886,22 @@ try {
     & "$env:SystemRoot\System32\net.exe" user bootstrap /active:no | Out-Null 2>$null
     $bootstrapRC = $LASTEXITCODE
     if ($bootstrapRC -eq 0) {
-      Write-SetupLog "bootstrap deactivated"
+      Write-SetupLog "bootstrap deactivation mutation completed (rc=0)"
     } else {
       Write-SetupLog ("bootstrap deactivate exitcode {0}" -f $bootstrapRC) 'WARN'
     }
     $finalLogEntries += ("[{0}] net.exe user bootstrap /active:no rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapRC)
+
+    $bootstrapVerification = Test-BootstrapDisabled
+    $BootstrapDisabledVerified = [bool]$bootstrapVerification.Ok
+    if ($BootstrapDisabledVerified) {
+      Write-SetupLog ("bootstrap final state = disabled, verified (mutation_rc={0})" -f $bootstrapRC)
+    } else {
+      Write-SetupLog ("HARD FAIL: bootstrap final state verification failed (state={0}; mutation_rc={1})" -f $bootstrapVerification.State, $bootstrapRC) 'ERROR'
+      foreach ($reason in $bootstrapVerification.Reasons) { Write-SetupLog ("Bootstrap verify: {0}" -f $reason) 'ERROR' }
+    }
+    $finalLogEntries += ("[{0}] bootstrap final state={1} verified={2} mutation_rc={3}" -f ([DateTime]::UtcNow.ToString('o')), $bootstrapVerification.State, $BootstrapDisabledVerified, $bootstrapRC)
+    foreach ($reason in $bootstrapVerification.Reasons) { $finalLogEntries += ("[{0}] Bootstrap verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $reason) }
 
     Write-Verbose "Stage B: deleting scheduled task \L2C\CreatePrimaryAdmin"
     $taskDeleteRC = -1
@@ -837,7 +909,7 @@ try {
       & "$env:SystemRoot\System32\schtasks.exe" /Delete /TN '\L2C\CreatePrimaryAdmin' /F | Out-Null 2>$null
       $taskDeleteRC = $LASTEXITCODE
       if ($taskDeleteRC -eq 0) {
-        Write-SetupLog "Scheduled task \L2C\CreatePrimaryAdmin removed"
+        Write-SetupLog "Scheduled task deletion mutation completed (rc=0)"
       } elseif ($taskDeleteRC -ne 0) {
         Write-SetupLog ("Scheduled task delete exitcode {0}" -f $taskDeleteRC) 'WARN'
       }
@@ -845,6 +917,25 @@ try {
       Write-SetupLog "Scheduled task delete failed: $($_.Exception.Message)" 'WARN'
     }
     $finalLogEntries += ("[{0}] schtasks.exe /Delete rc={1}" -f ([DateTime]::UtcNow.ToString('o')), $taskDeleteRC)
+
+    $taskVerification = Test-ContinuationTaskAbsent
+    $ContinuationTaskAbsentVerified = [bool]$taskVerification.Ok
+    if ($ContinuationTaskAbsentVerified) {
+      Write-SetupLog ("continuation task final state = absent, verified (mutation_rc={0})" -f $taskDeleteRC)
+    } else {
+      Write-SetupLog ("HARD FAIL: continuation task final state verification failed (state={0}; mutation_rc={1})" -f $taskVerification.State, $taskDeleteRC) 'ERROR'
+      foreach ($reason in $taskVerification.Reasons) { Write-SetupLog ("Scheduled-task verify: {0}" -f $reason) 'ERROR' }
+    }
+    $finalLogEntries += ("[{0}] continuation task final state={1} verified={2} mutation_rc={3}" -f ([DateTime]::UtcNow.ToString('o')), $taskVerification.State, $ContinuationTaskAbsentVerified, $taskDeleteRC)
+    foreach ($reason in $taskVerification.Reasons) { $finalLogEntries += ("[{0}] Scheduled-task verify failure: {1}" -f ([DateTime]::UtcNow.ToString('o')), $reason) }
+
+    $ExecutorTeardownVerified = ($BootstrapDisabledVerified -and $ContinuationTaskAbsentVerified)
+    if ($ExecutorTeardownVerified) {
+      Write-SetupLog 'Executor teardown postconditions verified (bootstrap disabled; continuation task absent)'
+    } else {
+      Write-SetupLog 'HARD FAIL: executor teardown postconditions not verified; normal Stage B success is blocked' 'ERROR'
+    }
+    $finalLogEntries += ("[{0}] executor teardown verified={1} bootstrap_disabled_verified={2} continuation_task_absent_verified={3}" -f ([DateTime]::UtcNow.ToString('o')), $ExecutorTeardownVerified, $BootstrapDisabledVerified, $ContinuationTaskAbsentVerified)
   } elseif ($isRecovery) {
     Write-SetupLog "Recovery mode: bootstrap account remains enabled and scheduled task retained" 'WARN'
   } elseif (-not $WinlogonSanitizedOk) {
@@ -856,7 +947,7 @@ try {
   # Stage B: remove transient password source files (best-effort)
   $pwCleanupState = 'skipped'
   $primaryPwCleanupState = 'skipped'
-  if ($TeardownEligible) {
+  if ($TeardownEligible -and $ExecutorTeardownVerified) {
     $pwCleanupState = 'unknown'
     $primaryPwCleanupState = 'unknown'
     try {
@@ -888,6 +979,10 @@ try {
       Write-SetupLog ("primaryadmin.pw delete error: {0}" -f $_.Exception.Message) 'ERROR'
       $primaryPwCleanupState = 'error'
     }
+  } elseif ($TeardownEligible -and -not $ExecutorTeardownVerified) {
+    Write-SetupLog 'Executor teardown verification failed; preserving bootstrap.pw and primaryadmin.pw' 'ERROR'
+    $pwCleanupState = 'preserved'
+    $primaryPwCleanupState = 'preserved'
   } elseif ($isRecovery) {
     Write-SetupLog 'Recovery mode: preserving bootstrap.pw and primaryadmin.pw for another Stage A attempt' 'WARN'
     $pwCleanupState = 'preserved'
@@ -930,6 +1025,8 @@ try {
     $outcomeLine = 'OUTCOME: FAIL - Winlogon cleanup verification failed (executor/bootstrap retained)'
   } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
     $outcomeLine = 'OUTCOME: FAIL - logon policy restore verification failed (executor/bootstrap retained)'
+  } elseif ($StageA_Succeeded -and (-not $ExecutorTeardownVerified)) {
+    $outcomeLine = 'OUTCOME: FAIL - executor teardown verification failed (bootstrap/task postconditions not proven)'
   } elseif ($StageA_Succeeded) {
     $outcomeLine = 'OUTCOME: SUCCESS'
   } else {
@@ -938,7 +1035,7 @@ try {
   $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
   $sw.WriteLine($outcomeLine)
   $sw.Dispose()
-  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
+  $outcomeLevel = if ($SecretCleanupError -or (-not $WinlogonSanitizedOk) -or ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) -or ($StageA_Succeeded -and (-not $ExecutorTeardownVerified))) { 'ERROR' } elseif ($StageA_Succeeded -and -not $StageAAbortReason) { 'INFO' } else { 'ERROR' }
   Write-SetupLog $outcomeLine $outcomeLevel
   if ($outcomeLine -eq 'OUTCOME: SUCCESS') {
     $preOobeMarker = Join-Path $env:WINDIR 'Panther\preoobe_warnings.flag'
@@ -967,6 +1064,10 @@ try {
   } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
     Write-SetupLog "End B (FAIL - logon policy restore verification failed)" 'ERROR'
     if ($rc -eq 0) { $rc = 6 }
+    $StageB_Succeeded = $false
+  } elseif ($StageA_Succeeded -and (-not $ExecutorTeardownVerified)) {
+    Write-SetupLog "End B (FAIL - executor teardown verification failed)" 'ERROR'
+    if ($rc -eq 0) { $rc = 7 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded) {
     Write-SetupLog "End B (SUCCESS)"

@@ -11,7 +11,7 @@ Use this document to prepare and run the baseline for the first time. It covers:
 
 ## Before You Start  
   
-- Use supported Windows 10 LTSC 2021 installation media;  
+- Use supported Windows 11 Enterprise LTSC 2024 installation media;
 - Use the `Autounattend.xml` file from this repository and place it at the media root;
 - Stage these baseline files under `%WINDIR%\Setup\Scripts`:  
   - `PreOOBE.cmd`  
@@ -44,7 +44,7 @@ Disk and partition selection remains intentionally manual because `Autounattend.
 - Microsoft Defender Antivirus and its local protections remain enabled;
 - after the normal provisioning reboot, the final Defender privacy state is checked as described in [Operations](OPERATIONS.md); a SetupComplete Defender privacy hardening warning does not by itself mean deployment failed;
 - temporary Winlogon and logon-policy changes have been restored;
-- the system is ready for use, or performs a controlled reboot if one is still required.
+- after successful Stage B, the existing controlled reboot occurs; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually.
 
 ## If Normal Completion Does Not Happen
 

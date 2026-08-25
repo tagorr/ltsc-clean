@@ -1,5 +1,5 @@
 @echo off
-REM Windows 10 LTSC 2021 Clean & Quiet - PreOOBE (specialize)
+REM Windows 11 Enterprise LTSC 2024 Clean & Quiet - PreOOBE (specialize)
 REM Applies privacy/account policies BEFORE OOBE, logs to Panther
 REM Encoding: UTF-8 (no BOM), EOL: CRLF
 
