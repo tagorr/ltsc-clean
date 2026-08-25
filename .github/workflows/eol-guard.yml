@@ -62,6 +62,7 @@ jobs:
           
           bom_files = []
           nul_files = []
+          invalid_utf8_files = []
           md_cr_files = []
           read_errors = []
           
@@ -91,10 +92,16 @@ jobs:
                           nul_files.append(path)
                       if found_md_cr:
                           md_cr_files.append(path)
+
+                      try:
+                          with open(path, "rb") as utf8_handle:
+                              utf8_handle.read().decode("utf-8", errors="strict")
+                      except UnicodeDecodeError:
+                          invalid_utf8_files.append(path)
               except Exception as e:
                   read_errors.append(f"{path}: {e}")
-          
-          if bom_files or nul_files or md_cr_files or read_errors:
+
+          if bom_files or nul_files or invalid_utf8_files or md_cr_files or read_errors:
               print("::error::CI text file hygiene checks failed.")
               if bom_files:
                   print("")
@@ -105,6 +112,11 @@ jobs:
                   print("")
                   print("NUL byte detected (00). Remove NUL bytes (or fix mistaken binary-as-text) in:")
                   for p in sorted(nul_files):
+                      print(f"  - {p}")
+              if invalid_utf8_files:
+                  print("")
+                  print("Invalid UTF-8 byte sequence detected in:")
+                  for p in sorted(invalid_utf8_files):
                       print(f"  - {p}")
               if md_cr_files:
                   print("")
