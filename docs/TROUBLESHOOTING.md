@@ -50,7 +50,7 @@ A change in Tamper Protection during provisioning may be visible in Microsoft De
 
 Use this section when Stage B appears to have run, but the resulting machine state does not match the expected final state.
 
-Start with the current-run evidence. If the most recent `%ProgramData%\l2c_master_<timestamp>.log` exists, use it as the primary Stage B record. Otherwise, use `%WINDIR%\Panther\SetupComplete.log` to determine how far continuation progressed and whether finalization stopped before the master log was written.
+Start with the current-run evidence. Use the most recent `%ProgramData%\l2c_master_<timestamp>.log`, when present, as the primary Stage A/Stage B and teardown record, but always inspect `%WINDIR%\Panther\SetupComplete.log` for reboot-finalization diagnostics; obtain or inspect the Stage B process result separately when available. The runtime does not guarantee that this process result is persisted in either log. If the master log is absent, use `SetupComplete.log` to determine how far continuation progressed and whether finalization stopped before the master log was written.
 
 Check:
 
@@ -59,11 +59,12 @@ Check:
 - the Stage B result, including failed or aborted finalization;
 - whether logon-policy restore or Winlogon cleanup verification failed, and whether teardown was blocked as a result;
 - whether secret cleanup completed;
-- whether reboot handling completed or was suppressed.
+- whether reboot handling completed or was suppressed;
+- whether the process returned reboot-finalization RC 8, unless an earlier nonzero result took precedence.
 
 Focus on the meaning of the evidence rather than on any single line in isolation:
 
-- `OUTCOME: SUCCESS` together with completed cleanup and restoration supports normal finalization;
+- `OUTCOME: SUCCESS` together with completed cleanup and restoration supports provisioning and teardown success, but does not by itself prove that automatic shutdown scheduling was accepted; check `SetupComplete.log` and, when available, the separate process result;
 - any final fail or aborted outcome means the machine must not be treated as finalized;
 - retained task state, retained secrets, an enabled `bootstrap` account, or reboot suppression indicate retained recovery state rather than normal completion.
 
@@ -125,11 +126,15 @@ The reboot flag preserves a pending reboot requirement across continuation steps
 
 Use `%WINDIR%\Panther\SetupComplete.log` and the Stage B master log, if it exists, to determine which case occurred:
 
-- the flag was consumed for a controlled reboot;
-- the flag was cleared as stale because no pending reboot indicators remained;
-- the flag was consumed conservatively because it was not clear whether a reboot was still required;
+- a valid marker was deleted, its absence was positively verified, and marker consumption therefore succeeded before the single shutdown request; when that request returns zero, the controlled reboot request was accepted;
+- the flag was cleared and its absence was verified as stale because no pending reboot indicators remained;
+- a `force-reboot` marker, or a `need-reboot` marker with pending state `true` or `unknown`, was consumed conservatively before one shutdown request;
+- shutdown scheduling failed after marker consumption, the original valid marker was restored and verified, and no automatic retry was issued;
+- shutdown scheduling failed and restoration could not be verified; inspect the actual Panther marker state before taking recovery action;
 - the flag remained because Stage B failed, recovery mode was entered, or automatic reboot was suppressed;
 - continuation could not proceed because no executor task was available, or because no autologon path was available and Stage B would not run until manual logon.
+
+Reboot-finalization RC 8 means the marker probe/classification, marker consumption, shutdown request, or restoration could not complete successfully, unless an earlier nonzero result owns the process result. Successful teardown is not rolled back, and Stage B does not issue a second shutdown request.
 
 If the flag remains after a degraded or failed run, treat it as a sign of retained recovery state or incomplete continuation, not as proof of successful completion.
 

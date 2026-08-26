@@ -328,6 +328,8 @@ A machine is truthfully finalized only when:
 
 Cleanup is therefore part of completion semantics, not a cosmetic afterthought. Normal success and normal-path secret deletion require verified executor teardown.
 
+The Stage B master-log `OUTCOME: SUCCESS` records successful provisioning and teardown decisions made before reboot finalization; it does not prove that a later automatic shutdown request was accepted.
+
 ### Degraded continuation
 
 A degraded path remains a controlled architectural outcome.
@@ -350,7 +352,7 @@ Instead, it may record deferred reboot requirement through the Panther reboot fl
 
 That signal is interpreted later by finalization logic.
 
-Stage B is the only place where reboot signaling may be consumed or suppressed as part of the verified completion path. In the current normal baseline, successful Stage B consumes the existing marker and performs the controlled reboot; failure and recovery paths suppress it.
+Stage B is the only place where reboot signaling may be consumed or suppressed as part of the verified completion path. In the current normal baseline, it consumes a valid marker only after deletion and absence verification, then issues one shutdown request. A failed request attempts to restore and verify the original marker; if verification fails, marker state is not proven. It issues no retry and returns RC 8 when no earlier failure code takes precedence; failure and recovery paths suppress automatic reboot.
 
 The distinction between:
 - reboot requested
