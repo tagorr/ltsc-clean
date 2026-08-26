@@ -78,8 +78,8 @@ Use the current-run logs as the primary evidence for what happened during the ru
 ### What each log shows
 
 - `PreOOBE.log` shows specialize-phase policy work, bootstrap provisioning status, and bootstrap output lines that help confirm whether early bootstrap completed cleanly.
-- `SetupComplete.log` shows the mandatory Local GPO User Configuration import, `[DEFENDER-PRIVACY]` policy/effective-state results and any hardening warning, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, and the SetupComplete-side outcome for the current run.
-- `l2c_master_<timestamp>.log`, if present, is the main evidence for Stage A and Stage B outcome, per-secret cleanup state, finalization progress, and reboot handling after continuation.
+- `SetupComplete.log` shows the mandatory Local GPO User Configuration import, `[DEFENDER-PRIVACY]` policy/effective-state results and any hardening warning, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, reboot-finalization errors, and the SetupComplete-side outcome for the current run.
+- `l2c_master_<timestamp>.log`, if present, is the main evidence for Stage A and Stage B outcome, per-secret cleanup state, and teardown/finalization progress after continuation. Its reboot-preparation entries do not prove that shutdown scheduling was accepted; use `SetupComplete.log` and the process result for reboot-finalization failures.
 - `SetupComplete-DISM.log` is the consolidated DISM servicing trace for SetupComplete-time servicing work.
 
 ### What to look for first
@@ -91,7 +91,8 @@ Before deciding how far the run progressed, check whether:
 - `SetupComplete.log` shows the expected current-run outcome;
 - the Stage B master log, if present, shows the expected Stage A and Stage B outcome;
 - secret cleanup states match the observed secret-file state;
-- reboot-flag handling in the logs matches the final machine state.
+- reboot-flag handling in the logs matches the final machine state;
+- if automatic reboot was expected, `SetupComplete.log` and the process result show whether shutdown scheduling was accepted; a master-log preparation entry alone is not acceptance evidence.
 
 Some informational service-state lines may reflect localized `sc query` output and can vary by image language. Treat them as logging detail, not as primary control-flow evidence.
 
@@ -177,11 +178,12 @@ Treat `cleanup state=error` as retained recovery state, not as normal completion
 
 The baseline may use `_needs_reboot.flag` to carry a pending reboot requirement across phases:
 
-- in the normal completed path, Stage B makes the final reboot decision and either consumes the flag for reboot, clears it as stale, or reboots conservatively on unknown state;
+- in normal mode after successful Stage B provisioning and teardown, `force-reboot` is consumed without a pending-reboot probe; `need-reboot` with pending state `true` or `unknown` is consumed conservatively, while pending state `false` is stale and is cleared and verified without reboot;
+- for a rebooting case, Stage B positively verifies marker absence before issuing the single shutdown request. A zero shutdown result is accepted; a failed or nonzero request attempts to restore and verify the original marker, returns reboot-finalization RC 8 when no earlier failure code owns the result, and issues no automatic retry. If restoration cannot be verified, inspect the actual Panther marker state;
 - in recovery or failed finalization, automatic reboot is not performed for you;
 - if the flag remains in place after a degraded or failed run, treat it as manual follow-up state, not as proof of successful completion.
 
-Use the current-run evidence, including `SetupComplete.log` and the Stage B master log if it exists, to determine which reboot outcome was reached.
+`OUTCOME: SUCCESS` in the Stage B master log describes successful provisioning and teardown; it does not by itself prove that shutdown scheduling was accepted. Use the current-run evidence, including `SetupComplete.log` and the Stage B master log if it exists, to determine which reboot outcome was reached. RC 8 identifies reboot-finalization failure when no earlier nonzero result takes precedence.
 
 ## Post-Run Checks
 
@@ -198,7 +200,7 @@ For a normal completed run, confirm the following:
 - the machine Local GPO User Configuration contains the four entries defined by `UserBaselinePolicies.txt`;
 - after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;
 - temporary Winlogon and logon-policy changes have been restored;
-- after successful Stage B, the existing controlled reboot occurs; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually.
+- when a reboot obligation exists, the existing controlled reboot occurs only after shutdown scheduling is accepted; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually. If no reboot is required or RC 8 is returned, follow the reboot-flag and troubleshooting evidence before treating the run as normally complete.
 
 ### Evidence checks
 

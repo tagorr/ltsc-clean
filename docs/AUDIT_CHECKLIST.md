@@ -51,6 +51,7 @@ This checklist is for auditing repository-level invariants, staged execution con
 
 * [ ] `SetupComplete.cmd` preserves a deterministic fail-closed control model for servicing, validation, scheduling, and final RC selection.
 * [ ] Servicing logic, secret validation, Stage B scheduling, and reboot signaling remain clearly ordered.
+* [ ] When a reboot is required, the final Panther marker content is selected and positively verified before Stage B registration or Winlogon autologon priming; signaling failure keeps that gateway closed.
 * [ ] Platform-gate mismatches fail closed and flow to the shared final return-code path.
 * [ ] The platform gate requires `EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, and `STRICT_DISPLAYVERSION=1`.
 * [ ] The mandatory system-wide Local GPO User Configuration gate runs after the platform gate and before the normal baseline workload.
@@ -107,6 +108,9 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Reboot-required servicing RCs (`3010`, `1641`) feed into the reboot-signaling path without changing ownership of reboot execution.
 * [ ] The reboot flag path and signaling logic are explicit and deterministic.
 * [ ] `SetupComplete.cmd` may signal reboot need, but does not consume the final reboot as a Stage B substitute.
+* [ ] Stage B positively verifies marker absence before invoking `shutdown.exe`.
+* [ ] Stage B captures the native shutdown result immediately; a failed request restores and verifies the original marker, returns RC 8 when no earlier failure code takes precedence, and issues no retry or second shutdown request.
+* [ ] Recovery and already-failed Stage B paths never invoke automatic shutdown.
 
 #### 4.6. Defender privacy component
 

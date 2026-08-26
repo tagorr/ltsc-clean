@@ -1169,7 +1169,34 @@ if not "%RC%"=="0" (
   call :track_rc %RC%
   set "FAILED=1"
   set "STAGEB_NOT_SCHEDULED=1"
-  goto :l2c_recovery_and_reboot
+  goto :l2c_reboot_obligation
+)
+
+:l2c_reboot_obligation
+:: ------------ commit final reboot requirement before Stage B gateway ------------
+if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
+  call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
+  set "REBOOT_FLAG_CONTENT=force-reboot"
+  set "NEEDS_REBOOT=1"
+)
+
+call :log "[INFO] Evaluating reboot requirement"
+if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
+
+if "%NEEDS_REBOOT%"=="1" (
+  call :log "[INFO] Reboot required"
+  set "REBOOT_REQUESTED=1"
+  call :flag_reboot
+) else (
+  call :log "[INFO] No reboot required"
+)
+
+REM A required reboot marker must be positively signaled before opening the Stage B gateway.
+if "%FAILED%"=="0" if "%NEEDS_REBOOT%"=="1" if not "%REBOOT_FLAG_SIGNAL_OK%"=="1" (
+  call :log "[ERROR] Reboot marker signaling was not verified; Stage B registration and autologon priming remain blocked."
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  call :track_rc 9001
 )
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
@@ -1190,25 +1217,6 @@ if "%FAILED%"=="1" (
   call :log "[WARN] *** RECOVERY_MODE_ACTIVE OPERATOR_ACTION_REQUIRED ***"
   call :log "[WARN] Recovery active, operator action required. Teardown blocked; executor/bootstrap and secrets may be retained until manual resolution."
   call :log "[WARN] See docs/OPERATIONS.md for recovery handling and docs/TROUBLESHOOTING.md for diagnosis."
-)
-
-:: ------------ mark reboot requirement via panther flag ------------
-if "%ALWAYS_REBOOT_AFTER_FIRST_LOGON%"=="1" (
-  call :log "[INFO] ALWAYS_REBOOT_AFTER_FIRST_LOGON=1 -> forcing reboot"
-  set "REBOOT_FLAG_CONTENT=force-reboot"
-  set "NEEDS_REBOOT=1"
-  call :flag_reboot
-)
-
-call :log "[INFO] Evaluating reboot requirement"
-if not "%NEEDS_REBOOT%"=="1" if exist "%REBOOT_FLAG%" set "NEEDS_REBOOT=1"
-
-if "%NEEDS_REBOOT%"=="1" (
-  call :log "[INFO] Reboot required"
-  set "REBOOT_REQUESTED=1"
-  call :flag_reboot
-) else (
-call :log "[INFO] No reboot required"
 )
 
 if "%NEEDS_REBOOT%"=="1" call :l2c_reboot_flag_warns

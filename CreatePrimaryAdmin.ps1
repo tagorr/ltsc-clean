@@ -428,6 +428,28 @@ function Test-SystemRebootPending {
   }
 }
 
+function Test-PantherRebootMarkerAbsent([string]$Path) {
+  try {
+    [void](Get-Item -LiteralPath $Path -Force -ErrorAction Stop)
+    return $false
+  } catch {
+    $isMissing = $false
+    try { $isMissing = ($_.CategoryInfo -and $_.CategoryInfo.Category -eq 'ObjectNotFound') } catch {}
+    return $isMissing
+  }
+}
+
+function Restore-PantherRebootMarkerVerified([string]$Path, [string]$Marker) {
+  try {
+    [System.IO.File]::WriteAllText($Path, $Marker + [char]13 + [char]10, [System.Text.Encoding]::ASCII)
+    $observed = Get-Content -LiteralPath $Path -TotalCount 1 -ErrorAction Stop | Select-Object -First 1
+    if ($null -eq $observed) { return $false }
+    return (([string]$observed).Trim() -ieq $Marker)
+  } catch {
+    return $false
+  }
+}
+
 function Get-LocalUserExists([string]$User) {
   try {
     [void](Get-LocalUser -Name $User -ErrorAction Stop)
@@ -1099,7 +1121,17 @@ catch {
 }
 
 $flag = Join-Path $env:WINDIR 'Panther\_needs_reboot.flag'
-if (Test-Path -LiteralPath $flag) {
+$flagPresent = $false
+$flagProbeError = $null
+try {
+  $flagPresent = Test-Path -LiteralPath $flag -ErrorAction Stop
+} catch {
+  $flagProbeError = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+}
+if ($flagProbeError) {
+  Write-SetupLog ("Reboot finalization failed: Panther marker presence probe failed ({0}); automatic reboot suppressed" -f $flagProbeError) 'ERROR'
+  if ($rc -eq 0) { $rc = 8 }
+} elseif ($flagPresent) {
   if (-not $utf8NoBom) {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   }
@@ -1120,82 +1152,144 @@ if (Test-Path -LiteralPath $flag) {
       $sw.Dispose()
     }
   } else {
-    $forceMarker = 'force-reboot'
+    $rawFlagMarker = $null
     $flagMarker = $null
+    $flagMarkerReadError = $null
     try {
-      $flagMarker = Get-Content -LiteralPath $flag -TotalCount 1 -ErrorAction Stop | Select-Object -First 1
-      if ($flagMarker) { $flagMarker = $flagMarker.Trim() }
-    } catch {
-      Write-SetupLog ("Failed to read Panther reboot flag marker; proceeding with pending reboot probe: {0}" -f $_.Exception.Message) 'WARN'
-      $flagMarker = $null
-    }
-
-    if ($flagMarker -and ($flagMarker -ieq $forceMarker)) {
-      Write-SetupLog 'Panther reboot flag indicates forced reboot policy; initiating restart' 'WARN'
-      try {
-        $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
-        try {
-          $sw.WriteLine("[{0}] Stage B: Panther reboot flag forced (marker=force-reboot); initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
-        } finally {
-          $sw.Dispose()
+      $rawFlagMarker = Get-Content -LiteralPath $flag -TotalCount 1 -ErrorAction Stop | Select-Object -First 1
+      if ($null -eq $rawFlagMarker) {
+        $flagMarkerReadError = 'empty marker'
+      } else {
+        $flagMarker = ([string]$rawFlagMarker).Trim()
+        if ([string]::IsNullOrWhiteSpace($flagMarker)) {
+          $flagMarkerReadError = 'empty marker'
         }
-      } catch {
-        Write-SetupLog ("Master log write failed (flag forced): {0}" -f $_.Exception.Message) 'WARN'
       }
-      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
-      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
-      exit $rc
+    } catch {
+      $flagMarkerReadError = "read failed: $($_.Exception.Message)"
     }
 
-    $rebootPending = Test-SystemRebootPending
-    $stateText = if ($rebootPending.State) { $rebootPending.State } else { 'unknown' }
-    $reasonsText = if ($rebootPending.Reasons -and $rebootPending.Reasons.Count -gt 0) { ($rebootPending.Reasons -join ',') } else { 'none' }
-    $errorsText = if ($rebootPending.Errors -and $rebootPending.Errors.Count -gt 0) { ($rebootPending.Errors -join ' | ') } else { 'none' }
-    Write-SetupLog ("Pending reboot check: state={0} reasons={1} errors={2}" -f $stateText, $reasonsText, $errorsText)
+    $originalMarker = $null
+    if ($flagMarker -ieq 'force-reboot') {
+      $originalMarker = 'force-reboot'
+    } elseif ($flagMarker -ieq 'need-reboot') {
+      $originalMarker = 'need-reboot'
+    } elseif (-not $flagMarkerReadError) {
+      $flagMarkerReadError = "unsupported marker value '$flagMarker'"
+    }
 
-    if ($stateText -eq 'true') {
-      Write-SetupLog 'Reboot flag detected, initiating restart'
-     try {
-    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
-    try {
-        $sw.WriteLine("[{0}] Stage B: Panther reboot flag consumed, initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
-    } finally {
-        $sw.Dispose()
-    }
-} catch {
-    Write-SetupLog ("Master log write failed (flag consumed): {0}" -f $_.Exception.Message) 'WARN'
-}
-      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
-      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
-      exit $rc
-    } elseif ($stateText -eq 'false') {
-      Write-SetupLog 'Panther reboot flag present but system does not indicate a pending reboot; treating flag as stale and clearing it without reboot' 'WARN'
-      try {
-    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
-    try {
-        $sw.WriteLine("[{0}] Stage B: Panther reboot flag stale (no pending reboot indicators); clearing flag without reboot" -f ([DateTime]::UtcNow.ToString('o')))
-    } finally {
-        $sw.Dispose()
-    }
-} catch {
-    Write-SetupLog ("Master log write failed (flag stale): {0}" -f $_.Exception.Message) 'WARN'
-}
-      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+    if (-not $originalMarker) {
+      if (-not $flagMarkerReadError) { $flagMarkerReadError = 'marker could not be classified' }
+      Write-SetupLog ("Reboot finalization failed: Panther marker cannot be safely classified ({0}); automatic reboot suppressed" -f $flagMarkerReadError) 'ERROR'
+      if ($rc -eq 0) { $rc = 8 }
     } else {
-      Write-SetupLog 'Panther reboot flag present but pending reboot state is unknown due to probe errors; rebooting conservatively' 'WARN'
+      $shouldReboot = ($originalMarker -ieq 'force-reboot')
+      if ($shouldReboot) {
+        Write-SetupLog 'Panther reboot flag indicates forced reboot policy; preparing automatic restart' 'WARN'
+        try {
+          $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+          try {
+            $sw.WriteLine("[{0}] Stage B: Panther reboot flag forced (marker=force-reboot); preparing automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+          } finally {
+            $sw.Dispose()
+          }
+        } catch {
+          Write-SetupLog ("Master log write failed (flag forced): {0}" -f $_.Exception.Message) 'WARN'
+        }
+      } else {
+        $rebootPending = Test-SystemRebootPending
+        $stateText = if ($rebootPending.State) { $rebootPending.State } else { 'unknown' }
+        $reasonsText = if ($rebootPending.Reasons -and $rebootPending.Reasons.Count -gt 0) { ($rebootPending.Reasons -join ',') } else { 'none' }
+        $errorsText = if ($rebootPending.Errors -and $rebootPending.Errors.Count -gt 0) { ($rebootPending.Errors -join ' | ') } else { 'none' }
+        Write-SetupLog ("Pending reboot check: state={0} reasons={1} errors={2}" -f $stateText, $reasonsText, $errorsText)
+
+        if ($stateText -eq 'true') {
+          $shouldReboot = $true
+          Write-SetupLog 'Reboot flag detected; preparing automatic restart'
+          try {
+            $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+            try {
+              $sw.WriteLine("[{0}] Stage B: Panther reboot flag present (pending=true); preparing automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+            } finally {
+              $sw.Dispose()
+            }
+          } catch {
+            Write-SetupLog ("Master log write failed (pending=true preparation): {0}" -f $_.Exception.Message) 'WARN'
+          }
+        } elseif ($stateText -eq 'false') {
+          $shouldReboot = $false
+          Write-SetupLog 'Panther reboot flag present but system does not indicate a pending reboot; treating flag as stale and clearing it without reboot' 'WARN'
+          try {
+            $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+            try {
+              $sw.WriteLine("[{0}] Stage B: Panther reboot flag stale (no pending reboot indicators); preparing flag clear without reboot" -f ([DateTime]::UtcNow.ToString('o')))
+            } finally {
+              $sw.Dispose()
+            }
+          } catch {
+            Write-SetupLog ("Master log write failed (stale flag clear preparation): {0}" -f $_.Exception.Message) 'WARN'
+          }
+        } else {
+          $shouldReboot = $true
+          Write-SetupLog 'Panther reboot flag present but pending reboot state is unknown due to probe errors; rebooting conservatively' 'WARN'
+          try {
+            $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+            try {
+              $sw.WriteLine("[{0}] Stage B: Panther reboot flag present (pending=unknown due to probe errors); policy=conservative reboot; preparing automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
+            } finally {
+              $sw.Dispose()
+            }
+          } catch {
+            Write-SetupLog ("Master log write failed (pending=unknown preparation): {0}" -f $_.Exception.Message) 'WARN'
+          }
+        }
+      }
+
+      $markerConsumeOk = $false
+      $markerConsumeError = $null
       try {
-    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
-    try {
-        $sw.WriteLine("[{0}] Stage B: Panther reboot flag consumed (pending=unknown due to probe errors); policy=conservative reboot; initiating automatic restart" -f ([DateTime]::UtcNow.ToString('o')))
-    } finally {
-        $sw.Dispose()
-    }
-} catch {
-    Write-SetupLog ("Master log write failed (flag consumed pending=unknown): {0}" -f $_.Exception.Message) 'WARN'
-}
-      Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
-      & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
-      exit $rc
+        $markerItem = Get-Item -LiteralPath $flag -Force -ErrorAction Stop
+        if ($markerItem.PSIsContainer) { throw 'Panther reboot marker path is a directory' }
+        Remove-Item -LiteralPath $flag -Force -ErrorAction Stop
+        if (-not (Test-PantherRebootMarkerAbsent -Path $flag)) {
+          throw 'Panther reboot marker absence could not be verified'
+        }
+        $markerConsumeOk = $true
+      } catch {
+        $markerConsumeError = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+      }
+
+      if (-not $markerConsumeOk) {
+        $markerRestored = Restore-PantherRebootMarkerVerified -Path $flag -Marker $originalMarker
+        if ($markerRestored) {
+          Write-SetupLog ("Reboot finalization failed: Panther marker consumption failed ({0}); original marker {1} restored and verified; automatic reboot suppressed" -f $markerConsumeError, $originalMarker) 'ERROR'
+        } else {
+          Write-SetupLog ("Reboot finalization failed: Panther marker consumption failed ({0}) and restoration of original marker {1} could not be verified; automatic reboot suppressed" -f $markerConsumeError, $originalMarker) 'ERROR'
+        }
+        if ($rc -eq 0) { $rc = 8 }
+      } elseif ($shouldReboot) {
+        $shutdownRC = $null
+        $shutdownInvocationError = $null
+        try {
+          & "$env:SystemRoot\System32\shutdown.exe" /r /t 0
+          $shutdownRC = $LASTEXITCODE
+        } catch {
+          $shutdownInvocationError = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+        }
+
+        if ($null -eq $shutdownInvocationError -and $shutdownRC -eq 0) {
+          exit $rc
+        }
+
+        $shutdownFailure = if ($shutdownInvocationError) { "shutdown.exe invocation failed: $shutdownInvocationError" } else { "shutdown.exe returned RC=$shutdownRC" }
+        $markerRestored = Restore-PantherRebootMarkerVerified -Path $flag -Marker $originalMarker
+        if ($markerRestored) {
+          Write-SetupLog ("Reboot finalization failed: {0}; original marker {1} restored and verified; no retry issued" -f $shutdownFailure, $originalMarker) 'ERROR'
+        } else {
+          Write-SetupLog ("Reboot finalization failed: {0}; restoration of original marker {1} could not be verified; no retry issued and reboot obligation state is unknown" -f $shutdownFailure, $originalMarker) 'ERROR'
+        }
+        if ($rc -eq 0) { $rc = 8 }
+      }
     }
   }
 }
