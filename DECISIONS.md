@@ -177,6 +177,8 @@ The baseline applies conservative servicing reductions only where the relevant f
 
 Legacy surfaces such as SMBv1 and PowerShell 2.0 are disabled only when they are actually enabled. This keeps servicing reductions explicit and bounded, rather than treating absent or already-disabled components as if they still required action.
 
+The dedicated SNMP capability targets `SNMP.Client~~~~0.0.1.0` and `WMI-SNMP-Provider.Client~~~~0.0.1.0` intentionally use a different contract from optional Windows features. They are conservative best-effort reductions: removal is attempted only when the captured probe positively identifies `Installed` or `Staged`, while uncertain or unsupported probe state is not by itself sufficient reason to abort the provisioning pipeline. Once a removal mutation is attempted, unexpected DISM mutation failure remains fatal under the normal servicing policy. Post-removal checking is non-gating, so successful completion does not prove that both capabilities are absent. This is a deliberate trade-off for capability availability and state-reporting variability, not accidental implementation drift.
+
 ### Windows Update posture
 
 The baseline uses a restrained Windows Update posture intended to reduce surprise and background churn.

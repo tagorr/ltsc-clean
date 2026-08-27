@@ -65,6 +65,15 @@ This checklist is for auditing repository-level invariants, staged execution con
   * [ ] closed-gate / fail state does not collapse into silent success;
   * [ ] success returns zero.
 
+#### 4.1.1. Dedicated SNMP capability handling
+
+* [ ] `SNMP.Client~~~~0.0.1.0` and `WMI-SNMP-Provider.Client~~~~0.0.1.0` use captured capability-probe output and parse it without relying on a `dism | findstr` pipeline that obscures the native probe RC.
+* [ ] Only a parsed capability state of `Installed` or `Staged` triggers `/Remove-Capability`.
+* [ ] Nonzero or uncertain probe results, missing or unparseable state, `Unknown`, `NotApplicable`, and other unsupported states remain best-effort skip/continue outcomes and are not reclassified as the optional-feature fail-closed model.
+* [ ] An actual capability removal uses the normal DISM mutation RC classifier, and an unexpected mutation failure remains fatal.
+* [ ] Post-removal capability verification is non-gating; the checklist does not require it to establish a mandatory `NotPresent` invariant.
+* [ ] Documentation does not claim that successful pipeline completion proves both SNMP capabilities are absent.
+
 #### 4.2. Secret gate and Stage B scheduling
 
 * [ ] `.bootstrap.pw` presence and first-line validity are checked before Stage B scheduling or autologon priming.
