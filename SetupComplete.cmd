@@ -966,7 +966,6 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "Ex
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ManagePreviewBuilds" "REG_DWORD" "1"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ManagePreviewBuildsPolicyValue" "REG_DWORD" "1"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "AllowMUUpdateService" "REG_DWORD" "0"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "DisableOSUpgrade" "REG_DWORD" "1"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Device Metadata" "PreventDeviceMetadataFromNetwork" "REG_DWORD" "1"
 
 REM ------------ UX ^& Power ------------
