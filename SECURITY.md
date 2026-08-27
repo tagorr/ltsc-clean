@@ -146,20 +146,28 @@ In the normal success path, after `TeardownEligible` and independently verified 
 
 ## CreatePrimaryAdmin scheduled task tampering boundary (non-admin)
 
-The `\L2C\CreatePrimaryAdmin` task runs as `SYSTEM` so Stage A can apply secrets without passing passwords on task arguments. This baseline does **not*- attempt to defend against attackers who already have local administrator or `SYSTEM` rights.
+The `\L2C\CreatePrimaryAdmin` task runs as `SYSTEM` so Stage A can apply secrets without passing passwords on task arguments. This baseline does not attempt to defend against attackers who already have local administrator or `SYSTEM` rights.
 
-For the non-admin boundary, `SetupComplete.cmd` validates that these objects do not grant write-like `Allow` rights to `Everyone (S-1-1-0)`, `BUILTIN\Users (S-1-5-32-545)`, `Authenticated Users (S-1-5-11)`, or `INTERACTIVE (S-1-5-4)`:
+For the non-admin boundary, `ValidateSecrets.ps1` proves trusted authority rather than maintaining a list of known-bad principals. It validates these four trust objects:
 
 - `%WINDIR%\Setup\Scripts` (directory)
 - `%WINDIR%\Setup\Scripts\CreatePrimaryAdmin.ps1` (file)
 - `%SystemRoot%\System32\Tasks\L2C\CreatePrimaryAdmin` (task definition file)
 - `%SystemRoot%\System32\Tasks\L2C` (directory)
 
+Each object must have a trusted owner: `SYSTEM (S-1-5-18)` or `BUILTIN\Administrators (S-1-5-32-544)`. Owner resolution failure, an untrusted owner, a missing owner, or an unreadable/unprovable security descriptor fails closed.
+
+An applicable `Allow` ACE that grants write-like authority is acceptable only for these exact trusted writer anchors: `SYSTEM (S-1-5-18)`, `BUILTIN\Administrators (S-1-5-32-544)`, or the exact `NT SERVICE\TrustedInstaller` service SID (`S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464`). Other service SIDs, local users or groups, domain principals, and names that merely appear privileged are not trusted writer anchors. An unresolved write-capable trustee therefore fails closed; an unresolved read-only trustee may remain acceptable when its rights are provably non-write-capable.
+
+Explicit and inherited ACEs are evaluated the same way when they apply to the current object. An ACE with `InheritOnly` propagation applies only to descendants and is not authority over the current object; this permits the stock inheritance-only `CREATOR OWNER` `GenericAll` ACE on the Scripts directory without adding `CREATOR OWNER` to the trusted writers. Read-only access does not violate this boundary, including untrusted `ReadAndExecute` grants and the explicit `SYSTEM:Read` task-file ACE.
+
 `SetupComplete.cmd` hardens `%SystemRoot%\System32\Tasks\L2C` before task creation and validates this boundary before and after task registration.
 
-Unsafe rights for this boundary include `WriteData`, `AppendData`, `WriteAttributes`, `WriteExtendedAttributes`, `Delete`, `DeleteSubdirectoriesAndFiles`, `ChangePermissions`, and `TakeOwnership`, as well as broader `Write`, `Modify`, or `FullControl` grants. `Synchronize` alone is not treated as unsafe for this boundary.
+Unsafe rights for this boundary include `WriteData`, `AppendData`, `WriteAttributes`, `WriteExtendedAttributes`, `Delete`, `DeleteSubdirectoriesAndFiles`, `ChangePermissions`, and `TakeOwnership`, as well as broader `Write`, `Modify`, or `FullControl` grants and raw `GENERIC_WRITE` or `GENERIC_ALL` access-mask bits. `Synchronize` alone is not treated as unsafe for this boundary. The validator uses SID-native access-rule enumeration, rejects a null or absent DACL, and does not attempt exact ACL-template matching or effective-access/token simulation.
 
-Enforcement is fail-closed: if unsafe non-admin write access is detected, the boundary check fails, normal continuation is not trusted, and the result is recorded in `%WINDIR%\Panther\SetupComplete.log`.
+Enforcement is fail-closed: if trusted ownership, security-descriptor state, or applicable write authority is unsafe or cannot be proven safe, the boundary check fails, normal continuation is not trusted, and the result is recorded in `%WINDIR%\Panther\SetupComplete.log`.
+
+The existing Windows system Scripts tree is validated in place rather than normalized, while the `Tasks\L2C` task directory is explicitly established and hardened by `SetupComplete.cmd` before task creation. Focused Windows PowerShell 5.1 tests and a fresh Windows 11 Enterprise LTSC 2024 deployment accepted the stock ACLs; replaying an explicit ordinary non-admin `Modify` ACE on `CreatePrimaryAdmin.ps1` changed the pre-check result from the former `RC=0` to `RC=16`.
 
 ## Logon policies: temporary relaxation and restore
 

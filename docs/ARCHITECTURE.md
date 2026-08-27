@@ -223,7 +223,9 @@ Trusted continuation depends in part on whether non-admin principals have unsafe
 - the task definition
 - the task directory
 
-If these boundaries are weak, the handoff is not considered trustworthy.
+`ValidateSecrets.ps1` proves this boundary with exact SID anchors. Each surface must have owner `SYSTEM (S-1-5-18)` or `BUILTIN\Administrators (S-1-5-32-544)`. An applicable `Allow` ACE with write-like authority is trusted only for `SYSTEM`, `BUILTIN\Administrators`, or the exact `TrustedInstaller` service SID (`S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464`); read-only access from other principals does not by itself violate the boundary. Explicit and inherited applicable ACEs are equivalent, while `InheritOnly` ACEs do not grant authority over the current object. Null or unprovable owner/DACL state fails closed, and SID-native rule enumeration avoids account-name localization as the authority test.
+
+The existing Windows system Scripts tree is validated in place rather than normalized. `SetupComplete.cmd` establishes and explicitly hardens the `Tasks\L2C` task directory before task registration. This is an authority invariant, not exact ACL-template matching or effective-access/token simulation, and the existing per-object result bits remain the handoff protocol. If any boundary is weak or unproven, trusted continuation is not armed.
 
 ### Out-of-scope attacker model
 

@@ -99,6 +99,11 @@ This checklist is for auditing repository-level invariants, staged execution con
   * [ ] the task definition file;
   * [ ] the task directory.
 * [ ] Unsafe write-like or control rights for non-admin principals are treated as boundary violations.
+* [ ] Each trust object has an owner exactly equal to `SYSTEM (S-1-5-18)` or `BUILTIN\Administrators (S-1-5-32-544)`; owner or security-descriptor state that cannot be proven safe fails closed.
+* [ ] An applicable `Allow` ACE with write-like authority is accepted only for `SYSTEM (S-1-5-18)`, `BUILTIN\Administrators (S-1-5-32-544)`, or the exact `TrustedInstaller` service SID (`S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464`); arbitrary local, domain, custom-group, other service, or unresolved write-capable trustees are rejected.
+* [ ] Explicit and inherited applicable ACEs are evaluated alike, `InheritOnly` ACEs do not apply to the current object, and read-only untrusted access remains acceptable.
+* [ ] Granular write rights and raw `GENERIC_WRITE`/`GENERIC_ALL` masks are covered, and access-rule identity comparison is SID-native rather than dependent on localized account names.
+* [ ] Stock-shaped LTSC ACLs, including inheritance-only `CREATOR OWNER` and explicit `SYSTEM:Read` on the task file, remain acceptable without exact ACL-template matching; an explicit ordinary non-admin `Modify` ACE fails the pre-check.
 * [ ] Task-registration failure is fail closed and blocks autologon priming.
 
 #### 4.5. Reboot signaling model
