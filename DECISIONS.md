@@ -111,6 +111,14 @@ If Stage A created `primaryadmin` during the current run and a later step fails,
 
 This preserves a clearer security boundary while keeping retry and recovery behavior explicit.
 
+### Stage B ACL trust uses exact SID anchors
+
+The Stage B handoff surfaces use a trusted-authority model for ACL validation. A known-bad-principal denylist is not a closed-world security boundary: a specific local user, custom group, domain principal, or other resolved SID can receive write authority without matching a short list of broad principals. The validator therefore accepts write-capable `Allow` authority only when the trustee is exactly `SYSTEM (S-1-5-18)`, `BUILTIN\Administrators (S-1-5-32-544)`, or the exact `TrustedInstaller` service SID (`S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464)`. It accepts only `SYSTEM` or `BUILTIN\Administrators` as owners.
+
+This is intentionally an authority proof, not a claim that arbitrary privileged-looking identities are safe. Other service SIDs, local or domain accounts and groups, and unresolved write-capable trustees are not trusted. Read-only access remains allowed when its rights can be shown to be non-write-capable. Applicable explicit and inherited ACEs are treated alike; `InheritOnly` ACEs do not grant authority over the current object. Null or unprovable DACL or owner state fails closed, and SID-native access-rule enumeration keeps the comparison independent of localized account-name resolution.
+
+The four surfaces are `%WINDIR%\Setup\Scripts`, `CreatePrimaryAdmin.ps1`, the `\L2C\CreatePrimaryAdmin` task definition, and the `\L2C` task directory. The existing Windows system Scripts tree is validated in place rather than normalized, while `SetupComplete.cmd` establishes and hardens the L2C task directory before registration. The model deliberately does not require one exact ACL template or run effective-access/token simulation. Stock-shaped ACLs, including the inheritance-only `CREATOR OWNER` entry and the production task file's explicit `SYSTEM:Read` ACE, pass; the repeated ordinary-user `Modify` regression is rejected with pre-check `RC=16`.
+
 ## Major product decisions and rationale
 
 ### Microsoft Edge

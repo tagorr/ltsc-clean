@@ -221,21 +221,60 @@ function Test-NonAdminTamperAclUnsafe {
         return $true
     }
 
-    $riskySids = @(
-        'S-1-1-0',        # Everyone
-        'S-1-5-32-545',   # BUILTIN\Users
-        'S-1-5-11',       # Authenticated Users
-        'S-1-5-4'         # INTERACTIVE
+    $sidSystem = 'S-1-5-18'
+    $sidAdmins = 'S-1-5-32-544'
+    $sidTrustedInstaller = 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'
+
+    $trustedOwnerSids = @(
+        $sidSystem,
+        $sidAdmins
+    )
+    $trustedWriterSids = @(
+        $sidSystem,
+        $sidAdmins,
+        $sidTrustedInstaller
     )
 
-    # Fallback match if IdentityReference.Translate(SID) fails.
-    # Keep it limited to exactly the same principals as $riskySids above.
-    $riskyNames = @(
-        'Everyone',
-        'BUILTIN\Users',
-        'NT AUTHORITY\Authenticated Users',
-        'NT AUTHORITY\INTERACTIVE'
-    )
+    $rawDescriptor = $null
+    try {
+        $descriptorBytes = $acl.GetSecurityDescriptorBinaryForm()
+        if (($null -eq $descriptorBytes) -or ($descriptorBytes.Length -eq 0)) {
+            throw 'security_descriptor_binary_empty'
+        }
+        $rawDescriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($descriptorBytes, 0)
+    } catch {
+        Write-Error "[ACLBOUNDARY] Security descriptor inspection failed for ${Path}: $($_.Exception.Message)" -ErrorAction Continue
+        return $true
+    }
+
+    $daclPresent = (($rawDescriptor.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclPresent) -ne 0)
+    if ((-not $daclPresent) -or ($null -eq $rawDescriptor.DiscretionaryAcl)) {
+        Write-Error "[ACLBOUNDARY] Null or absent DACL: path=$Path" -ErrorAction Continue
+        return $true
+    }
+
+    $ownerReference = $null
+    try {
+        $ownerReference = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+    } catch {
+        Write-Error "[ACLBOUNDARY] Owner read failed for ${Path}: $($_.Exception.Message)" -ErrorAction Continue
+        return $true
+    }
+
+    if ($null -eq $ownerReference) {
+        Write-Error "[ACLBOUNDARY] Owner missing for path=$Path" -ErrorAction Continue
+        return $true
+    }
+
+    $ownerInfo = Resolve-IdentityReferenceSafe -IdentityReference $ownerReference
+    if ((-not $ownerInfo.Resolved) -or (-not $ownerInfo.Sid)) {
+        Write-Error ("[ACLBOUNDARY] Owner identity unresolved: path={0} id={1}" -f $Path, $ownerInfo.Raw) -ErrorAction Continue
+        return $true
+    }
+    if ($trustedOwnerSids -notcontains $ownerInfo.Sid) {
+        Write-Error ("[ACLBOUNDARY] Untrusted owner: path={0} id={1}" -f $Path, $ownerInfo.Sid) -ErrorAction Continue
+        return $true
+    }
 
     $unsafeRights =
         [System.Security.AccessControl.FileSystemRights]::WriteData -bor
@@ -247,45 +286,83 @@ function Test-NonAdminTamperAclUnsafe {
         [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
         [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
-    foreach ($rule in $acl.Access) {
+    [int]$unsafeRightsMask = [int]$unsafeRights
+    [int]$genericAllMask = 0x10000000
+    [int]$genericWriteMask = 0x40000000
+
+    $accessRules = $null
+    try {
+        $accessCollection = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+        if ($null -eq $accessCollection) {
+            throw 'access_rule_collection_missing'
+        }
+        $accessRules = @($accessCollection)
+    } catch {
+        Write-Error "[ACLBOUNDARY] Access rule enumeration failed for ${Path}: $($_.Exception.Message)" -ErrorAction Continue
+        return $true
+    }
+
+    foreach ($rule in $accessRules) {
+        if ($null -eq $rule) {
+            Write-Error "[ACLBOUNDARY] Null access rule: path=$Path" -ErrorAction Continue
+            return $true
+        }
+        if (-not ($rule -is [System.Security.AccessControl.FileSystemAccessRule])) {
+            Write-Error ("[ACLBOUNDARY] Unexpected access rule type: path={0} type={1}" -f $Path, $rule.GetType().FullName) -ErrorAction Continue
+            return $true
+        }
         if ($rule.AccessControlType -ne 'Allow') { continue }
+
+        if (($rule.PropagationFlags -band [System.Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0) {
+            continue
+        }
+
+        $rights = $null
+        [int]$rightsMask = 0
+        try {
+            $rights = $rule.FileSystemRights
+            $rightsMask = [int]$rights
+        } catch {
+            Write-Error "[ACLBOUNDARY] Access rights inspection failed for ${Path}: $($_.Exception.Message)" -ErrorAction Continue
+            return $true
+        }
+
+        $isWriteCapable =
+            (($rightsMask -band $unsafeRightsMask) -ne 0) -or
+            (($rightsMask -band $genericAllMask) -ne 0) -or
+            (($rightsMask -band $genericWriteMask) -ne 0) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Write) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Modify) -or
+            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)
+
+        if (-not $isWriteCapable) { continue }
 
         $idInfo = Resolve-IdentityReferenceSafe -IdentityReference $rule.IdentityReference
         $sid = $idInfo.Sid
         $rawId = $idInfo.Raw
 
-        $isRisky = $false
-        if ($idInfo.Resolved -and $sid -and ($riskySids -contains $sid)) { $isRisky = $true }
-        if (-not $isRisky -and (-not $idInfo.Resolved) -and $rawId -and ($riskyNames -contains $rawId)) { $isRisky = $true }
-        if ($idInfo.Resolved -and (-not $isRisky)) { continue }
-
-        $rights = $rule.FileSystemRights
-        if ((($rights -band $unsafeRights) -ne 0) -or
-            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Write) -or
-            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::Modify) -or
-            $rights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)) {
-
-            if (-not $idInfo.Resolved) {
-                $domainPossible = $false
-                if ($rawId -and ($rawId -like '*\*') -and
-                    ($rawId -notlike 'BUILTIN\*') -and
-                    ($rawId -notlike 'NT AUTHORITY\*') -and
-                    ($rawId -notlike 'NT SERVICE\*') -and
-                    ($rawId -notlike 'APPLICATION PACKAGE AUTHORITY\*')) {
-                    $domainPossible = $true
-                }
-
-                $token = '(identity_unresolved_fail_closed)'
-                $hint = 'hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.'
-                if ($domainPossible) {
-                    $token = '(identity_unresolved_fail_closed, domain_possible)'
-                    $hint = 'hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.'
-                }
-
-                Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE {0}: path={1} id={2} rights={3} {4}" -f $token, $Path, $rawId, $rights, $hint) -ErrorAction Continue
-                return $true
+        if ((-not $idInfo.Resolved) -or (-not $sid)) {
+            $domainPossible = $false
+            if ($rawId -and ($rawId -like '*\*') -and
+                ($rawId -notlike 'BUILTIN\*') -and
+                ($rawId -notlike 'NT AUTHORITY\*') -and
+                ($rawId -notlike 'NT SERVICE\*') -and
+                ($rawId -notlike 'APPLICATION PACKAGE AUTHORITY\*')) {
+                $domainPossible = $true
             }
 
+            $token = '(identity_unresolved_fail_closed)'
+            $hint = 'hint=Resolve identity to SID or remove unsafe Allow ACE; rerun validation.'
+            if ($domainPossible) {
+                $token = '(identity_unresolved_fail_closed, domain_possible)'
+                $hint = 'hint=Resolve identity to SID (name-resolution, possibly domain/DC/network) or remove unsafe Allow ACE; rerun validation.'
+            }
+
+            Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE {0}: path={1} id={2} rights={3} {4}" -f $token, $Path, $rawId, $rights, $hint) -ErrorAction Continue
+            return $true
+        }
+
+        if ($trustedWriterSids -notcontains $sid) {
             Write-Error ("[ACLBOUNDARY] Unsafe Allow ACE: path={0} id={1} rights={2}" -f $Path, $sid, $rights) -ErrorAction Continue
             return $true
         }
