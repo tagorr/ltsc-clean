@@ -846,17 +846,14 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenDnsReque
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenForTrustedDownloadsEnabled" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Edge" "SmartScreenPuaEnabled" "REG_DWORD" "0"
 
-:: ------------ Internet Explorer First Run policy ------------
-call :log "[SECTION] IE First Run policy"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Internet Explorer\Main" "DisableFirstRunCustomize" "REG_DWORD" "1"
-call :log "[SECTION] SmartScreen & Defender"
-
 REM ------------ SmartScreen ^& Defender (policy enforced) ------------
+call :log "[SECTION] SmartScreen & Defender"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableSmartScreen" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
+
 REM ------------ Windows Security notification-area cleanup (best-effort) ------------
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray" "HideSystray" "REG_DWORD" "1"
 call :l2c_securityhealth_autorun_cleanup
@@ -868,6 +865,7 @@ call :edge_remove
 :: ------------ Telemetry / Diagnostics / WER ------------
 call :log "[SECTION] Telemetry, Diagnostics, WER"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" "REG_DWORD" "1"
+
 REM -- Services: disable and log (WerSvc is disabled; queue handled by task) --
 REM call :svc_disable "WerSvc"
 REM -- Scheduled Tasks: CEIP / Appraiser / StartupAppTask / DiskDiagnostic / WER Queue --
