@@ -42,7 +42,7 @@ Interpret the evidence by category:
 - a technical nonzero or missing-script warning means configuration or verification could not be completed reliably and requires investigation;
 - neither warning category is, by itself, a pipeline or trusted-continuation failure, so it can coexist with successful secret validation, Stage A, Stage B, cleanup, and finalization.
 
-Allow the normal provisioning reboot to complete and inspect the final Defender state before deciding whether remediation is required. If Tamper Protection is already Off and effective MAPS/sample state is `0` / `2`, no Tamper Protection remediation is needed even if SetupComplete recorded an earlier warning. If the final state still does not match, use the canonical verification and remediation procedure in [Operations](OPERATIONS.md).
+Allow the normal provisioning reboot to complete and inspect the final Defender state before deciding whether remediation is required. Tamper Protection is observation-only: either `IsTamperProtected=True` or `IsTamperProtected=False` is acceptable and is not itself a remediation criterion. Base remediation on an effective `MAPSReporting=0` / `SubmitSamplesConsent=2` mismatch or an actual technical verification failure; use the canonical verification and remediation procedure in [Operations](OPERATIONS.md).
 
 A change in Tamper Protection during provisioning may be visible in Microsoft Defender Operational event evidence. Treat such a transition as observed behavior only; do not infer its internal cause or assume that it must recur on another deployment.
 

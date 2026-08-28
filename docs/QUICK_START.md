@@ -44,7 +44,7 @@ Disk and partition selection remains intentionally manual because `Autounattend.
 - Microsoft Defender Antivirus and its local protections remain enabled;
 - after the normal provisioning reboot, the final Defender privacy state is checked as described in [Operations](OPERATIONS.md); a SetupComplete Defender privacy hardening warning does not by itself mean deployment failed;
 - temporary Winlogon and logon-policy changes have been restored;
-- after successful Stage B, the existing controlled reboot occurs; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually.
+- after successful Stage B provisioning and teardown, the existing controlled reboot is requested when still required; successful teardown does not prove that Windows accepted the shutdown request. A failed request remains visible through the Stage B result (which can be RC 8) and the retained Panther marker when restoration is verified; after an accepted reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually.
 
 ## If Normal Completion Does Not Happen
 
