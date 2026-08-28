@@ -40,6 +40,16 @@ Instead, execution is split across bounded stages with distinct responsibilities
 
 After OOBE, Windows executes `SetupComplete.cmd` as `SYSTEM`. This staged design keeps the pipeline easier to reason about, easier to recover, and easier to audit.
 
+### `SkipMachineOOBE` is intentionally retained
+
+`Autounattend.xml` intentionally retains `<SkipMachineOOBE>true</SkipMachineOOBE>` for the validated Windows 11 Enterprise LTSC 2024 unattended flow. Microsoft recommends automating OOBE through granular unattend settings instead of using `SkipMachineOOBE`, but a controlled clean-VM test showed that removing only this setting did not preserve the validated behavior.
+
+Without the setting, Windows produced an enabled `defaultuser0` account with a persistent profile, resumed interactive OOBE after the LTSC-clean provisioning pipeline had completed successfully, exposed the network setup page during the intentionally offline deployment, and entered an `OOBELOCAL` retry loop after the offline path was selected. Restoring the setting in a subsequent clean deployment restored the normal unattended end state.
+
+The project therefore retains the setting as a deliberate compatibility requirement for this flow, not as obsolete residue. It is not replaced with a `UserAccounts`-based OOBE account handoff merely to remove the setting, because doing so would move account creation into the answer-file layer and require redesigning the existing generated-secret bootstrap boundary. The current design generates the temporary bootstrap secret on the target machine and keeps the unattended entry intentionally narrow.
+
+Any future removal or replacement of `SkipMachineOOBE` requires clean-VM evidence that the supported offline flow completes without resumed interactive OOBE or unintended accounts and profiles, while preserving the existing account lifecycle and secret-handling model.
+
 ### Servicing and policy application run in SetupComplete
 
 Servicing, machine-level policy orchestration, and system-wide Local GPO User Configuration are intentionally handled in `SetupComplete.cmd`.

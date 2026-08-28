@@ -94,6 +94,7 @@
         <HideEULAPage>true</HideEULAPage>
         <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
         <ProtectYourPC>3</ProtectYourPC>
+        <!-- Intentionally retained for the validated LTSC unattended flow; see DECISIONS.md. -->
         <SkipMachineOOBE>true</SkipMachineOOBE>
         <SkipUserOOBE>false</SkipUserOOBE>
       </OOBE>
