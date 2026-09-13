@@ -17,6 +17,7 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] `Autounattend.xml` selects the intended OS image without requiring edition-picker interaction.
 * [ ] `Autounattend.xml` invokes the expected specialize-stage entry into `PreOOBE.cmd`.
 * [ ] The unattended entry remains intentionally narrow and does not absorb later-stage logic.
+* [ ] The exact Windows image selected for installation is prepared offline with `HKLM\SOFTWARE\Microsoft\Windows Defender\Features\TamperProtection=REG_DWORD 4`; existing ACLs are preserved, `TamperProtectionSource` is not synthesized, and the committed prepared image is the one used for installation.
 
 ---
 
@@ -54,12 +55,14 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] When a reboot is required, the final Panther marker content is selected and positively verified before Stage B registration or Winlogon autologon priming; signaling failure keeps that gateway closed.
 * [ ] Platform-gate mismatches fail closed and flow to the shared final return-code path.
 * [ ] The platform gate requires `EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, and `STRICT_DISPLAYVERSION=1`.
-* [ ] The mandatory system-wide Local GPO User Configuration gate runs after the platform gate and before the normal baseline workload.
-* [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` is treated as the required tracked four-entry policy payload.
-* [ ] `UserBaselinePolicies.txt` contains exactly the approved `DisableWindowsSpotlightFeatures=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0` DWORD values under their intended User Configuration registry paths.
+* [ ] The mandatory system-wide Local GPO baseline gate runs after the platform gate and before the normal baseline workload.
+* [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\BaselinePolicies.txt` is treated as the required tracked five-record payload.
+* [ ] `BaselinePolicies.txt` preserves the four approved User DWORD values (`DisableWindowsSpotlightFeatures=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0`) under their intended User Configuration registry paths and adds the Computer `DisableBehaviorMonitoring=DWORD:1` record under the Windows Defender Real-Time Protection path.
 * [ ] `SetupComplete.cmd` invokes one `LGPO.exe /t` import for the complete payload.
 * [ ] A missing LGPO executable, missing payload, or non-zero import RC fails closed, stops normal baseline processing, and preserves the existing first-fatal-RC and final-RC contract.
-* [ ] The Local GPO User Configuration mechanism does not directly write these settings to `HKCU`, run `gpupdate`, or add a first-logon helper.
+* [ ] The combined Local GPO mechanism does not directly write the User settings to `HKCU`, add a first-logon helper, or add a production `gpupdate /force` recovery mechanism; the validated fresh-deployment path does not require one.
+* [ ] `SetupComplete.cmd` does not directly write `DisableBehaviorMonitoring=0` or `DisableBehaviorMonitoring=1`; the Computer value comes only from the Local GPO payload.
+* [ ] Fresh-deployment validation proves the Computer `Registry.pol` record, materialized policy DWORD `1`, effective `DisableBehaviorMonitoring=True`, runtime `BehaviorMonitorEnabled=False`, final `TamperProtection=4` with `TamperProtectionSource` absent and `IsTamperProtected=False`, and retained Defender protections.
 * [ ] The final RC contract remains deterministic:
   * [ ] fatal servicing failure cannot be masked by later success states;
   * [ ] closed-gate / fail state does not collapse into silent success;
@@ -131,12 +134,12 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] `ConfigureDefenderPrivacy.ps1` is the single runtime implementation owner of machine-policy `SpynetReporting=0` and `SubmitSamplesConsent=2`.
 * [ ] Fresh-deployment logic does not explicitly configure or clean up `DisableBlockAtFirstSeen`, `LocalSettingOverrideSpynetReporting`, or `MpCloudBlockLevel`.
 * [ ] The component verifies its owned registry policy separately from effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state.
-* [ ] The component observes but never disables or bypasses Tamper Protection.
+* [ ] The component observes but never disables or bypasses Tamper Protection; its privacy result does not establish the overall Tamper or Behavior Monitoring acceptance state.
 * [ ] Exit `0` means the effective privacy posture was fully verified, exit `2` means policy/state inspection succeeded but effective posture is not guaranteed, and exit `1` means a technical execution or verification failure.
 * [ ] `SetupComplete.cmd` invokes the component through the pinned Windows PowerShell 5.1 executable with `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File` and captures output in `%WINDIR%\Panther\SetupComplete.log`.
 * [ ] Exit `2`, technical nonzero results, and a missing component route through the existing non-fatal hardening-warning machinery without setting `FAILED`, `DISM_HARD_FAIL`, or fatal `L2C_FIRST_BAD_RC`, and without closing the trusted-continuation gate.
 * [ ] The same idempotent component remains available under `%WINDIR%\Setup\Scripts` for an elevated post-deployment rerun.
-* [ ] The two machine policy registry values remain separate from `UserBaselinePolicies.txt` and Local GPO `Registry.pol`; `gpedit.msc` display state is not used as the runtime source of truth.
+* [ ] The two privacy machine-policy registry values remain direct values separate from the `BaselinePolicies.txt` Local GPO declarations; the Computer `DisableBehaviorMonitoring=1` record is the persistent Local GPO authority, and `gpedit.msc` display state is not used as the runtime source of truth.
 
 ---
 

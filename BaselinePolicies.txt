@@ -17,3 +17,8 @@ User
 Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
 Start_TrackProgs
 DWORD:0
+
+Computer
+Software\Policies\Microsoft\Windows Defender\Real-Time Protection
+DisableBehaviorMonitoring
+DWORD:1

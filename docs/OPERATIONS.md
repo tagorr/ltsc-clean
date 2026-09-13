@@ -10,6 +10,34 @@ Use `docs/PIPELINE_FLOW.md` for runtime sequence and handoff logic.
 
 Use `docs/TROUBLESHOOTING.md` for diagnosis, failure analysis, and recovery work.
 
+## Offline Tamper Protection Media Preparation
+
+The supported deployment starts from the exact Windows image that Setup will install after that image has been prepared offline. Before first boot, the offline SOFTWARE hive of that selected image must contain:
+
+`HKLM\SOFTWARE\Microsoft\Windows Defender\Features\TamperProtection = REG_DWORD 4`
+
+The preparation contract is:
+
+- preserve the existing ACLs on the Defender `Features` key;
+- do not create or synthesize `TamperProtectionSource`;
+- commit the prepared image and use that same image for installation;
+- verify the resulting first-boot deployment against the final Defender and Behavior Monitoring state in [Validation](VALIDATION.md).
+
+This is an operator-owned media-preparation prerequisite, not a `SetupComplete.cmd` action and not a new runtime stage. The repository does not require one host-side implementation. A genuinely offline WinPE workflow or an equivalent method may satisfy the same contract when it establishes and verifies these conditions; the complete validation record in [Validation](VALIDATION.md) applies to the tested fresh-deployment path.
+
+### Tested Windows-host example
+
+The tested Windows-host approach mounts the selected WIM index, loads its offline SOFTWARE hive under a temporary host registry name, sets only the `TamperProtection` value, and commits the image. Perform the mutation from LocalSystem or an equivalent sufficiently authoritative offline context; an elevated Administrator token may be unable to write the protected key.
+
+For that example:
+
+1. Identify the exact WIM image and index that Windows Setup will install.
+2. Mount that index with the Windows servicing tools, then load its `Windows\System32\Config\SOFTWARE` hive under an operator-chosen temporary name such as `HKLM\L2C_OfflineSoftware` (for example, `reg load HKLM\L2C_OfflineSoftware <mount>\Windows\System32\Config\SOFTWARE`).
+3. In the loaded hive, confirm the existing `Microsoft\Windows Defender\Features` key, then set only its `TamperProtection` value to `REG_DWORD 4` (for example, `reg add "HKLM\L2C_OfflineSoftware\Microsoft\Windows Defender\Features" /v TamperProtection /t REG_DWORD /d 4 /f`), read it back. If the key is missing or the value cannot be read back, stop. Do not take ownership, rewrite the key ACL, or add a replacement source value merely to complete the edit.
+4. Unload the temporary hive (for example, `reg unload HKLM\L2C_OfflineSoftware`), dismount the selected image with its changes committed (for example, the servicing tool's `/Unmount-Image ... /Commit` operation), and verify that the installation media still selects that committed image/index.
+
+If the hive cannot be unloaded cleanly or the value cannot be read back, do not treat the media as prepared. An equivalent offline method must provide the same invariant and commit/use evidence; the temporary hive name and `reg load` sequence are implementation details of this example.
+
 ## Preparation Before Installation
 
 Before installation, prepare:
@@ -23,7 +51,7 @@ Before installation, prepare:
   - `ConfigureDefenderPrivacy.ps1`
   - `ValidateSecrets.ps1`
   - `CreatePrimaryAdmin.ps1`
-  - `UserBaselinePolicies.txt`
+  - `BaselinePolicies.txt`
 - a trusted operator-supplied Microsoft `LGPO.exe` staged as `%WINDIR%\Setup\Scripts\LGPO.exe`; this executable is not tracked or automatically acquired by the repository;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` as the required operator-supplied secret input.
 
@@ -78,7 +106,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 ### What each log shows
 
 - `PreOOBE.log` shows specialize-phase policy work, bootstrap provisioning status, and bootstrap output lines that help confirm whether early bootstrap completed cleanly.
-- `SetupComplete.log` shows the mandatory Local GPO User Configuration import, `[DEFENDER-PRIVACY]` policy/effective-state results and any hardening warning, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, reboot-finalization errors, and the SetupComplete-side outcome for the current run.
+- `SetupComplete.log` shows the mandatory combined Local GPO baseline import, `[DEFENDER-PRIVACY]` policy/effective-state results and any hardening warning, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, reboot-finalization errors, and the SetupComplete-side outcome for the current run.
 - `l2c_master_<timestamp>.log`, if present, is the main evidence for Stage A and Stage B outcome, per-secret cleanup state, and teardown/finalization progress after continuation. Its reboot-preparation entries do not prove that shutdown scheduling was accepted; use `SetupComplete.log` and the process result for reboot-finalization failures.
 - `SetupComplete-DISM.log` is the consolidated DISM servicing trace for SetupComplete-time servicing work.
 
@@ -86,7 +114,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 
 Before deciding how far the run progressed, check whether:
 
-- `SetupComplete.log` shows `[SECTION] System-wide Local GPO User Configuration baseline` followed by `[INFO] Local GPO User Configuration baseline import succeeded rc=0` on the normal path;
+- `SetupComplete.log` shows `[SECTION] System-wide Local GPO baseline` followed by `[INFO] Local GPO baseline import succeeded rc=0` on the normal path;
 - `SetupComplete.log` shows the Defender privacy policy and effective-state result that was observable when the component ran, plus any corresponding hardening-warning summary;
 - `SetupComplete.log` shows the expected current-run outcome;
 - the Stage B master log, if present, shows the expected Stage A and Stage B outcome;
@@ -119,20 +147,23 @@ Use `docs/TROUBLESHOOTING.md` when the remaining state must be diagnosed or inte
 
 ### Defender privacy final-state verification and remediation
 
-A Defender privacy posture warning during SetupComplete is a point-in-time, non-fatal hardening result. Allow the normal provisioning reboot to complete before deciding whether remediation is needed, then use the retained `ConfigureDefenderPrivacy.ps1` as the canonical machine-readable final verification entry point from an already elevated Windows PowerShell session. It independently verifies the owned policy registry values and the effective Defender state; the underlying `Get-MpComputerStatus` and `Get-MpPreference` values remain useful for interpreting the result.
+A Defender privacy posture warning during SetupComplete is a point-in-time, non-fatal hardening result. Allow the normal provisioning reboot to complete before deciding whether remediation is needed, then use the retained `ConfigureDefenderPrivacy.ps1` as the canonical machine-readable verification entry point for its two owned privacy policies from an already elevated Windows PowerShell session. It does not apply or certify the Behavior Monitoring Local GPO policy; inspect that policy and its effective/runtime state separately below.
 
-The desired final state is:
+The desired final deployment state is:
 
-- observed `IsTamperProtected` state (`True` or `False`);
+- offline `TamperProtection=REG_DWORD 4`;
+- observed `IsTamperProtected=False`;
 - `MAPSReporting=0`;
 - effective `SubmitSamplesConsent=2`;
 - policy `SpynetReporting=0` and policy `SubmitSamplesConsent=2`;
-- Microsoft Defender Antivirus, real-time protection, behavior monitoring, and IOAV protection enabled;
+- Microsoft Defender Antivirus enabled;
+- real-time protection, On-Access protection, IOAV protection, and applicable NIS protection enabled;
+- Behavior Monitoring intentionally disabled: the Local GPO Computer record and machine-policy `DisableBehaviorMonitoring=1`, effective `Get-MpPreference.DisableBehaviorMonitoring=True`, and runtime `Get-MpComputerStatus.BehaviorMonitorEnabled=False` agree;
 - `PUAProtection=1`.
 
-Windows Security may visibly warn because Tamper Protection is Off. That warning does not mean Microsoft Defender Antivirus or its local protections are disabled.
+Windows Security may visibly warn because Tamper Protection is Off. That warning is independent of the intentional Behavior Monitoring disablement and does not indicate that Microsoft Defender Antivirus or the explicitly retained real-time, On-Access, IOAV, NIS, and PUA protections have changed.
 
-`IsTamperProtected` may be either `True` or `False`; no Tamper Protection remediation is required when effective MAPS/sample state is `0` / `2`, even if SetupComplete recorded an earlier posture warning.
+The privacy component has narrower semantics: for its own result, either observed `IsTamperProtected` value can accompany effective `MAPSReporting=0` and `SubmitSamplesConsent=2`. That component-level rule does not relax the overall deployment acceptance requirement for Tamper Protection Off.
 
 If effective MAPS/sample state differs from `0` / `2`, inspect the effective Defender policy state and rerun the retained component from an already elevated Windows PowerShell session after resolving the policy enforcement issue. The component does not self-elevate and does not disable or bypass Tamper Protection.
 
@@ -148,7 +179,7 @@ Read `$LASTEXITCODE` immediately after the command:
 
 `-ExecutionPolicy Bypass` applies only to the spawned Windows PowerShell process and does not permanently change PowerShell execution policy.
 
-The component directly manages machine policy registry values; it does not write corresponding Local GPO `Registry.pol` state. `gpedit.msc` may therefore show the related Administrative Template settings as Not Configured even when both the owned policy values and Defender effective state are correct. Do not use that display alone as failure evidence, and do not conflate this machine-level profile with `UserBaselinePolicies.txt`.
+The component directly manages the two privacy machine-policy registry values; it does not write corresponding Local GPO `Registry.pol` state. `gpedit.msc` may therefore show those privacy Administrative Template settings as Not Configured even when the owned registry values and privacy effective state are correct. Do not use that display alone as failure evidence, and do not conflate this direct privacy profile with the `BaselinePolicies.txt` Local GPO declarations. The BM Computer record must be checked in the Local GPO source and effective/runtime layers separately.
 
 ### Retained recovery state
 
@@ -197,7 +228,9 @@ For a normal completed run, confirm the following:
 - `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available;
-- the machine Local GPO User Configuration contains the four entries defined by `UserBaselinePolicies.txt`;
+- the machine Local GPO contains the four original User entries and the Computer `DisableBehaviorMonitoring=1` entry defined by `BaselinePolicies.txt`;
+- the corresponding Machine `Registry.pol`, machine-policy DWORD, effective preference and runtime Behavior Monitoring state agree with the BM validation contract;
+- `TamperProtection=REG_DWORD 4` and `IsTamperProtected=False`;
 - after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;
 - temporary Winlogon and logon-policy changes have been restored;
 - when a reboot obligation exists, the existing controlled reboot occurs only after shutdown scheduling is accepted; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually. If no reboot is required or RC 8 is returned, follow the reboot-flag and troubleshooting evidence before treating the run as normally complete.
@@ -206,7 +239,7 @@ For a normal completed run, confirm the following:
 
 Also confirm that the logs support the observed end state:
 
-- `SetupComplete.log` confirms the successful Local GPO User Configuration import and reflects the expected SetupComplete outcome for the current run;
+- `SetupComplete.log` confirms the successful combined Local GPO baseline import and reflects the expected SetupComplete outcome for the current run;
 - the Stage B master log, if present, reflects the expected Stage A and Stage B outcome;
 - secret cleanup states match the observed file state;
 - reboot-flag handling in the logs matches the final machine state.
