@@ -12,7 +12,8 @@ Use this document to prepare and run the baseline for the first time. It covers:
 ## Before You Start  
   
 - Use supported Windows 11 Enterprise LTSC 2024 installation media;
-- Use the `Autounattend.xml` file from this repository and place it at the media root;
+- Prepare the selected image offline with Defender Tamper Protection Off; see [Operations](OPERATIONS.md) for details;
+- Place `Autounattend.xml` at the media root;
 - Stage these baseline files under `%WINDIR%\Setup\Scripts`:  
   - `PreOOBE.cmd`  
   - `SetupComplete.cmd`  
@@ -20,10 +21,9 @@ Use this document to prepare and run the baseline for the first time. It covers:
   - `ConfigureDefenderPrivacy.ps1`
   - `ValidateSecrets.ps1`  
   - `CreatePrimaryAdmin.ps1`  
-  - `UserBaselinePolicies.txt`
-- Stage a trusted Microsoft `LGPO.exe` as `%WINDIR%\Setup\Scripts\LGPO.exe`; it is operator-supplied and is not tracked or automatically acquired by this repository;
-- Create `%WINDIR%\Setup\Scripts\.primaryadmin.pw`; 
-- Follow the secret-handling rules in [Operations](OPERATIONS.md).  
+  - `BaselinePolicies.txt`
+- Stage a trusted Microsoft `LGPO.exe` as `%WINDIR%\Setup\Scripts\LGPO.exe`; it is operator-supplied and not included in the repository;
+- Create `%WINDIR%\Setup\Scripts\.primaryadmin.pw`; see [Operations](OPERATIONS.md) for secret-handling details;
 
 Disk and partition selection remains intentionally manual because `Autounattend.xml` does not define `DiskConfiguration` or `InstallTo*`.
 
@@ -36,15 +36,9 @@ Disk and partition selection remains intentionally manual because `Autounattend.
 ## Expected End State
 
 - `primaryadmin` is ready as the permanent local administrator;
-- the temporary `bootstrap` account has been disabled;
-- the `\L2C\CreatePrimaryAdmin` task has been removed;
-- `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
-- `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
-- `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available for elevated post-deployment verification or remediation;
-- Microsoft Defender Antivirus and its local protections remain enabled;
-- after the normal provisioning reboot, the final Defender privacy state is checked as described in [Operations](OPERATIONS.md); a SetupComplete Defender privacy hardening warning does not by itself mean deployment failed;
-- temporary Winlogon and logon-policy changes have been restored;
-- after successful Stage B provisioning and teardown, the existing controlled reboot is requested when still required; successful teardown does not prove that Windows accepted the shutdown request. A failed request remains visible through the Stage B result (which can be RC 8) and the retained Panther marker when restoration is verified; after an accepted reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually.
+- the temporary `bootstrap` account is disabled and deployment secret files are removed;
+- Microsoft Defender Antivirus remains enabled with real-time, On-Access, IOAV, and applicable NIS protection; Tamper Protection and Behavior Monitoring are off;
+- temporary logon changes are restored; after any required final controlled reboot, the normal Windows sign-in screen is shown for manual `primaryadmin` sign-in.
 
 ## If Normal Completion Does Not Happen
 

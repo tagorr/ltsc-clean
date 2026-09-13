@@ -6,12 +6,12 @@ Use this document as the canonical security view of the baseline.
 
 It describes the security posture, threat boundaries, assumptions, and trade-offs for the supported baseline: Windows 11 Enterprise LTSC 2024 workstations (`EnterpriseS`, `24H2`, build `26100+`) in standalone or simple network environments without corporate integration or automatic proxy discovery requirements.
 
-The baseline uses only supported Microsoft mechanisms and favors deterministic, idempotent behavior.
+The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes, while favoring deterministic, idempotent behavior.
 
 ## Intentional trade-offs
 
 - SmartScreen policy layers are disabled for Windows Shell and Edge.
-- Microsoft Defender local protections remain enabled, while the baseline applies machine policy to disable cloud/MAPS participation and automatic sample submission and reports when the effective privacy posture cannot be verified.
+- Microsoft Defender Antivirus remains enabled. Real-time protection, On-Access protection, IOAV protection, applicable NIS protection, and PUA protection remain enabled, while Tamper Protection is intentionally Off in the prepared deployment and Behavior Monitoring is intentionally disabled through persistent Local GPO. The baseline applies machine policy to disable cloud/MAPS participation and automatic sample submission and reports when the effective privacy posture cannot be verified.
 - Delivery Optimization is set to mode 0 (HTTP-only, no peer-to-peer).
 - Windows Update runs in notify-only mode. `ExcludeWUDriversInQualityUpdate=1` excludes driver offers delivered through quality updates; preview builds, other Microsoft products, and OS upgrade offers are not requested by this baseline.
 - WPAD is disabled via policies on WinINET and WinHTTP. The WinHTTP Auto-Proxy service is not forcibly disabled.
@@ -23,17 +23,19 @@ The dedicated `SNMP.Client~~~~0.0.1.0` and `WMI-SNMP-Provider.Client~~~~0.0.1.0`
 
 ### Defender and SmartScreen Baseline
 
-This baseline does not attempt to disable Microsoft Defender Antivirus or its local endpoint protections. Real-time protection, behavior monitoring, IOAV protection, and PUA protection remain enabled. `ConfigureDefenderPrivacy.ps1` is the single runtime owner of the machine-policy values `SpynetReporting=0` and `SubmitSamplesConsent=2`.
+This baseline does not attempt to disable Microsoft Defender Antivirus. Real-time protection, On-Access protection, IOAV protection, applicable NIS protection, and PUA protection remain enabled. Tamper Protection is intentionally Off in the prepared deployment, and Behavior Monitoring is intentionally disabled through the persistent Local GPO baseline. `ConfigureDefenderPrivacy.ps1` remains the single runtime owner of the machine-policy values `SpynetReporting=0` and `SubmitSamplesConsent=2`.
 
-Successful registry mutation is not treated as proof that Defender currently honors the intended posture. The component separately observes `IsTamperProtected` and verifies effective `MAPSReporting=0` and effective `SubmitSamplesConsent=2`; either Tamper Protection value is compatible with successful privacy verification. Tamper Protection is observation-only and is never disabled or bypassed by this component. A genuine effective MAPS/sample mismatch, technical component failure, or missing runtime component becomes a non-fatal hardening warning in `SetupComplete.cmd`; it is not by itself a trusted-continuation failure.
+Successful registry mutation is not treated as proof that Defender currently honors the intended posture. The component separately observes `IsTamperProtected` and verifies effective `MAPSReporting=0` and effective `SubmitSamplesConsent=2`; for this privacy component's result only, either observed Tamper Protection value is compatible with successful privacy verification. Overall deployment acceptance separately requires Tamper Protection Off. Tamper Protection is observed but never disabled or bypassed by this component. A genuine effective MAPS/sample mismatch, technical component failure, or missing runtime component becomes a non-fatal hardening warning in `SetupComplete.cmd`; it is not by itself a trusted-continuation failure.
 
-Windows Security may visibly warn when Tamper Protection is Off. This warning must not be confused with Microsoft Defender Antivirus or its local endpoint protections being disabled.
+Windows Security may visibly warn when Tamper Protection is Off. This warning is independent of the baseline's intentional Behavior Monitoring disablement and does not indicate that Microsoft Defender Antivirus or the explicitly retained real-time, On-Access, IOAV, NIS, and PUA protections have changed.
 
-The two Defender privacy values are written directly to the machine policy registry, not to Local GPO `Registry.pol`. The corresponding Administrative Template settings may therefore appear as Not Configured in `gpedit.msc` even when both the registry policy and Defender effective state are correct. This path is separate from `UserBaselinePolicies.txt` and its Local GPO User Configuration import.
+The two Defender privacy values are written directly to the machine policy registry, not to Local GPO `Registry.pol`. The corresponding privacy Administrative Template settings may therefore appear as Not Configured in `gpedit.msc` even when both the registry policy and Defender effective state are correct. This direct path is separate from the `BaselinePolicies.txt` Local GPO declarations; the payload's Computer record is the persistent authority for Behavior Monitoring.
+
+The exact image selected for installation must be prepared offline with `HKLM\SOFTWARE\Microsoft\Windows Defender\Features\TamperProtection=REG_DWORD 4`. Existing ACLs must be preserved, and `TamperProtectionSource` is not synthesized. The preparation is an operator-owned media boundary and requires an authority able to modify the protected offline key; it is not a runtime Tamper bypass. The offline Tamper preset is project-validated; explicit Microsoft documentation for this exact provisioning method has not been established. See [Operations](docs/OPERATIONS.md) for the invariant and practical procedure.
 
 SmartScreen is disabled for Windows Shell and the Edge policy layer to minimize silent outbound reputation/data flows. Those settings remain enforced through registry policy and orchestration in `SetupComplete.cmd`.
 
-The Windows Security notification-area presentation is suppressed through the supported machine policy `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray\HideSystray=1`. `SetupComplete.cmd` also removes only the standard machine-wide `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\SecurityHealth` autorun entry for `%windir%\system32\SecurityHealthSystray.exe`. This is presentation and autorun cleanup only; this suppression does not disable or otherwise modify Windows Security, `SecurityHealthService`, `wscsvc`, `WinDefend`, or Microsoft Defender local protections.
+The Windows Security notification-area presentation is suppressed through the supported machine policy `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray\HideSystray=1`. `SetupComplete.cmd` also removes only the standard machine-wide `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\SecurityHealth` autorun entry for `%windir%\system32\SecurityHealthSystray.exe`. This is presentation and autorun cleanup only; this suppression does not disable or otherwise modify Windows Security, `SecurityHealthService`, `wscsvc`, `WinDefend`, or the explicitly retained Defender protections. Behavior Monitoring remains the separate intentional Local GPO disablement.
 
 ### Edge Browser Removal and Update Suppression
 
@@ -41,7 +43,7 @@ Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardenin
 
 - Windows Shell SmartScreen: `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen=0`
 - Edge SmartScreen policies: `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenDnsRequestsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenForTrustedDownloadsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenPuaEnabled=0`
-- Defender local protections ON: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableIOAVProtection=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\PUAProtection=1`
+- Retained Defender protections: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableIOAVProtection=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\PUAProtection=1`; Behavior Monitoring is intentionally disabled by the Local GPO Computer record `DisableBehaviorMonitoring=1`
 - Defender cloud/privacy policy: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SubmitSamplesConsent=2`
 - Edge lifecycle: early best-effort uninstall via Edge `setup.exe --uninstall --system-level --force-uninstall`; EdgeUpdate services/tasks disabled best-effort; WebView2 not removed
 - UX hygiene: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\DisableEdgeDesktopShortcutCreation=1`
@@ -49,6 +51,7 @@ Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardenin
 ## Not a fit if you require
 
 - SmartScreen prompts or Defender cloud protection by policy.
+- Tamper Protection or Behavior Monitoring enabled as the baseline state.
 - Peer-to-peer Delivery Optimization or Connected Cache scenarios.
 - Automatic proxy discovery (WPAD) for WinHTTP clients.
 - Guaranteed rollback of currently installed updates.
@@ -68,7 +71,7 @@ The baseline uses a fail-closed platform compatibility posture by default. Best-
 
 ## Local GPO external-tool trust boundary
 
-The operator must stage a trusted Microsoft `LGPO.exe` at `%WINDIR%\Setup\Scripts\LGPO.exe`. `SetupComplete.cmd` executes that binary as `SYSTEM` to import the repository-tracked `%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt` payload.
+The operator must stage a trusted Microsoft `LGPO.exe` at `%WINDIR%\Setup\Scripts\LGPO.exe`. `SetupComplete.cmd` executes that binary as `SYSTEM` to import the repository-tracked `%WINDIR%\Setup\Scripts\BaselinePolicies.txt` payload.
 
 The repository does not acquire, download, version-check, hash-check, or Authenticode-check `LGPO.exe`. Selecting and staging the trusted binary is therefore an operator responsibility. Missing inputs or a non-zero import result fail closed before the normal baseline workload continues.
 

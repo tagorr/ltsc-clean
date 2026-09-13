@@ -14,7 +14,7 @@ Start with `%WINDIR%\Panther\SetupComplete.log`.
 
 Check:
 
-- `[SECTION] System-wide Local GPO User Configuration baseline` and any following `[ERROR]` about a missing `LGPO.exe`, missing `UserBaselinePolicies.txt`, or failed import;
+- `[SECTION] System-wide Local GPO baseline` and any following `[ERROR]` about a missing `LGPO.exe`, missing `BaselinePolicies.txt`, or failed import;
 - `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`
 - nearby `[WARN]` or `[ERROR]` lines about invalid, missing, unreadable, or malformed secret files, including internal validator errors or malformed primary admin secret content
 - any line showing that `\L2C\CreatePrimaryAdmin` was scheduled
@@ -42,9 +42,23 @@ Interpret the evidence by category:
 - a technical nonzero or missing-script warning means configuration or verification could not be completed reliably and requires investigation;
 - neither warning category is, by itself, a pipeline or trusted-continuation failure, so it can coexist with successful secret validation, Stage A, Stage B, cleanup, and finalization.
 
-Allow the normal provisioning reboot to complete and inspect the final Defender state before deciding whether remediation is required. Tamper Protection is observation-only: either `IsTamperProtected=True` or `IsTamperProtected=False` is acceptable and is not itself a remediation criterion. Base remediation on an effective `MAPSReporting=0` / `SubmitSamplesConsent=2` mismatch or an actual technical verification failure; use the canonical verification and remediation procedure in [Operations](OPERATIONS.md).
+Allow the normal provisioning reboot to complete and inspect the final Defender state before deciding whether remediation is required. Overall deployment acceptance requires the prepared image's `TamperProtection=REG_DWORD 4` and observed `IsTamperProtected=False`. If Tamper Protection is unexpectedly On, first verify that the exact image used by Setup was prepared offline according to [Operations](OPERATIONS.md); do not attempt a runtime Tamper bypass. For the privacy component's own result, either observed `IsTamperProtected` value can accompany effective `MAPSReporting=0` / `SubmitSamplesConsent=2`, but that narrower rule does not change the overall deployment requirement.
 
-A change in Tamper Protection during provisioning may be visible in Microsoft Defender Operational event evidence. Treat such a transition as observed behavior only; do not infer its internal cause or assume that it must recur on another deployment.
+Base privacy-component remediation on an effective `MAPSReporting=0` / `SubmitSamplesConsent=2` mismatch or an actual technical verification failure; use the canonical verification and remediation procedure in [Operations](OPERATIONS.md). The validated deployment does not rely on an automatic Tamper transition.
+
+## Symptom: Behavior Monitoring Is Not Disabled
+
+Use this section when the intended Behavior Monitoring suppression is not observed after deployment. The privacy component's result does not certify this state.
+
+Check the layers independently:
+
+- the Computer record in the parsed `%WINDIR%\System32\GroupPolicy\Machine\Registry.pol` from the `BaselinePolicies.txt` import;
+- `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring` as `REG_DWORD 1`;
+- `Get-MpPreference.DisableBehaviorMonitoring` as `True`;
+- `Get-MpComputerStatus.BehaviorMonitorEnabled` as `False`;
+- retained Antivirus, real-time, On-Access, IOAV, applicable NIS, and PUA protection fields.
+
+Treat a missing or wrong policy record as an import/source problem, a missing or unreadable value as technical uncertainty, and a readable different value as a posture mismatch. A successful LGPO return code, `SetupComplete` success, or `ConfigureDefenderPrivacy.ps1` exit `0` is not proof of effective Behavior Monitoring suppression. Record the offline Tamper value, `IsTamperProtected`, and the BM layers separately; if Tamper is On, verify media preparation first. Do not disable or bypass Tamper Protection at runtime, and do not use production `gpupdate /force` as the normal remedy. Use the completed validation record for the WdVerification and servicing durability evidence before claiming durable suppression.
 
 ## Symptom: Stage B Ran but the Final State Is Not Correct
 

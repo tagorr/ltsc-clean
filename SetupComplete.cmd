@@ -804,29 +804,29 @@ exit /b 0
 
 :main
 
-:: ------------ system-wide Local GPO User Configuration baseline ------------
-call :log "[SECTION] System-wide Local GPO User Configuration baseline"
+:: ------------ system-wide Local GPO baseline ------------
+call :log "[SECTION] System-wide Local GPO baseline"
 set "L2C_LGPO_EXE=%WINDIR%\Setup\Scripts\LGPO.exe"
-set "L2C_USER_BASELINE_PAYLOAD=%WINDIR%\Setup\Scripts\UserBaselinePolicies.txt"
+set "L2C_BASELINE_PAYLOAD=%WINDIR%\Setup\Scripts\BaselinePolicies.txt"
 if not exist "%L2C_LGPO_EXE%" (
   call :log "[ERROR] Required LGPO executable missing: %L2C_LGPO_EXE%"
   set "FAILED=1"
   goto :l2c_final_rc
 )
-if not exist "%L2C_USER_BASELINE_PAYLOAD%" (
-  call :log "[ERROR] Required Local GPO User Configuration payload missing: %L2C_USER_BASELINE_PAYLOAD%"
+if not exist "%L2C_BASELINE_PAYLOAD%" (
+  call :log "[ERROR] Required Local GPO baseline payload missing: %L2C_BASELINE_PAYLOAD%"
   set "FAILED=1"
   goto :l2c_final_rc
 )
-"%L2C_LGPO_EXE%" /t "%L2C_USER_BASELINE_PAYLOAD%"
+"%L2C_LGPO_EXE%" /t "%L2C_BASELINE_PAYLOAD%"
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
-  call :log "[ERROR] Local GPO User Configuration baseline import failed rc=%RC%"
+  call :log "[ERROR] Local GPO baseline import failed rc=%RC%"
   if not defined L2C_FIRST_BAD_RC set "L2C_FIRST_BAD_RC=%RC%"
   set "FAILED=1"
   goto :l2c_final_rc
 )
-call :log "[INFO] Local GPO User Configuration baseline import succeeded rc=0"
+call :log "[INFO] Local GPO baseline import succeeded rc=0"
 
 :: ------------ Edge Update policies ------------
 call :log "[SECTION] Edge Update policies"
@@ -850,7 +850,6 @@ REM ------------ SmartScreen ^& Defender (policy enforced) ------------
 call :log "[SECTION] SmartScreen & Defender"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableSmartScreen" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" "REG_DWORD" "0"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableBehaviorMonitoring" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableIOAVProtection" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" "PUAProtection" "REG_DWORD" "1"
 
