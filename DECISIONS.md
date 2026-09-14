@@ -137,7 +137,7 @@ The four surfaces are `%WINDIR%\Setup\Scripts`, `CreatePrimaryAdmin.ps1`, the `\
 
 ### Microsoft Edge
 
-The baseline applies a policy-first posture for Edge. It suppresses first-run UX, prevents broken shortcut artifacts, and suppresses EdgeUpdate services and tasks on a best-effort basis to reduce unwanted Edge reappearance and background activity.
+The baseline applies a policy-first posture for Edge. It suppresses first-run UX, prevents broken shortcut artifacts, and sets the EdgeUpdate `UpdateDefault=0` policy.
 
 The baseline does not remove WebView2 runtime. This keeps browser suppression separate from removal of shared runtime dependencies and avoids turning a quiet-default decision into component eradication.
 
