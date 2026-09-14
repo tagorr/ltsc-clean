@@ -620,14 +620,6 @@ if "%~1"=="-2146498548" goto :dism_warn_unknown_feature
 if "%~1"=="2148468748" goto :dism_warn_unknown_feature
 if "%~1"=="-2146498541" goto :dism_warn_invalid_state
 if "%~1"=="2148468755" goto :dism_warn_invalid_state
-if "%~1"=="-2146498529" goto :dism_fatal
-if "%~1"=="2148468767" goto :dism_fatal
-if "%~1"=="-2146498283" goto :dism_fatal
-if "%~1"=="2148469013" goto :dism_fatal
-if "%~1"=="-2147024891" goto :dism_fatal
-if "%~1"=="2147942405" goto :dism_fatal
-if "%~1"=="87" goto :dism_fatal
-if "%~1"=="998" goto :dism_fatal
 goto :dism_fatal
 
 :dism_rc3010
