@@ -269,14 +269,12 @@ try {
     }
 
     $secretFileCreated = $false
-    $attemptedSecureCreate = $false
     try {
         Write-BootstrapLog ("Creating bootstrap password file securely at '{0}'" -f $pwPath)
         $sec = New-BootstrapSecretFileSecurity
 
         $stream = $null
         try {
-            $attemptedSecureCreate = $true
             try {
                 $stream = New-BootstrapSecretFileStream -Path $pwPath -FileSecurity $sec
             } catch {
@@ -289,7 +287,6 @@ try {
                     $cur = $cur.InnerException
                 }
                 if ($alreadyExists) {
-                    $attemptedSecureCreate = $false
                     Write-BootstrapLog ("BOOTSTRAP_SECRET_ALREADY_EXISTS: refusing to overwrite existing secret file '{0}'" -f $pwPath) 'ERROR'
                     throw "BOOTSTRAP_SECRET_ALREADY_EXISTS: Secret file already exists at '$pwPath'."
                 }
