@@ -796,8 +796,7 @@ try {
   $res = Reg-Del $wl 'IgnoreShiftOverride' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
   $res = Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
   $wlAccessDenied = ($wlRcs -contains 5)
-  $cleanRcOnly = $true
-  foreach ($rc in $wlRcs) { if ($rc -ne 0 -and $rc -ne 2) { $cleanRcOnly = $false; break } }
+  $cleanRcOnly = (($wlRcs | ForEach-Object { $_ -eq 0 -or $_ -eq 2 }) -notcontains $false)
   $wlMsg = if ($cleanRcOnly) { 'Winlogon and logon policy reset: attempted' } else { ("Winlogon and logon policy reset: attempted (wlRcs={0})" -f ($wlRcs -join ',')) }
   Write-SetupLog $wlMsg
   $finalLogEntries += ("[{0}] {1}" -f ([DateTime]::UtcNow.ToString('o')), $wlMsg)
