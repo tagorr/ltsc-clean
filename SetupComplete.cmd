@@ -21,7 +21,7 @@ set "REBOOT_REQUESTED=0"
 set "WARN_REBOOT_FLAG_NO_EXECUTOR_EMITTED=0"
 set "L2C_AUTOLOGON_ARMED=0"
 set "L2C_AUTOLOGON_DEGRADED=0"
-set "L2C_TEMP_LOGON_TWEAKS_ATTEMPTED=0"
+set "L2C_TEMP_LOGON_ROLLBACK_ELIGIBLE=0"
 set "STAGEB_SKIPPED_GATE=0"
 set "STAGEB_NOT_SCHEDULED=0"
 set "FAILED=0"
@@ -358,7 +358,6 @@ goto :eof
 
 :l2c_temp_logon_tweaks
 REM Best-effort. Do not hard-fail if these cannot be applied.
-set "L2C_TEMP_LOGON_TWEAKS_ATTEMPTED=1"
 reg add "%SYS%" /v DisableCAD /t REG_DWORD /d 1 /f >nul 2>&1
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" call :log "[WARN] TEMP_LOGON_TWEAK_FAILED rc=%RC% key=%SYS% name=DisableCAD value=1"
@@ -1093,10 +1092,11 @@ if "%FAILED%"=="0" if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
 
 set "L2C_PRIMARYADMIN_PASSWORD="
 
-REM Temporary logon policies
+REM Establish temporary logon-policy rollback eligibility after the combined secret gate.
+REM The best-effort temporary values are applied immediately before Winlogon priming.
 if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-  REM Temp logon relax, only if secret present
-  call :l2c_temp_logon_tweaks
+  REM Preserve rollback coverage for stale incoming policy state before later writes.
+  set "L2C_TEMP_LOGON_ROLLBACK_ELIGIBLE=1"
 ) else (
   call :log "[INFO] Skipping temp logon tweaks (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)."
 )
@@ -1167,8 +1167,8 @@ set "FINAL_RC=0"
 if defined L2C_FIRST_BAD_RC set "FINAL_RC=%L2C_FIRST_BAD_RC%"
 if "%FINAL_RC%"=="0" if "%FAILED%"=="1" set "FINAL_RC=1"
 
-REM if the final RC is not 0 and temporary logon tweaks were attempted, roll them back
-if not "%FINAL_RC%"=="0" if "%L2C_TEMP_LOGON_TWEAKS_ATTEMPTED%"=="1" (
+REM if the final RC is not 0 and temporary logon rollback is eligible, normalize policy state
+if not "%FINAL_RC%"=="0" if "%L2C_TEMP_LOGON_ROLLBACK_ELIGIBLE%"=="1" (
   call :l2c_temp_logon_rollback
 )
 
@@ -1412,6 +1412,8 @@ call :log "[ACLBOUNDARY] PASS task_dir=%SystemRoot%\System32\Tasks\L2C"
 set "ACL_UNSAFE="
 set "TMP="
 
+REM Apply temporary logon values only after post-registration ACL validation and immediately before priming.
+call :l2c_temp_logon_tweaks
 call :l2c_prime_winlogon_autologon
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
