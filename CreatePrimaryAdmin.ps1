@@ -793,7 +793,6 @@ try {
   $res = Reg-Add $wl 'AutoAdminLogon' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
   $res = Reg-Add $wl 'ForceAutoLogon' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
   $res = Reg-Add $wl 'AutoLogonCount' 'REG_DWORD' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
-  $res = Reg-Del $wl 'IgnoreShiftOverride' -ReturnResult -SuppressWarnOnAccessDenied -OkIfMissing; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
   $res = Reg-Add $wl 'IgnoreShiftOverride' 'REG_SZ' '0' -ReturnResult -SuppressWarnOnAccessDenied; $wlRcsRaw += $res.Raw; $wlRcs += $res.Effective; if ($res.Normalized) { $wlAnyNormalized = $true }
   $wlAccessDenied = ($wlRcs -contains 5)
   $cleanRcOnly = (($wlRcs | ForEach-Object { $_ -eq 0 -or $_ -eq 2 }) -notcontains $false)
