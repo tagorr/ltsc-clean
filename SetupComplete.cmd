@@ -1638,68 +1638,8 @@ set "EDGE_UNINSTALL_KEY_PRESENT=0"
 set "EDGE_WEBVIEW2_UNINSTALL_PRESENT=0"
 set "EDGE_UNINSTALL_SIGNAL_KNOWN=1"
 set "EDGE_UNINSTALL_QUERY_RC=0"
-set "EDGE_TASK=\Microsoft\EdgeUpdate\MicrosoftEdgeUpdateTaskMachineCore"
 set "EDGE_VERIFY_ATTEMPT=1"
 
-call :log "[INFO] EdgeUpdate hardening begin (best-effort)."
-
-sc query edgeupdate >nul 2>&1
-if errorlevel 1 (
-  call :log "[INFO] EdgeUpdate service edgeupdate not present; skip disable."
-) else (
-  call :svc_disable "edgeupdate"
-  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { $s = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\edgeupdate' -Name Start -ErrorAction Stop).Start; if ($s -eq 4) { exit 0 } else { exit 1 } } catch { exit 2 }" >nul 2>&1
-  if errorlevel 2 (
-    call :log "[WARN] EdgeUpdate service edgeupdate disable verification failed (cannot read Start); continuing."
-  ) else if errorlevel 1 (
-    call :log "[WARN] EdgeUpdate service edgeupdate disable may have failed (Start!=4); continuing."
-  ) else (
-    call :log "[INFO] EdgeUpdate service edgeupdate disabled (best-effort)."
-  )
-)
-
-sc query edgeupdatem >nul 2>&1
-if errorlevel 1 (
-  call :log "[INFO] EdgeUpdate service edgeupdatem not present; skip disable."
-) else (
-  call :svc_disable "edgeupdatem"
-  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { $s = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\edgeupdatem' -Name Start -ErrorAction Stop).Start; if ($s -eq 4) { exit 0 } else { exit 1 } } catch { exit 2 }" >nul 2>&1
-  if errorlevel 2 (
-    call :log "[WARN] EdgeUpdate service edgeupdatem disable verification failed (cannot read Start); continuing."
-  ) else if errorlevel 1 (
-    call :log "[WARN] EdgeUpdate service edgeupdatem disable may have failed (Start!=4); continuing."
-  ) else (
-    call :log "[INFO] EdgeUpdate service edgeupdatem disabled (best-effort)."
-  )
-)
-
-schtasks /Query /TN "%EDGE_TASK%" >nul 2>&1
-if errorlevel 1 (
-  call :log "[INFO] EdgeUpdate task not present: %EDGE_TASK%"
-) else (
-  call :task_disable "%EDGE_TASK%"
-  schtasks /Query /TN "%EDGE_TASK%" /XML | findstr /I /C:"<Enabled>false</Enabled>" >nul 2>&1
-  if errorlevel 1 (
-    call :log "[WARN] EdgeUpdate task disable may have failed: %EDGE_TASK%; continuing."
-  ) else (
-    call :log "[INFO] EdgeUpdate task disabled: %EDGE_TASK%"
-  )
-)
-
-set "EDGE_TASK=\Microsoft\EdgeUpdate\MicrosoftEdgeUpdateTaskMachineUA"
-schtasks /Query /TN "%EDGE_TASK%" >nul 2>&1
-if errorlevel 1 (
-  call :log "[INFO] EdgeUpdate task not present: %EDGE_TASK%"
-) else (
-  call :task_disable "%EDGE_TASK%"
-  schtasks /Query /TN "%EDGE_TASK%" /XML | findstr /I /C:"<Enabled>false</Enabled>" >nul 2>&1
-  if errorlevel 1 (
-    call :log "[WARN] EdgeUpdate task disable may have failed: %EDGE_TASK%; continuing."
-  ) else (
-    call :log "[INFO] EdgeUpdate task disabled: %EDGE_TASK%"
-  )
-)
-set "EDGE_TASK="
 
 if defined ProgramFiles(x86) (
   for /f "delims=" %%V in ('dir /b /ad /o-n "%ProgramFiles(x86)%\Microsoft\Edge\Application" 2^>nul') do (
