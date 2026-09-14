@@ -1762,15 +1762,6 @@ set "_task_xml="
 set "_task_xml_sz="
 exit /b 0
 
-:after_telemetry_hardening
-:ts
-  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do (
-    set "TS=%%#"
-    goto :eof
-  )
-  set "TS=%DATE% %TIME%"
-goto :eof
-
 :fw_disable_remote_assistance
 set "RA_FW_GROUP=Remote Assistance"
 set "RA_FW_QUERY_FILE=%SystemRoot%\Temp\l2c_remote_assistance_firewall_%RANDOM%_%RANDOM%.txt"
