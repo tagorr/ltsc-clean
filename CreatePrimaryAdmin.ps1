@@ -470,9 +470,7 @@ function Test-IsAlreadyMemberError([System.Management.Automation.ErrorRecord]$Er
   if ($fqid -and ($fqid -match 'MemberExists')) { return $true }
 
   $reason = $null
-  $category = $null
   try { $reason = $Err.CategoryInfo.Reason } catch {}
-  try { $category = $Err.CategoryInfo.ToString() } catch {}
   if ($reason -and ($reason -match 'MemberExists')) { return $true }
 
   $ex = $Err.Exception
@@ -491,30 +489,6 @@ function Test-IsAlreadyMemberError([System.Management.Automation.ErrorRecord]$Er
     while ($w32 -and -not ($w32 -is [System.ComponentModel.Win32Exception])) { $w32 = $w32.InnerException }
     if ($w32 -and $w32.NativeErrorCode -eq 1378) { return $true }
   } catch {}
-
-  # LAST RESORT (string-based): code-cue only. Not locale-agnostic; only helps if the text contains numeric codes.
-  $msg = $null
-  try { if ($ex -and $ex.Message) { $msg = $ex.Message } } catch {}
-  if (-not $msg) { try { $msg = $Err.ToString() } catch {} }
-
-  if ($msg -and ($msg -match '(?i)(?:\b1378\b|0x80070562)')) {
-    if ($VerboseLog) {
-      $msgOneLine = ($msg -replace '\s+', ' ').Trim()
-      if ($msgOneLine.Length -gt 180) { $msgOneLine = $msgOneLine.Substring(0,180) + '[[...]]' }
-
-      $fqidText = if ($fqid) { $fqid } else { '' }
-      $etypeText = if ($etype) { $etype } else { '' }
-      $hresultText = if ($null -ne $hresult) { [string]$hresult } else { '' }
-      $categoryText = if ($category) { $category } else { '' }
-
-      Write-SetupLog (
-        "MemberExists detection used STRING fallback (code cue): fqid='{0}' etype='{1}' hresult='{2}' category='{3}' msg='{4}'" -f
-          $fqidText, $etypeText, $hresultText, $categoryText, $msgOneLine
-      ) 'DEBUG'
-    }
-
-    return $true
-  }
 
   return $false
 }
