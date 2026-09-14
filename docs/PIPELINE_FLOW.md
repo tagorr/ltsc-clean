@@ -152,9 +152,9 @@ This is the main control layer of the baseline. A successful import establishes 
 * requires the bootstrap secret to be present, non-empty, and format-valid;
 * requires the primary admin secret to be present, non-empty, and format-valid;
 * applies temporary logon-related settings only after the gate opens;
+* selects the final reboot obligation, preserving servicing-driven `need-reboot` and selecting `force-reboot` when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; when a reboot is required, writes and positively verifies the final Panther marker before registering the Stage B task or priming autologon;
 * verifies the ACL boundary for `%WINDIR%\Setup\Scripts` and `CreatePrimaryAdmin.ps1`;
 * hardens the `%SystemRoot%\System32\Tasks\L2C` task container;
-* selects the final reboot obligation, preserving servicing-driven `need-reboot` and selecting `force-reboot` when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; when a reboot is required, writes and positively verifies the final Panther marker before registering the Stage B task or priming autologon;
 * registers `\L2C\CreatePrimaryAdmin` as the finalization task;
 * verifies the task boundary after registration;
 * primes temporary Winlogon autologon for `bootstrap` only after the earlier checks succeed.

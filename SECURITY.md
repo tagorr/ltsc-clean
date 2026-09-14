@@ -39,13 +39,13 @@ The Windows Security notification-area presentation is suppressed through the su
 
 ### Edge Browser Removal and Update Suppression
 
-Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardening layer. Edge SmartScreen policies are still set to disabled before removal, EdgeUpdate services/tasks are disabled best-effort to reduce browser resurrection, and WebView2 runtime is not removed.
+Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardening layer. Edge SmartScreen policies are still set to disabled before removal, EdgeUpdate services/tasks are left unchanged, and WebView2 runtime is not removed.
 
 - Windows Shell SmartScreen: `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen=0`
 - Edge SmartScreen policies: `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenDnsRequestsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenForTrustedDownloadsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenPuaEnabled=0`
 - Retained Defender protections: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableIOAVProtection=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\PUAProtection=1`; Behavior Monitoring is intentionally disabled by the Local GPO Computer record `DisableBehaviorMonitoring=1`
 - Defender cloud/privacy policy: `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SpynetReporting=0`; `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet\SubmitSamplesConsent=2`
-- Edge lifecycle: early best-effort uninstall via Edge `setup.exe --uninstall --system-level --force-uninstall`; EdgeUpdate services/tasks disabled best-effort; WebView2 not removed
+- Edge lifecycle: early best-effort uninstall via Edge `setup.exe --uninstall --system-level --force-uninstall`; EdgeUpdate services/tasks left unchanged; WebView2 not removed
 - UX hygiene: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\DisableEdgeDesktopShortcutCreation=1`
 
 ## Not a fit if you require
