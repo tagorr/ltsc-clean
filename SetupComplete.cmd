@@ -571,16 +571,6 @@ if /I not "%DV%"=="%REQUIRED_DV%" (
 exit /b 0
 
 REM ------------ RC handler ^& runners ------------
-:handle_rc
-set "COMP=%~1"
-set "RC=%~2"
-if "%RC%"=="0"    (call :log "[%COMP%] RC=0 (success)" & exit /b 0)
-if "%RC%"=="3010" (call :log "[%COMP%] RC=3010 (success, reboot required)" & set "NEEDS_REBOOT=1" & call :flag_reboot & exit /b 0)
-if "%RC%"=="1641" (call :log "[%COMP%] RC=1641 (success, reboot initiated by installer)" & set "NEEDS_REBOOT=1" & call :flag_reboot & exit /b 0)
-call :log "[%COMP%] RC=%RC% (error)"
-set "FAILED=1"
-exit /b %RC%
-
 :track_rc
 REM %1 = RC
 if "%~1"=="" exit /b 0
@@ -609,18 +599,6 @@ set "L2C_LAST_DISM_RC=%RC%"
 call :classify_dism_rc %RC%
 exit /b %RC%
 
-:run_dism_capture
-REM usage: call :run_dism_capture "<outfile>" <DISM-args-without-/Online>
-set "OUT=%~1"
-shift
-set "CMD=dism /Online %1 %2 %3 %4 %5 %6 %7 %8 %9 /NoRestart /LogPath:%WINDIR%\Logs\DISM\SetupComplete-DISM.log /LogLevel:4"
-call :log "[DISM] %CMD%"
-%CMD% 1>"%OUT%" 2>&1
-set "RC=%ERRORLEVEL%"
-set "L2C_LAST_DISM_RC=%RC%"
-call :classify_dism_rc %RC%
-exit /b %RC%
-
 :run_dism_capture_nonfatal
 REM usage: call :run_dism_capture_nonfatal "<outfile>" <DISM-args-without-/Online>
 set "OUT=%~1"
@@ -642,14 +620,6 @@ if "%~1"=="-2146498548" goto :dism_warn_unknown_feature
 if "%~1"=="2148468748" goto :dism_warn_unknown_feature
 if "%~1"=="-2146498541" goto :dism_warn_invalid_state
 if "%~1"=="2148468755" goto :dism_warn_invalid_state
-if "%~1"=="-2146498529" goto :dism_fatal
-if "%~1"=="2148468767" goto :dism_fatal
-if "%~1"=="-2146498283" goto :dism_fatal
-if "%~1"=="2148469013" goto :dism_fatal
-if "%~1"=="-2147024891" goto :dism_fatal
-if "%~1"=="2147942405" goto :dism_fatal
-if "%~1"=="87" goto :dism_fatal
-if "%~1"=="998" goto :dism_fatal
 goto :dism_fatal
 
 :dism_rc3010
@@ -684,28 +654,6 @@ set "FAILED=1"
 set "DISM_HARD_FAIL=1"
 call :log "[DISM] RC=%L2C_DISM_RC% (error)"
 exit /b %L2C_DISM_RC%
-
-:run_msi
-REM usage: call :run_msi "<msi path>" [more MSI properties]
-set "MSI=%~1"
-shift
-call :log "[MSI] msiexec /i \"%MSI%\" /qn REBOOT=ReallySuppress /norestart %*"
-msiexec /i "%MSI%" /qn REBOOT=ReallySuppress /norestart %*
-set "RC=%ERRORLEVEL%"
-call :track_rc %RC%
-call :handle_rc "MSI" %RC%
-exit /b %ERRORLEVEL%
-
-:run_exe
-REM usage: call :run_exe "<exe path>" [vendor-specific args]; default /quiet /norestart
-set "EXE=%~1"
-shift
-call :log "[EXE] \"%EXE%\" /quiet /norestart %*"
-"%EXE%" /quiet /norestart %*
-set "RC=%ERRORLEVEL%"
-call :track_rc %RC%
-call :handle_rc "EXE" %RC%
-exit /b %ERRORLEVEL%
 
 :validate_primaryadmin_password
 set "L2C_PW_CHECK="
@@ -1813,15 +1761,6 @@ set "TASK_VERIFY_REASON="
 set "_task_xml="
 set "_task_xml_sz="
 exit /b 0
-
-:after_telemetry_hardening
-:ts
-  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do (
-    set "TS=%%#"
-    goto :eof
-  )
-  set "TS=%DATE% %TIME%"
-goto :eof
 
 :fw_disable_remote_assistance
 set "RA_FW_GROUP=Remote Assistance"
