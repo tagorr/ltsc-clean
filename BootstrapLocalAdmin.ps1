@@ -213,13 +213,13 @@ try {
         throw
     }
 
-    # Always set password explicitly and activate
-    Write-BootstrapLog ("Setting password and activating '{0}'" -f $u)
+    # Refresh existing password and always activate
+    Write-BootstrapLog ("Finalizing local user '{0}'" -f $u)
     try {
-        Set-LocalUser -Name $u -Password $pwSecure -ErrorAction Stop
+        if ($null -ne $existingUser) { Set-LocalUser -Name $u -Password $pwSecure -ErrorAction Stop }
         Enable-LocalUser -Name $u -ErrorAction Stop
     } catch {
-        Write-BootstrapLog ("Failed to set password/activate '{0}': {1}" -f $u, $_.Exception.Message) 'ERROR'
+        Write-BootstrapLog ("Failed to finalize local user '{0}': {1}" -f $u, $_.Exception.Message) 'ERROR'
         throw
     }
 
