@@ -273,8 +273,7 @@ function Test-ContinuationTaskAbsent {
   $reasons = New-Object System.Collections.Generic.List[string]
   $state = 'unknown'
   try {
-    $tasks = @(Get-ScheduledTask -ErrorAction Stop)
-    $matches = @($tasks | Where-Object { $_.TaskPath -eq '\L2C\' -and $_.TaskName -eq 'CreatePrimaryAdmin' })
+    $matches = @(Get-ScheduledTask -TaskPath '\L2C\' -TaskName 'CreatePrimaryAdmin' -ErrorAction Stop)
     if ($matches.Count -gt 0) {
       $state = 'present'
       [void]$reasons.Add('continuation task still registered (TaskPath=\L2C\ TaskName=CreatePrimaryAdmin)')
@@ -282,9 +281,13 @@ function Test-ContinuationTaskAbsent {
       $state = 'absent'
     }
   } catch {
-    $state = 'error'
-    $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
-    [void]$reasons.Add(('scheduled-task verification/read failure: {0}' -f $msg))
+    if ($_.FullyQualifiedErrorId -eq 'CmdletizationQuery_NotFound,Get-ScheduledTask') {
+      $state = 'absent'
+    } else {
+      $state = 'error'
+      $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+      [void]$reasons.Add(('scheduled-task verification/read failure: {0}' -f $msg))
+    }
   }
   return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); State = $state; Reasons = @($reasons) }
 }
