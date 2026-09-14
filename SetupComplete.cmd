@@ -237,41 +237,35 @@ set "L2C_SECURITY_HEALTH_VERIFY_RC="
 exit /b 0
 
 :hardwarn_cached
-if not defined HARDWARN_MSG exit /b 0
-if not defined HARDENING_WARN_FILE exit /b 0
-if "%HARDENING_WARN_FALLBACK_USED%"=="0" if defined ProgramData if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
-if "%HARDENING_WARN_FALLBACK_USED%"=="1" if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
->> "%HARDENING_WARN_FILE%" <nul set /p "=%HARDWARN_MSG%"
->> "%HARDENING_WARN_FILE%" echo(
-if exist "%HARDENING_WARN_FILE%" goto :hardwarn_ok
-if "%HARDENING_WARN_FALLBACK_USED%"=="1" goto :hardwarn_fail
-set "HARDENING_WARN_FALLBACK_USED=1"
-set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
-call :log "[WARN] HARDENING_WARN_FILE_FALLBACK file=%HARDENING_WARN_FILE%"
-if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
->> "%HARDENING_WARN_FILE%" <nul set /p "=%HARDWARN_MSG%"
->> "%HARDENING_WARN_FILE%" echo(
-if not exist "%HARDENING_WARN_FILE%" goto :hardwarn_fail
-goto :hardwarn_ok
+call :hardwarn_write cached
+exit /b 0
 
 :hardwarn
 REM usage: call :hardwarn <one-line warning>
 REM Contract: single line; avoid CMD metacharacters & | < > ^ ; keep human-readable for final [HARDENING] block.
 set "HARDWARN_MSG=%*"
+call :hardwarn_write
+exit /b 0
+
 :hardwarn_write
 if not defined HARDWARN_MSG exit /b 0
 if not defined HARDENING_WARN_FILE exit /b 0
+:hardwarn_write_attempt
 if "%HARDENING_WARN_FALLBACK_USED%"=="0" if defined ProgramData if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
 if "%HARDENING_WARN_FALLBACK_USED%"=="1" if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
+if "%~1"=="cached" goto :hardwarn_write_cached
 >> "%HARDENING_WARN_FILE%" echo(%HARDWARN_MSG%
+goto :hardwarn_check
+:hardwarn_write_cached
+>> "%HARDENING_WARN_FILE%" <nul set /p "=%HARDWARN_MSG%"
+>> "%HARDENING_WARN_FILE%" echo(
+:hardwarn_check
 if exist "%HARDENING_WARN_FILE%" goto :hardwarn_ok
 if "%HARDENING_WARN_FALLBACK_USED%"=="1" goto :hardwarn_fail
 set "HARDENING_WARN_FALLBACK_USED=1"
 set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
 call :log "[WARN] HARDENING_WARN_FILE_FALLBACK file=%HARDENING_WARN_FILE%"
-if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
->> "%HARDENING_WARN_FILE%" echo(%HARDWARN_MSG%
-if not exist "%HARDENING_WARN_FILE%" goto :hardwarn_fail
+goto :hardwarn_write_attempt
 :hardwarn_ok
 set "HARDENING_HAS_WARNINGS=1"
 set /a HARDENING_WARN_COUNT=%HARDENING_WARN_COUNT%+1 >nul 2>&1
