@@ -228,7 +228,7 @@ For a normal completed run, confirm the following:
 - `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available;
-- the machine Local GPO contains the four original User entries and the Computer `DisableBehaviorMonitoring=1` entry defined by `BaselinePolicies.txt`;
+- the machine Local GPO contains the five User entries and the Computer `DisableBehaviorMonitoring=1` entry defined by `BaselinePolicies.txt`;
 - the corresponding Machine `Registry.pol`, machine-policy DWORD, effective preference and runtime Behavior Monitoring state agree with the BM validation contract;
 - `TamperProtection=REG_DWORD 4` and `IsTamperProtected=False`;
 - after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;

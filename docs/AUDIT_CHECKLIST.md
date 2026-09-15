@@ -56,8 +56,8 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Platform-gate mismatches fail closed and flow to the shared final return-code path.
 * [ ] The platform gate requires `EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, and `STRICT_DISPLAYVERSION=1`.
 * [ ] The mandatory system-wide Local GPO baseline gate runs after the platform gate and before the normal baseline workload.
-* [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\BaselinePolicies.txt` is treated as the required tracked five-record payload.
-* [ ] `BaselinePolicies.txt` preserves the four approved User DWORD values (`DisableWindowsSpotlightFeatures=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0`) under their intended User Configuration registry paths and adds the Computer `DisableBehaviorMonitoring=DWORD:1` record under the Windows Defender Real-Time Protection path.
+* [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\BaselinePolicies.txt` is treated as the required tracked six-record payload.
+* [ ] `BaselinePolicies.txt` preserves the five approved User DWORD values (`DisableWindowsSpotlightFeatures=1`, `DisableTailoredExperiencesWithDiagnosticData=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0`) under their intended User Configuration registry paths and adds the Computer `DisableBehaviorMonitoring=DWORD:1` record under the Windows Defender Real-Time Protection path.
 * [ ] `SetupComplete.cmd` invokes one `LGPO.exe /t` import for the complete payload.
 * [ ] A missing LGPO executable, missing payload, or non-zero import RC fails closed, stops normal baseline processing, and preserves the existing first-fatal-RC and final-RC contract.
 * [ ] The combined Local GPO mechanism does not directly write the User settings to `HKCU`, add a first-logon helper, or add a production `gpupdate /force` recovery mechanism; the validated fresh-deployment path does not require one.
