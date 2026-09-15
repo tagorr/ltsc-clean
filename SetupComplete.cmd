@@ -481,84 +481,6 @@ set "_feature_probe_out="
 set "_feature_probe_rc="
 goto :eof
 
-:remove_capability
-REM usage: call :remove_capability CapabilityName Friendly
-set "CAP=%~1"
-set "FR=%~2"
-if defined DISM_HARD_FAIL (
-  call :log "[WARN] Skipping capability %FR% removal (previous DISM fatal RC)"
-  goto :_cap_cleanup
-)
-if not defined CAP goto :_cap_cleanup
-set "_cap_state="
-if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
-set "_cap_probe_out=%SystemRoot%\Temp\l2c_cap_probe_%RANDOM%_%RANDOM%.txt"
-if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
-call :run_dism_capture_nonfatal "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
-set "DISM_RC=%L2C_LAST_DISM_RC%"
-
-REM Best-effort probe. Try to parse the output even if RC is non-zero.
-
-if not "%DISM_RC%"=="0" (
-  call :log "[WARN] Capability state retrieval returned RC=%DISM_RC% for %FR% (%CAP%); attempting to parse output anyway"
-)
-for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_cap_probe_out%"') do set "_cap_state=%%S"
-if not defined _cap_state (
-  call :log "[WARN] Capability state missing for %FR% (%CAP%); skipping removal"
-  goto :_cap_cleanup
-)
-set "_cap_state=%_cap_state: =%"
-if not defined _cap_state (
-  call :log "[WARN] Capability state parse failed for %FR% (%CAP%); skipping removal"
-  goto :_cap_cleanup
-)
-call :log "[CAP] %FR% state=%_cap_state%"
-if /i "%_cap_state%"=="Installed" goto :_cap_remove
-if /i "%_cap_state%"=="Staged" goto :_cap_remove
-if /i "%_cap_state%"=="NotPresent" (
-  call :log "[CAP] %FR% not present, skip removal"
-  goto :_cap_cleanup
-)
-if /i "%_cap_state%"=="Unknown" (
-  call :log "[CAP] %FR% unknown, skip removal"
-  goto :_cap_cleanup
-)
-call :log "[CAP] %FR% state=%_cap_state% -> skip removal"
-goto :_cap_cleanup
-
-:_cap_remove
-call :log "[STEP] Remove capability %FR% (%CAP%)"
-call :run_dism /Remove-Capability /CapabilityName:%CAP%
-set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" (
-  call :log "[CAP] %FR% removal succeeded"
-) else (
-  if defined DISM_HARD_FAIL (
-    set "FAILED=1"
-    call :log "[ERROR] Remove capability %FR% failed (RC=%RC%)"
-  ) else (
-    call :log "[CAP] %FR% removal returned RC=%RC% (non-fatal)"
-  )
-)
-if not defined DISM_HARD_FAIL (
-  set "_cap_state_after="
-  call :run_dism_capture_nonfatal "%_cap_probe_out%" /Get-CapabilityInfo /CapabilityName:%CAP% /English
-  set "DISM_RC=%L2C_LAST_DISM_RC%"
-  for /f "tokens=2 delims=:" %%S in ('findstr /C:"State :" "%_cap_probe_out%"') do set "_cap_state_after=%%S"
-)
-if defined _cap_state_after set "_cap_state_after=%_cap_state_after: =%"
-if /i "%_cap_state_after%"=="Installed" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Installed rc=%RC%
-if /i "%_cap_state_after%"=="Staged" call :hardwarn DISM capability not removed: %CAP% expected=NotPresent actual=Staged rc=%RC%
-goto :_cap_cleanup
-
-:_cap_cleanup
-if defined _cap_probe_out if exist "%_cap_probe_out%" del /f /q "%_cap_probe_out%" >nul 2>&1
-set "_cap_state="
-set "_cap_state_after="
-set "_cap_probe_out="
-set "DISM_RC="
-goto :eof
-
 :gate_build
 REM -- Ensure CBN (numeric CurrentBuild) and compare with MIN_BUILD if set --
 if not defined CB (
@@ -923,11 +845,6 @@ call :log "[SECTION] Remote Assistance behavior policy and firewall"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowToGetHelp" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowUnsolicited" "REG_DWORD" "0"
 call :fw_disable_remote_assistance
-
-:: ------------ Capabilities (DISM /Remove-Capability) ------------
-call :log "[SECTION] Capabilities"
-call :remove_capability "SNMP.Client~~~~0.0.1.0"             "SNMP.Client"
-call :remove_capability "WMI-SNMP-Provider.Client~~~~0.0.1.0"       "WMI.SNMP.Provider"
 
 :: ------------ Windows Update policy ------------
 call :log "[SECTION] Windows Update"
