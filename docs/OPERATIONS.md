@@ -122,8 +122,6 @@ Before deciding how far the run progressed, check whether:
 - reboot-flag handling in the logs matches the final machine state;
 - if automatic reboot was expected, `SetupComplete.log` and the process result show whether shutdown scheduling was accepted; a master-log preparation entry alone is not acceptance evidence.
 
-Some informational service-state lines may reflect localized `sc query` output and can vary by image language. Treat them as logging detail, not as primary control-flow evidence.
-
 ## Manual Actions and Recovery Boundaries
 
 ### Manual continuation boundaries

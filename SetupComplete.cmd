@@ -807,20 +807,7 @@ call :svc_disable "WerSvc"
 
 :: ------------ WebDAV Redirector (WebClient) ------------
 call :log "[SECTION] WebClient (WebDAV)"
-call :log "[STEP] Disable service: WebClient (WebDAV)"
-sc config WebClient start= disabled >nul 2>&1
-for /f "tokens=3" %%# in ('sc query WebClient ^| findstr /i "STATE"') do set "S=%%#"
-for /f "skip=2 tokens=3" %%# in ('reg query "HKLM\SYSTEM\CurrentControlSet\Services\WebClient" /v Start 2^>nul') do set "StartVal=%%#"
-set "SNAME="
-if "%S%"=="1" set "SNAME=STOPPED"
-if "%S%"=="2" set "SNAME=START_PENDING"
-if "%S%"=="3" set "SNAME=STOP_PENDING"
-if "%S%"=="4" set "SNAME=RUNNING"
-if "%S%"=="5" set "SNAME=CONTINUE_PENDING"
-if "%S%"=="6" set "SNAME=PAUSE_PENDING"
-if "%S%"=="7" set "SNAME=PAUSED"
-call :log "[OK] WebClient Start=%StartVal% State=%S% (%SNAME%)"
-sc stop   WebClient >nul 2>&1
+call :svc_disable "WebClient"
 
 :: ------------ Game Bar / Xbox / Game DVR ------------
 call :log "[SECTION] GameDVR and Xbox"
@@ -1645,14 +1632,28 @@ set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" call :log "[WARN] SERVICE_STOP_FAILED rc=%RC% service=%_svc%"
 sc config "%_svc%" start= disabled >nul 2>&1
 set "RC=%ERRORLEVEL%"
-if "%RC%"=="0" (
-  call :log "[OK] Service ""%_svc%"" -> Disabled"
-) else (
-  call :log "[WARN] SERVICE_DISABLE_FAILED rc=%RC% service=%_svc%"
-)
+set "_svc_start=unverified"
+for /f "tokens=1,2,3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Services\%_svc%" /v Start 2^>nul') do if /i "%%A"=="Start" if /i "%%B"=="REG_DWORD" set "_svc_start=%%C"
+if not "%RC%"=="0" goto :svc_disable_mutation_failed
+if /i "%_svc_start%"=="unverified" goto :svc_disable_state_unverified
+if /i not "%_svc_start%"=="0x4" goto :svc_disable_state_not_disabled
+call :log "[OK] Service ""%_svc%"" -> Disabled"
+goto :svc_done
+
+:svc_disable_mutation_failed
+call :log "[WARN] SERVICE_DISABLE_MUTATION_FAILED rc=%RC% service=%_svc% start=%_svc_start%"
+goto :svc_done
+
+:svc_disable_state_not_disabled
+call :log "[WARN] SERVICE_DISABLE_STATE_NOT_DISABLED service=%_svc% start=%_svc_start%"
+goto :svc_done
+
+:svc_disable_state_unverified
+call :log "[WARN] SERVICE_DISABLE_STATE_UNVERIFIED service=%_svc%"
 
 :svc_done
 set "_svc="
+set "_svc_start="
 set "RC="
 exit /b 0
 
