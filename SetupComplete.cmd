@@ -939,6 +939,8 @@ call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Exp
 call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoRun" "REG_DWORD" "1"
 call :regadd_verify "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoAutoPlay" "REG_DWORD" "1"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "PublishUserActivities" "REG_DWORD" "0"
+call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "UploadUserActivities" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCloudSearch" "REG_DWORD" "0"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "ConnectedSearchUseWeb" "REG_DWORD" "0"
 
