@@ -4,6 +4,8 @@ REM Applies privacy/account policies BEFORE OOBE, logs to Panther
 REM Encoding: UTF-8 (no BOM), EOL: CRLF
 
 setlocal EnableExtensions
+set "L2C_LOG_DATE_TOKEN="
+set "L2C_LOG_ISO_DATE="
 title PreOOBE ^& account policies
 
 set "LOGDIR=%WINDIR%\Panther"
@@ -19,8 +21,46 @@ goto :main
 :: --------------------------
 :ts
   set "TS="
-  for /f %%# in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do set "TS=%%#" & goto :eof
-  set "TS=%DATE% %TIME%"
+  set "L2C_LOG_DATE_BEFORE=%DATE%"
+  if not "%L2C_LOG_DATE_BEFORE%"=="%L2C_LOG_DATE_TOKEN%" goto :preoobe_ts_refresh
+  if not defined L2C_LOG_ISO_DATE goto :preoobe_ts_refresh
+  goto :preoobe_ts_sample
+
+:preoobe_ts_refresh
+  set "L2C_LOG_DATE_TOKEN="
+  set "L2C_LOG_ISO_DATE="
+  for /f "delims=" %%# in ('call "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[DateTime]::Now.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)" 2^>nul') do set "L2C_LOG_ISO_DATE=%%#"
+  if not defined L2C_LOG_ISO_DATE goto :preoobe_ts_sample
+  if not "%L2C_LOG_ISO_DATE:~4,1%"=="-" goto :preoobe_ts_refresh_invalid
+  if not "%L2C_LOG_ISO_DATE:~7,1%"=="-" goto :preoobe_ts_refresh_invalid
+  if "%L2C_LOG_ISO_DATE:~9,1%"=="" goto :preoobe_ts_refresh_invalid
+  if not "%L2C_LOG_ISO_DATE:~10,1%"=="" goto :preoobe_ts_refresh_invalid
+  set "L2C_LOG_DATE_TOKEN=%L2C_LOG_DATE_BEFORE%"
+  goto :preoobe_ts_sample
+
+:preoobe_ts_refresh_invalid
+  set "L2C_LOG_ISO_DATE="
+  goto :preoobe_ts_sample
+
+:preoobe_ts_sample
+  set "L2C_LOG_TIME=%TIME%"
+  set "L2C_LOG_DATE_AFTER=%DATE%"
+  if not "%L2C_LOG_DATE_BEFORE%"=="%L2C_LOG_DATE_AFTER%" goto :preoobe_ts_changed
+  if not defined L2C_LOG_ISO_DATE goto :preoobe_ts_raw
+  set "L2C_LOG_HMS=%L2C_LOG_TIME:~0,8%"
+  if "%L2C_LOG_HMS:~0,1%"==" " set "L2C_LOG_HMS=0%L2C_LOG_HMS:~1%"
+  if not "%L2C_LOG_HMS:~2,1%"==":" goto :preoobe_ts_raw
+  if not "%L2C_LOG_HMS:~5,1%"==":" goto :preoobe_ts_raw
+  if "%L2C_LOG_HMS:~7,1%"=="" goto :preoobe_ts_raw
+  set "TS=%L2C_LOG_ISO_DATE%T%L2C_LOG_HMS%"
+  goto :eof
+
+:preoobe_ts_changed
+  set "L2C_LOG_DATE_TOKEN="
+  set "L2C_LOG_ISO_DATE="
+
+:preoobe_ts_raw
+  set "TS=LOCAL_RAW %L2C_LOG_DATE_BEFORE% %L2C_LOG_TIME%"
   goto :eof
 
 :log
