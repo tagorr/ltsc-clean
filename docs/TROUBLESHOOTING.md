@@ -6,6 +6,10 @@ Use this document to diagnose runs that do not complete as expected, including c
 
 Start from the symptom you see. Check the current-run logs first, then compare them with the actual machine state before deleting retained artifacts, trying to continue the run by guesswork, or treating the machine as finalized.
 
+## Timestamp Interpretation
+
+CMD logger lines normally use local `yyyy-MM-ddTHH:mm:ss` timestamps with no fractional seconds or timezone offset. `LOCAL_RAW` means normalized timestamp acquisition was unavailable or the date sample changed during that line; interpret the raw value using the originating machine's locale. A later logger call retries normalized-date acquisition. Local clock corrections can make timestamps move backward, and direct or component output may use another timestamp representation or be untimestamped. A `LOCAL_RAW` timestamp alone does not indicate deployment failure.
+
 ## Symptom: Automatic Continuation Did Not Happen as Expected
 
 Use this section when the expected continuation does not occur after SetupComplete, or when the machine lands on a normal logon screen instead of the expected continuation path.

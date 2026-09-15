@@ -2,6 +2,8 @@
 REM SPDX-License-Identifier: MIT
 REM Windows 11 LTSC 2024 - Clean ^& Quiet Baseline (Official Tools Only)
 setlocal EnableExtensions
+set "L2C_LOG_DATE_TOKEN="
+set "L2C_LOG_ISO_DATE="
 
 :: ------------ logging ------------
 set "LOG=%WINDIR%\Panther\SetupComplete.log"
@@ -13,7 +15,6 @@ if exist "%REBOOT_FLAG%" (
 )
 
 :: ------------ config flags ------------
-set "LOG_TS_ENGINE=POWERSHELL"
 set "ALWAYS_REBOOT_AFTER_FIRST_LOGON=1"
 set "REBOOT_FLAG_CONTENT=need-reboot"
 set "NEEDS_REBOOT=0"
@@ -106,24 +107,53 @@ goto :main
 setlocal DisableDelayedExpansion
 set "MSG=%~1"
 if not defined MSG (endlocal & exit /b 0)
-set "TS="
-if /I "%LOG_TS_ENGINE%"=="WMIC" (
-  for /f "tokens=2 delims==." %%G in ('wmic os get LocalDateTime /value 2^>nul ^| find "="') do set "TS_RAW=%%G"
-  if defined TS_RAW (
-    call set "TS=%TS_RAW:~0,4%-%TS_RAW:~4,2%-%TS_RAW:~6,2%T%TS_RAW:~8,2%:%TS_RAW:~10,2%:%TS_RAW:~12,2%.%TS_RAW:~15,3%"
-  )
-  set "TS_RAW="
-)
-if not defined TS if /I "%LOG_TS_ENGINE%"=="POWERSHELL" (
-  for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format o" 2^>nul') do set "TS=%%G"
-)
-if not defined TS (
-  for /f %%G in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Date -Format \"yyyy-MM-ddTHH:mm:ss\"" 2^>nul') do set "TS=%%G"
-)
-if not defined TS set "TS=%DATE:~6,4%-%DATE:~3,2%-%DATE:~0,2%T%TIME:~0,8%"
+call :log_ts
 <nul set /p "=[%TS%] %MSG%" >> "%LOG%"
 >> "%LOG%" echo(
-endlocal & exit /b 0
+endlocal & set "L2C_LOG_DATE_TOKEN=%L2C_LOG_DATE_TOKEN%" & set "L2C_LOG_ISO_DATE=%L2C_LOG_ISO_DATE%" & exit /b 0
+
+:log_ts
+set "L2C_LOG_DATE_BEFORE=%DATE%"
+if not "%L2C_LOG_DATE_BEFORE%"=="%L2C_LOG_DATE_TOKEN%" goto :log_ts_refresh
+if not defined L2C_LOG_ISO_DATE goto :log_ts_refresh
+goto :log_ts_sample
+
+:log_ts_refresh
+set "L2C_LOG_DATE_TOKEN="
+set "L2C_LOG_ISO_DATE="
+for /f "delims=" %%G in ('call "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "[DateTime]::Now.ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)" 2^>nul') do set "L2C_LOG_ISO_DATE=%%G"
+if not defined L2C_LOG_ISO_DATE goto :log_ts_sample
+if not "%L2C_LOG_ISO_DATE:~4,1%"=="-" goto :log_ts_refresh_invalid
+if not "%L2C_LOG_ISO_DATE:~7,1%"=="-" goto :log_ts_refresh_invalid
+if "%L2C_LOG_ISO_DATE:~9,1%"=="" goto :log_ts_refresh_invalid
+if not "%L2C_LOG_ISO_DATE:~10,1%"=="" goto :log_ts_refresh_invalid
+set "L2C_LOG_DATE_TOKEN=%L2C_LOG_DATE_BEFORE%"
+goto :log_ts_sample
+
+:log_ts_refresh_invalid
+set "L2C_LOG_ISO_DATE="
+goto :log_ts_sample
+
+:log_ts_sample
+set "L2C_LOG_TIME=%TIME%"
+set "L2C_LOG_DATE_AFTER=%DATE%"
+if not "%L2C_LOG_DATE_BEFORE%"=="%L2C_LOG_DATE_AFTER%" goto :log_ts_changed
+if not defined L2C_LOG_ISO_DATE goto :log_ts_raw
+set "L2C_LOG_HMS=%L2C_LOG_TIME:~0,8%"
+if "%L2C_LOG_HMS:~0,1%"==" " set "L2C_LOG_HMS=0%L2C_LOG_HMS:~1%"
+if not "%L2C_LOG_HMS:~2,1%"==":" goto :log_ts_raw
+if not "%L2C_LOG_HMS:~5,1%"==":" goto :log_ts_raw
+if "%L2C_LOG_HMS:~7,1%"=="" goto :log_ts_raw
+set "TS=%L2C_LOG_ISO_DATE%T%L2C_LOG_HMS%"
+exit /b 0
+
+:log_ts_changed
+set "L2C_LOG_DATE_TOKEN="
+set "L2C_LOG_ISO_DATE="
+
+:log_ts_raw
+set "TS=LOCAL_RAW %L2C_LOG_DATE_BEFORE% %L2C_LOG_TIME%"
+exit /b 0
 
 :regadd
 REM usage: call :regadd <key> <value> <type> <data>
@@ -1833,17 +1863,19 @@ exit /b %RC%
 :triage_log_warn_reboot_flag_no_executor
 set "TRIAGE_LOG_PATH="
 set "TRIAGE_LOG_TS_SHORT="
-for /f "usebackq delims=" %%G in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "Get-Date -Format yyyyMMdd_HHmmss" 2^>nul`) do set "TRIAGE_LOG_TS_SHORT=%%G"
-if not defined TRIAGE_LOG_TS_SHORT exit /b 0
 set "TRIAGE_LOG_GUID="
-for /f "usebackq delims=" %%G in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "[guid]::NewGuid().ToString('N')" 2^>nul`) do set "TRIAGE_LOG_GUID=%%G"
+set "TRIAGE_LOG_TS="
+for /f "tokens=1-3" %%A in ('call "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$d=[DateTimeOffset]::Now; $c=[Globalization.CultureInfo]::InvariantCulture; $d.ToString('yyyyMMdd_HHmmss',$c)+' '+[guid]::NewGuid().ToString('N')+' '+$d.UtcDateTime.ToString('o',$c)" 2^>nul') do (
+  set "TRIAGE_LOG_TS_SHORT=%%A"
+  set "TRIAGE_LOG_GUID=%%B"
+  set "TRIAGE_LOG_TS=%%C"
+)
+if not defined TRIAGE_LOG_TS_SHORT exit /b 0
 if not defined TRIAGE_LOG_GUID exit /b 0
+if not defined TRIAGE_LOG_TS exit /b 0
 set "TRIAGE_LOG_PATH=%ProgramData%\l2c_triage_%TRIAGE_LOG_TS_SHORT%_%TRIAGE_LOG_GUID%.log"
 if not defined TRIAGE_LOG_PATH exit /b 0
 if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
-set "TRIAGE_LOG_TS="
-for /f "usebackq delims=" %%G in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command "[DateTime]::UtcNow.ToString('o')" 2^>nul`) do set "TRIAGE_LOG_TS=%%G"
-if not defined TRIAGE_LOG_TS exit /b 0
 >> "%TRIAGE_LOG_PATH%" echo [%TRIAGE_LOG_TS%] WARN_REBOOT_FLAG_NO_EXECUTOR Reboot required, but Stage B executor task is unavailable, automatic reboot will NOT happen. marker=%REBOOT_FLAG% (value=%REBOOT_FLAG_CONTENT%). executor_task=\L2C\CreatePrimaryAdmin (skipped_gate=%STAGEB_SKIPPED_GATE% not_scheduled=%STAGEB_NOT_SCHEDULED%). Manual reboot required after fixing gate or restoring Stage B task registration, then rerun pipeline.
 exit /b 0
 
