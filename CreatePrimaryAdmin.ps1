@@ -5,7 +5,6 @@ param(
   [string]$Description = '',
   [bool]$PasswordNeverExpires = $true,
   [switch]$AddToRemoteDesktopUsers,
-  [switch]$RollbackOnly,
   [switch]$VerboseLog
 )
 
@@ -594,12 +593,6 @@ $ExecutorTeardownVerified = $false
 
 Write-SetupLog "Begin A: Primary admin creation/config"
 try {
-  if ($RollbackOnly) {
-    Write-SetupLog "RollbackOnly specified: skipping Stage A"
-    Write-Verbose "Stage A: RollbackOnly requested; marking as succeeded"
-    $StageA_Succeeded = $true
-    $StageA_RC = 0
-  } else {
     $primaryAdminSecretPath = Join-Path $env:WINDIR 'Setup\Scripts\.primaryadmin.pw'
     try {
       $passwordText = Get-Content -LiteralPath $primaryAdminSecretPath -Encoding utf8 -TotalCount 1 -ErrorAction Stop
@@ -727,7 +720,6 @@ try {
     }
     $StageA_Succeeded = $true
     $StageA_RC = 0
-  }
 }
 catch {
   if ($StageA_RC -eq 0) { $StageA_RC = 1 }
