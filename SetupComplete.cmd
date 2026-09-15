@@ -351,17 +351,17 @@ if not "%RC%"=="0" (
   goto :eof
 )
 
-reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowRecent   /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent   /t REG_DWORD /d 0 /f >nul 2>&1
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
   set "L2C_DEFUSER_QA_FAILED=1"
-  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=ShowRecent value=0"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer name=ShowRecent value=0"
 )
-reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowFrequent /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowFrequent /t REG_DWORD /d 0 /f >nul 2>&1
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" (
   set "L2C_DEFUSER_QA_FAILED=1"
-  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced name=ShowFrequent value=0"
+  call :log "[WARN] DEFUSER_REGADD_FAILED rc=%RC% key=HKU\\DefUser\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer name=ShowFrequent value=0"
 )
 reg add "HKU\DefUser\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo     /t REG_DWORD /d 1 /f >nul 2>&1
 set "RC=%ERRORLEVEL%"
