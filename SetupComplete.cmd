@@ -856,10 +856,6 @@ call :fw_block_diagtrack
 call :log "[SECTION] Delivery Optimization"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" "REG_DWORD" "0"
 
-:: ------------ Delivery Optimization cache limit ------------
-call :log "[SECTION] Delivery Optimization cache limit"
-call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DOAbsoluteMaxCacheSizeMB" "REG_DWORD" "2048"
-
 :: ------------ Network quieting ------------
 call :log "[SECTION] Network"
 call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" "DisableWpad" "REG_DWORD" "1"
