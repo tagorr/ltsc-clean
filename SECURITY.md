@@ -151,6 +151,8 @@ In the normal success path, after `TeardownEligible` and independently verified 
 
 The `\L2C\CreatePrimaryAdmin` task runs as `SYSTEM` so Stage A can apply secrets without passing passwords on task arguments. This baseline does not attempt to defend against attackers who already have local administrator or `SYSTEM` rights.
 
+Correct operator staging of the repository-tracked runtime payload into the supported installation image is the deployment trust-root assumption; it does not make arbitrary files under `%WINDIR%\Setup\Scripts` trustworthy. `SetupComplete.cmd` and its staged `ValidateSecrets.ps1` component execute inside the current trusted orchestration boundary, so the runtime does not recursively authenticate those currently executing components. `CreatePrimaryAdmin.ps1` is also trusted when staged, but it is executed later as `SYSTEM` after `SetupComplete.cmd` finishes. The four ACL checks below protect the surfaces that must remain trustworthy across that delayed handoff. Initial compromise or malicious replacement of the staged deployment payload is outside this runtime non-admin tamper model.
+
 For the non-admin boundary, `ValidateSecrets.ps1` proves trusted authority rather than maintaining a list of known-bad principals. It validates these four trust objects:
 
 - `%WINDIR%\Setup\Scripts` (directory)
