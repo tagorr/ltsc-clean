@@ -84,10 +84,6 @@ for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows
 set "CB=%CB:"=%"
 REM --- Normalize CurrentBuild into CBN (integer) ---
 set "CBN="
-if not defined CB (
-  for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuild 2^>nul') do if /I "%%A"=="CurrentBuild" set "CB=%%C"
-  set "CB=%CB:"=%"
-)
 for /f "tokens=1 delims= " %%# in ("%CB%") do set "CBN=%%#"
 set /a CBN+=0 >nul 2>&1
 call :gate_build
