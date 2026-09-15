@@ -96,7 +96,6 @@ Applied controls include:
 - `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\NoLocalPasswordResetQuestions=1`
 - `HKLM\SOFTWARE\Policies\Microsoft\Windows\OOBE\DisablePrivacyExperience=1`
 - `HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection\AllowTelemetry=0`
-- `HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent\DisableTailoredExperiencesWithDiagnosticData=1`
 - `HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo\DisabledByGroupPolicy=1`
 - `HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization\AllowInputPersonalization=0`
 - `HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors\DisableWindowsLocationProvider=1`
@@ -104,6 +103,8 @@ Applied controls include:
 - `HKLM\SOFTWARE\Policies\Microsoft\FindMyDevice\AllowFindMyDevice=0`
 
 Effect: the privacy wizard is suppressed, the corresponding privacy-related toggles are enforced off, and local-account security questions are disabled.
+
+Tailored experiences are disabled separately through the User Local GPO record `Software\Policies\Microsoft\Windows\CloudContent\DisableTailoredExperiencesWithDiagnosticData=1` in `BaselinePolicies.txt`.
 
 ## Temporary storage of the password in Winlogon during autologon
 

@@ -191,7 +191,7 @@ Use this scenario when changing the combined Local GPO payload or its `SetupComp
 
 On a clean Windows 11 Enterprise LTSC 2024 target satisfying the repository platform gate and the offline preparation contract, confirm without a manual refresh or another policy/API mutation that:
 
-- one `LGPO.exe /t` import of `BaselinePolicies.txt` succeeds and the four existing User records remain intact;
+- one `LGPO.exe /t` import of `BaselinePolicies.txt` succeeds and the five User records remain intact;
 - a read-only LGPO parse of the native Machine `Registry.pol` shows the Computer record `Software\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring`, `DWORD:1`;
 - the materialized machine-policy value is `REG_DWORD 1`;
 - `Get-MpPreference.DisableBehaviorMonitoring` is `True` and `Get-MpComputerStatus.BehaviorMonitorEnabled` is `False`;

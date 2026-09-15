@@ -106,33 +106,29 @@ REM 3) Diagnostic data - set to 0 (Security). Supported on Enterprise/LTSC; mini
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "AllowTelemetry" ^
         REG_DWORD "0"
 
-REM 4) Tailored experiences with diagnostic data - disable
-call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableTailoredExperiencesWithDiagnosticData" ^
-        REG_DWORD "1"
-
-REM 5) Advertising ID - disable via the supported machine policy
+REM 4) Advertising ID - disable via the supported machine policy
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo"          "DisabledByGroupPolicy" ^
         REG_DWORD "1"
 
-REM 6) Input personalization (inking & typing) / online speech - disable
+REM 5) Input personalization (inking & typing) / online speech - disable
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization"             "AllowInputPersonalization" ^
         REG_DWORD "0"
 
-REM 7) Location - disable Windows location provider and location services
+REM 6) Location - disable Windows location provider and location services
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"       "DisableWindowsLocationProvider" ^
         REG_DWORD "1"
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"       "DisableLocation" ^
         REG_DWORD "1"
 
-REM 8) Find my device - disable
+REM 7) Find my device - disable
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\FindMyDevice"                     "AllowFindMyDevice" ^
         REG_DWORD "0"
 
-REM 9) Windows Consumer Features - disable (no suggested apps/consumer content)
+REM 8) Windows Consumer Features - disable (no suggested apps/consumer content)
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableWindowsConsumerFeatures" ^
         REG_DWORD "1"
 
-REM 10) Feedback notifications - do not show "Rate your experience" toasts
+REM 9) Feedback notifications - do not show "Rate your experience" toasts
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"           "DoNotShowFeedbackNotifications" ^
         REG_DWORD "1"
 

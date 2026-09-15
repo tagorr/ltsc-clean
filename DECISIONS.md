@@ -56,7 +56,7 @@ Servicing, machine-level policy orchestration, and the system-wide Local GPO bas
 
 DISM operations and system-wide policy controls run there, including the main baseline posture for components such as Edge, Delivery Optimization, telemetry reduction, OneDrive, and selected optional features.
 
-For the four repository-owned User settings and the Computer Defender Behavior Monitoring declaration in `BaselinePolicies.txt`, `SetupComplete.cmd` uses the operator-supplied Microsoft `LGPO.exe` tool to import one combined Local GPO baseline as `SYSTEM`. Windows policy processing applies the User records to profiles and the Computer record to machine policy; `SetupComplete.cmd` does not write the User values directly to `HKCU`.
+For the five repository-owned User settings and the Computer Defender Behavior Monitoring declaration in `BaselinePolicies.txt`, `SetupComplete.cmd` uses the operator-supplied Microsoft `LGPO.exe` tool to import one combined Local GPO baseline as `SYSTEM`. Windows policy processing applies the User records to profiles and the Computer record to machine policy; `SetupComplete.cmd` does not write the User values directly to `HKCU`.
 
 `BaselinePolicies.txt` is tracked by this repository. `LGPO.exe` is external operator-managed tooling and is not acquired or lifecycle-managed by the baseline.
 

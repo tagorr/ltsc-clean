@@ -4,6 +4,11 @@ DisableWindowsSpotlightFeatures
 DWORD:1
 
 User
+Software\Policies\Microsoft\Windows\CloudContent
+DisableTailoredExperiencesWithDiagnosticData
+DWORD:1
+
+User
 Software\Microsoft\Windows\CurrentVersion\Policies\Explorer
 HideSCAMeetNow
 DWORD:1
