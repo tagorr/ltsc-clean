@@ -23,7 +23,7 @@ try {
 
 function Write-SetupLog([string]$Message, [string]$Level = 'INFO') {
   try {
-    $ts   = [DateTime]::UtcNow.ToString('o')
+    $ts   = [DateTime]::Now.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
     $line = "[{0}] [CreatePrimaryAdmin] {1} {2}" -f $ts, $Level, $Message
 
     # Ensure directory exists (best-effort, silent)
