@@ -110,11 +110,7 @@ REM 4) Tailored experiences with diagnostic data - disable
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"             "DisableTailoredExperiencesWithDiagnosticData" ^
         REG_DWORD "1"
 
-REM 5) Advertising ID - disable value and enforce via policy
-REM    - HKLM\...\AdvertisingInfo Enabled=0 (turns off Advertising ID)
-REM    - Policies\...\AdvertisingInfo DisabledByGroupPolicy=1 (enforces via policy)
-call :regadd "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AdvertisingInfo"    "Enabled" ^
-        REG_DWORD "0"
+REM 5) Advertising ID - disable via the supported machine policy
 call :regadd "HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo"          "DisabledByGroupPolicy" ^
         REG_DWORD "1"
 
