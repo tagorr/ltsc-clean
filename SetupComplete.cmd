@@ -1684,45 +1684,27 @@ goto :task_done
 schtasks /Change /TN "%~1" /Disable >nul 2>&1
 set "TASK_DISABLE_RC=%ERRORLEVEL%"
 if "%TASK_DISABLE_RC%"=="0" (
-  call :log "[OK] Task ""%~1"" -> Disabled"
+  call :log "[INFO] Task ""%~1"" disable command completed"
 ) else (
   call :log "[WARN] TASK_DISABLE_FAILED rc=%TASK_DISABLE_RC% task=%~1"
 )
-if not exist "%SystemRoot%\Temp" mkdir "%SystemRoot%\Temp" >nul 2>&1
-set "_task_xml=%SystemRoot%\Temp\l2c_task_verify_%RANDOM%_%RANDOM%.xml"
-del /q "%_task_xml%" >nul 2>&1
-schtasks /Query /TN "%~1" /XML 1>"%_task_xml%" 2>nul
-set "TASK_VERIFY_XML_RC=%ERRORLEVEL%"
-set "TASK_VERIFY_STATE=Unknown"
-set "TASK_VERIFY_REASON="
-set "_task_xml_sz="
-if "%TASK_VERIFY_XML_RC%"=="0" if exist "%_task_xml%" for %%G in ("%_task_xml%") do set "_task_xml_sz=%%~zG"
-if not "%TASK_VERIFY_XML_RC%"=="0" set "TASK_VERIFY_REASON=xml_query_failed"
-if "%TASK_VERIFY_XML_RC%"=="0" if not defined _task_xml_sz set "TASK_VERIFY_REASON=xml_missing_or_empty"
-if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if "%_task_xml_sz%"=="0" set "TASK_VERIFY_REASON=xml_missing_or_empty"
-if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>false</Enabled>" "%_task_xml%" >nul
-if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Disabled"
-if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" findstr /i /c:"<Enabled>true</Enabled>" "%_task_xml%" >nul
-if "%TASK_VERIFY_STATE%"=="Unknown" if "%TASK_VERIFY_XML_RC%"=="0" if defined _task_xml_sz if not "%_task_xml_sz%"=="0" if not errorlevel 1 set "TASK_VERIFY_STATE=Enabled"
-if /I "%TASK_VERIFY_STATE%"=="Enabled" call :hardwarn TASK not disabled: %~1 expected=Disabled actual=Enabled rc=%TASK_DISABLE_RC%
-if /I "%TASK_VERIFY_STATE%"=="Unknown" if not defined TASK_VERIFY_REASON set "TASK_VERIFY_REASON=enabled_tag_missing"
-if /I "%TASK_VERIFY_STATE%"=="Unknown" if defined _task_xml_sz (
-  call :hardwarn TASK disable verification unavailable: %~1 reason=%TASK_VERIFY_REASON% disable_rc=%TASK_DISABLE_RC% verify_rc=%TASK_VERIFY_XML_RC% xml_sz=%_task_xml_sz%
+REM Verify the task-level setting only: 0=disabled, 1=enabled, other=unverified.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$n='%~1';$i=$n.LastIndexOf('\');if($i -lt 0){exit 2};try{$tasks=@(Get-ScheduledTask -TaskPath $n.Substring(0,$i+1) -TaskName $n.Substring($i+1) -ErrorAction Stop);if($tasks.Count -ne 1){exit 2};$enabled=$tasks[0].Settings.Enabled;if($enabled -isnot [bool]){exit 2};if($enabled){exit 1};exit 0}catch{exit 2}" >nul 2>&1
+set "TASK_VERIFY_RC=%ERRORLEVEL%"
+if "%TASK_VERIFY_RC%"=="0" call :log "[OK] Task ""%~1"" -> Disabled (verified)"
+if "%TASK_VERIFY_RC%"=="0" goto :task_done
+if "%TASK_VERIFY_RC%"=="1" (
+  call :hardwarn TASK not disabled: %~1 expected=Disabled actual=Enabled rc=%TASK_DISABLE_RC%
 ) else (
-  call :hardwarn TASK disable verification unavailable: %~1 reason=%TASK_VERIFY_REASON% disable_rc=%TASK_DISABLE_RC% verify_rc=%TASK_VERIFY_XML_RC%
+  call :hardwarn TASK disable verification unavailable: %~1 reason=task_setting_unverified disable_rc=%TASK_DISABLE_RC% verify_rc=%TASK_VERIFY_RC%
 )
-del /q "%_task_xml%" >nul 2>&1
 
 :task_done
 set "TASK_INITIAL_QUERY_RC="
 set "TASK_INITIAL_PROBE_RC="
 set "RC="
 set "TASK_DISABLE_RC="
-set "TASK_VERIFY_XML_RC="
-set "TASK_VERIFY_STATE="
-set "TASK_VERIFY_REASON="
-set "_task_xml="
-set "_task_xml_sz="
+set "TASK_VERIFY_RC="
 exit /b 0
 
 :fw_disable_remote_assistance
