@@ -1646,14 +1646,17 @@ goto :svc_done
 
 :svc_disable_mutation_failed
 call :log "[WARN] SERVICE_DISABLE_MUTATION_FAILED rc=%RC% service=%_svc% start=%_svc_start%"
+call :hardwarn SERVICE disable mutation failed: service=%_svc% rc=%RC% start=%_svc_start%
 goto :svc_done
 
 :svc_disable_state_not_disabled
 call :log "[WARN] SERVICE_DISABLE_STATE_NOT_DISABLED service=%_svc% start=%_svc_start%"
+call :hardwarn SERVICE not disabled: service=%_svc% start=%_svc_start% expected=0x4
 goto :svc_done
 
 :svc_disable_state_unverified
 call :log "[WARN] SERVICE_DISABLE_STATE_UNVERIFIED service=%_svc%"
+call :hardwarn SERVICE disable state unverified: service=%_svc% start=%_svc_start%
 goto :svc_done
 
 :svc_initial_query_unverified
