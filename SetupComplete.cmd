@@ -1465,6 +1465,11 @@ if "%RC%"=="0" (
 ) else if "%RC%"=="2" (
   call :log "[INFO] L2C_MARKER_DELETE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed"
 ) else (
+  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$key=$null; try {$key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\L2C'); if ($null -eq $key -or $key.GetValueNames() -notcontains 'AutologonPrimed') {exit 0}; exit 1} catch {exit 1} finally {if ($null -ne $key) {$key.Dispose()}}" >nul 2>&1
+  if errorlevel 0 if not errorlevel 1 (
+    call :log "[INFO] L2C_MARKER_DELETE_OK key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed"
+    exit /b 0
+  )
   call :track_rc %RC%
   call :log "[WARN] L2C_MARKER_DELETE_FAILED key=HKLM\\SOFTWARE\\L2C name=AutologonPrimed rc=%RC%"
 )
