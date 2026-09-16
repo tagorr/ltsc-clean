@@ -88,7 +88,9 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Autologon priming follows an all-or-nothing model.
 * [ ] `SetupComplete.cmd` creates the Stage B executor before committing Winlogon password state.
 * [ ] If priming fails after partial setup begins, failure is recorded and rollback is attempted.
-* [ ] A failure before temporary logon-policy relaxation is attempted does not invoke its rollback path.
+* [ ] A failure before `L2C_TEMP_LOGON_ROLLBACK_ELIGIBLE=1` is established is not eligible for the temporary logon-policy rollback path.
+* [ ] After `L2C_TEMP_LOGON_ROLLBACK_ELIGIBLE=1` is established following the combined secret gate, a later failure may still invoke that rollback path, including failures during reboot-marker signaling, trust-boundary validation, or task-registration preparation before the current run performs the temporary-policy writes.
+* [ ] Rollback eligibility does not prove that a temporary logon-policy mutation has occurred.
 * [ ] A failure after temporary logon-policy relaxation is attempted retains the existing rollback behavior.
 * [ ] Partial priming failure does not collapse into silent success-like continuation.
 
