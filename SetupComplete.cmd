@@ -1791,7 +1791,36 @@ endlocal
 exit /b 1
 
 :fw_block_diagtrack_verify
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $displayName='%RULE%'; $expectedProgram=Join-Path $env:SystemRoot 'System32\svchost.exe'; $uncertain=$false; try { $rules=@(Get-NetFirewallRule -PolicyStore ActiveStore -ErrorAction Stop); foreach ($rule in $rules) { if ([string]$rule.DisplayName -cne $displayName) { continue }; if ([string]$rule.Direction -ne 'Outbound' -or [string]$rule.Action -ne 'Block' -or [string]$rule.Enabled -ne 'True' -or [string]$rule.Profile -ne 'Any') { continue }; try { $app=@(Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop); $svc=@(Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop); $addr=@(Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop); $port=@(Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop); if ($app.Count -ne 1 -or $svc.Count -ne 1 -or $addr.Count -ne 1 -or $port.Count -ne 1) { $uncertain=$true; continue }; $coverage=@([string]$addr[0].LocalAddress; [string]$addr[0].RemoteAddress; [string]$port[0].Protocol; [string]$port[0].LocalPort; [string]$port[0].RemotePort); foreach ($value in $coverage) { if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing firewall coverage filter state' } }; if (@($coverage -ne 'Any').Count -ne 0) { continue }; if ([Environment]::ExpandEnvironmentVariables([string]$app[0].Program) -ieq $expectedProgram -and [string]$svc[0].Service -ieq 'diagtrack') { exit 0 } } catch { $uncertain=$true } }; if ($uncertain) { exit 3 }; exit 2 } catch { exit 3 }" >nul 2>&1
+rem Check traffic applicability; authentication/remote principals belong to allow rules.
+rem Platforms and Package must exist; explicit getters keep read errors distinct from null.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
+ "$ErrorActionPreference='Stop';" ^
+ "function Read-Property($object,$name) { $p=$object.PSObject.Properties[$name]; if ($null -eq $p) { throw ('Missing '+$name) }; return ,$p.get_Value() };" ^
+ "function Read-Number($object,$name,$max=65535) { $v=Read-Property $object $name; if ($v -isnot [enum] -and $v -isnot [uint16] -and $v -isnot [uint32] -and $v -isnot [int]) { throw ('Malformed '+$name) }; if ($null -ne $max -and ($v -lt 0 -or $v -gt $max)) { throw ('Malformed '+$name) }; return [long]$v };" ^
+ "function Read-Text($object,$name,[switch]$List) { $v=Read-Property $object $name; if ($v -isnot [string] -and (-not $List -or $v -isnot [array])) { throw ('Malformed '+$name) }; if (@($v).Count -eq 0) { throw ('Empty '+$name) }; foreach ($s in $v) { if ($s -isnot [string] -or [string]::IsNullOrWhiteSpace($s)) { throw ('Malformed '+$name) } }; return [string]$v };" ^
+ "$expectedProgram=Join-Path $env:SystemRoot 'System32\svchost.exe'; $uncertain=$false;" ^
+ "try { $rules=@(Get-NetFirewallRule -PolicyStore ActiveStore -ErrorAction Stop);" ^
+ "foreach ($rule in $rules) { try {" ^
+ "if ((Read-Text $rule DisplayName) -cne '%RULE%') { continue };" ^
+ "if ((Read-Number $rule Direction) -ne 2 -or (Read-Number $rule Action) -ne 4 -or (Read-Number $rule Enabled) -ne 1 -or (Read-Number $rule Profile) -ne 0) { continue };" ^
+ "$app=@(Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "$svc=@(Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "$addr=@(Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "$port=@(Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "$iface=@(Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "$type=@(Get-NetFirewallInterfaceTypeFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "$sec=@(Get-NetFirewallSecurityFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop);" ^
+ "if ($app.Count -ne 1 -or $svc.Count -ne 1 -or $addr.Count -ne 1 -or $port.Count -ne 1 -or $iface.Count -ne 1 -or $type.Count -ne 1 -or $sec.Count -ne 1) { throw 'Ambiguous firewall filters' };" ^
+ "$coverage=@((Read-Text $addr[0] LocalAddress -List); (Read-Text $addr[0] RemoteAddress -List); (Read-Text $port[0] Protocol); (Read-Text $port[0] LocalPort -List); (Read-Text $port[0] RemotePort -List); (Read-Text $iface[0] InterfaceAlias -List));" ^
+ "if (@($coverage -ne 'Any').Count -ne 0) { continue };" ^
+ "if ((Read-Number $type[0] InterfaceType $null) -ne 0 -or (Read-Number $port[0] DynamicTarget $null) -ne 0) { continue };" ^
+ "$localUser=Read-Text $sec[0] LocalUser; if ($localUser -ne 'Any') { continue };" ^
+ "$package=Read-Property $app[0] Package; if ($null -ne $package -and $package -isnot [string]) { throw 'Malformed Package' };" ^
+ "if ($null -ne $package) { continue };" ^
+ "$platforms=Read-Property $rule Platforms; if ($null -ne $platforms) { if ($platforms -isnot [System.Collections.IList]) { throw 'Malformed Platforms' }; if ($platforms.Count -ne 0) { continue } };" ^
+ "if ([Environment]::ExpandEnvironmentVariables((Read-Text $app[0] Program)) -ieq $expectedProgram -and (Read-Text $svc[0] Service) -ieq 'diagtrack') { exit 0 };" ^
+ "} catch { $uncertain=$true } };" ^
+ "if ($uncertain) { exit 3 }; exit 2 } catch { exit 3 }" >nul 2>&1
 exit /b %ERRORLEVEL%
 :triage_log_warn_reboot_flag_no_executor
 set "TRIAGE_LOG_PATH="
