@@ -21,6 +21,7 @@ Check:
 - `[SECTION] System-wide Local GPO baseline` and any following `[ERROR]` about a missing `LGPO.exe`, missing `BaselinePolicies.txt`, or failed import;
 - `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`
 - nearby `[WARN]` or `[ERROR]` lines about invalid, missing, unreadable, or malformed secret files, including internal validator errors or malformed primary admin secret content
+- `[ACLBOUNDARY]` pre-check and post-check results for the Scripts directory, Stage B script, task definition, and task directory
 - any line showing that `\L2C\CreatePrimaryAdmin` was scheduled
 - any line showing that Winlogon priming completed, was rolled back, or degraded into manual-login continuation
 
@@ -29,10 +30,12 @@ Interpretation:
 
 - if the mandatory Local GPO prerequisite or import fails, `SetupComplete.cmd` exits through the shared final return-code path before the normal baseline workload, secret validation, Stage B scheduling, or bootstrap autologon priming; a normal logon screen is therefore expected for this early fail-closed path;
 - this early final path does not have to emit the recovery banner, because it is reached before the later recovery-and-reboot section;
-- `TEMP_LOGON_ROLLBACK_FAILED` warnings are not expected when failure occurred before temporary logon tweaks were entered; their presence would be inconsistent with this early path;
-- if secret validation passed and the scheduled task `\L2C\CreatePrimaryAdmin` was created, SetupComplete completed the preparation needed for first-logon continuation, so the failure happened later; if continuation still did not occur, verify that the scheduled task `\L2C\CreatePrimaryAdmin` is still present.
+- `TEMP_LOGON_ROLLBACK_FAILED` warnings are not expected when the mandatory Local GPO path fails before the combined secret gate establishes rollback eligibility; after eligibility is established, such warnings may occur even if the current run did not yet enter the temporary logon-policy write helper;
+- if secret validation passed and the scheduled task `\L2C\CreatePrimaryAdmin` was created, that proves only that task registration returned success; it does not prove that continuation preparation completed. Inspect the post-registration trust-boundary evidence, Winlogon/autologon priming outcome, any rollback evidence, and the actual presence or absence of the continuation task;
+- if task creation occurred but the post-registration trust-boundary check or later priming path failed, SetupComplete may delete the task, roll back Winlogon state, or do both depending on the failure point; inspect the current log and actual task state to determine what remains;
+- successful automatic continuation preparation requires the relevant trust-boundary checks and Winlogon priming to pass together with the expected continuation task state;
 - if validation failed, the validator failed internally, or the task was never scheduled, `SetupComplete.cmd` stayed fail-closed and no automatic continuation was armed;
-- if the task was kept but autologon was rolled back, the machine is in a degraded manual-login continuation path, not in normal unattended completion.
+- if the log reports `L2C_AUTOLOGON_DEGRADED`/`manual_login_required=1`, the machine is in a degraded manual-login continuation path; if priming was rolled back without that degraded marker, treat the run as a failure and use the actual task state rather than assuming normal continuation.
 
 A normal logon screen does not always mean that autologon failed. AutoAdminLogon targets the console session, so in environments such as Hyper-V Enhanced Session or other RDP-based views, a logon screen can be expected even when the continuation path was armed correctly.
 
