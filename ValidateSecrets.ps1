@@ -114,6 +114,25 @@ function Test-SecretAcl {
     $sidSystem = 'S-1-5-18'      # SYSTEM
     $sidAdmins = 'S-1-5-32-544'  # BUILTIN\Administrators
 
+    $ownerReference = $null
+    try {
+        $ownerReference = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+    } catch {
+        return (Fail ('owner_read_failed: ' + $_.Exception.Message))
+    }
+
+    if ($null -eq $ownerReference) {
+        return (Fail 'owner_missing')
+    }
+
+    $ownerInfo = Resolve-IdentityReferenceSafe -IdentityReference $ownerReference
+    if ((-not $ownerInfo.Resolved) -or (-not $ownerInfo.Sid)) {
+        return (Fail ('owner_identity_unresolved: raw=' + $ownerInfo.Raw))
+    }
+    if (($ownerInfo.Sid -ne $sidSystem) -and ($ownerInfo.Sid -ne $sidAdmins)) {
+        return (Fail ('untrusted_owner_sid: ' + $ownerInfo.Sid))
+    }
+
     $rightsBySid = @{
         $sidSystem = [System.Security.AccessControl.FileSystemRights]0
         $sidAdmins = [System.Security.AccessControl.FileSystemRights]0
