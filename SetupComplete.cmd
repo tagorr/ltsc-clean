@@ -777,6 +777,7 @@ call :task_disable "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiag
 call :task_disable "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
 REM Ensure outbound firewall rule bound to DiagTrack exists
 call :fw_block_diagtrack
+if not "%ERRORLEVEL%"=="0" call :hardwarn DiagTrack firewall rule postcondition not verified helper_rc=%ERRORLEVEL%
 
 :: ------------ Delivery Optimization ------------
 call :log "[SECTION] Delivery Optimization"
@@ -1773,26 +1774,44 @@ exit /b 0
 setlocal EnableExtensions
 set "RULE=Block Telemetry Service (DiagTrack)"
 call :log "[STEP] Ensure firewall rule: %RULE%"
-REM check if rule exists
-netsh advfirewall firewall show rule name="%RULE%" >nul 2>&1
-if errorlevel 1 (
-  netsh advfirewall firewall add rule name="%RULE%" dir=out action=block program="%SystemRoot%\System32\svchost.exe" service=diagtrack enable=yes profile=any >nul 2>&1
-  if errorlevel 1 goto :fw_block_diagtrack_add_failed
-  endlocal
-  call :log "[OK] Firewall rule added: %RULE%"
-  exit /b 0
-) else (
-  endlocal
-  call :log "[OK] Firewall rule already present: %RULE%"
-  exit /b 0
-)
-
+call :fw_block_diagtrack_verify
+set "FW_DIAG_QUERY_RC=%ERRORLEVEL%"
+if "%FW_DIAG_QUERY_RC%"=="0" goto :fw_block_diagtrack_already_verified
+if not "%FW_DIAG_QUERY_RC%"=="2" goto :fw_block_diagtrack_initial_query_failed
+netsh advfirewall firewall add rule name="%RULE%" dir=out action=block program="%SystemRoot%\System32\svchost.exe" service=diagtrack enable=yes profile=any >nul 2>&1
+set "FW_DIAG_ADD_RC=%ERRORLEVEL%"
+if not "%FW_DIAG_ADD_RC%"=="0" goto :fw_block_diagtrack_add_failed
+call :fw_block_diagtrack_verify
+set "FW_DIAG_VERIFY_RC=%ERRORLEVEL%"
+if "%FW_DIAG_VERIFY_RC%"=="0" goto :fw_block_diagtrack_added_verified
+if "%FW_DIAG_VERIFY_RC%"=="2" goto :fw_block_diagtrack_postcondition_mismatch
+call :log "[WARN] DiagTrack firewall rule post-add verification query failed rc=%FW_DIAG_VERIFY_RC%"
+endlocal
+exit /b 1
+:fw_block_diagtrack_already_verified
+call :log "[OK] Firewall rule already verified: %RULE%"
+endlocal
+exit /b 0
+:fw_block_diagtrack_added_verified
+call :log "[OK] Firewall rule added and verified: %RULE%"
+endlocal
+exit /b 0
+:fw_block_diagtrack_initial_query_failed
+call :log "[WARN] DiagTrack firewall rule initial verification query failed rc=%FW_DIAG_QUERY_RC%"
+endlocal
+exit /b 1
 :fw_block_diagtrack_add_failed
-set "RC=%ERRORLEVEL%"
-endlocal & set "RC=%RC%"
-call :log "[ERROR] Failed to add firewall rule (%RC%)."
-exit /b %RC%
+call :log "[WARN] DiagTrack firewall rule add failed rc=%FW_DIAG_ADD_RC%"
+endlocal
+exit /b 1
+:fw_block_diagtrack_postcondition_mismatch
+call :log "[WARN] DiagTrack firewall rule postcondition mismatch after add rc=%FW_DIAG_VERIFY_RC%"
+endlocal
+exit /b 1
 
+:fw_block_diagtrack_verify
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $displayName='%RULE%'; $expectedProgram=Join-Path $env:SystemRoot 'System32\svchost.exe'; $uncertain=$false; try { $rules=@(Get-NetFirewallRule -PolicyStore ActiveStore -ErrorAction Stop); foreach ($rule in $rules) { if ([string]$rule.DisplayName -cne $displayName) { continue }; if ([string]$rule.Direction -ne 'Outbound' -or [string]$rule.Action -ne 'Block' -or [string]$rule.Enabled -ne 'True' -or [string]$rule.Profile -ne 'Any') { continue }; try { $app=@(Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop); $svc=@(Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop); if ($app.Count -ne 1 -or $svc.Count -ne 1) { $uncertain=$true; continue }; if ([Environment]::ExpandEnvironmentVariables([string]$app[0].Program) -ieq $expectedProgram -and [string]$svc[0].Service -ieq 'diagtrack') { exit 0 } } catch { $uncertain=$true } }; if ($uncertain) { exit 3 }; exit 2 } catch { exit 3 }" >nul 2>&1
+exit /b %ERRORLEVEL%
 :triage_log_warn_reboot_flag_no_executor
 set "TRIAGE_LOG_PATH="
 set "TRIAGE_LOG_TS_SHORT="
