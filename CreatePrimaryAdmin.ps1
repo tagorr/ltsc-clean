@@ -1102,19 +1102,27 @@ if ($flagProbeError) {
   }
   if (-not $StageB_Succeeded) {
     Write-SetupLog 'Reboot flag present but Stage B did not complete successfully; suppressing automatic reboot to allow operator inspection' 'WARN'
-    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
     try {
-      $sw.WriteLine("[{0}] Stage B: Panther reboot suppressed (StageB_Succeeded=false)" -f ([DateTime]::UtcNow.ToString('o')))
-    } finally {
-      $sw.Dispose()
+      $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+      try {
+        $sw.WriteLine("[{0}] Stage B: Panther reboot suppressed (StageB_Succeeded=false)" -f ([DateTime]::UtcNow.ToString('o')))
+      } finally {
+        $sw.Dispose()
+      }
+    } catch {
+      Write-SetupLog ("Master log write failed (Stage B failure suppression): {0}" -f $_.Exception.Message) 'WARN'
     }
   } elseif ($isRecovery) {
     Write-SetupLog 'Reboot flag present in recovery mode; not rebooting to allow operator fix' 'WARN'
-    $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
     try {
-      $sw.WriteLine("[{0}] Stage B: Panther reboot suppressed (recovery mode)" -f ([DateTime]::UtcNow.ToString('o')))
-    } finally {
-      $sw.Dispose()
+      $sw = New-Object System.IO.StreamWriter($MasterLogPath, $true, $utf8NoBom)
+      try {
+        $sw.WriteLine("[{0}] Stage B: Panther reboot suppressed (recovery mode)" -f ([DateTime]::UtcNow.ToString('o')))
+      } finally {
+        $sw.Dispose()
+      }
+    } catch {
+      Write-SetupLog ("Master log write failed (recovery suppression): {0}" -f $_.Exception.Message) 'WARN'
     }
   } else {
     $rawFlagMarker = $null
