@@ -1397,7 +1397,7 @@ if not "%RC%"=="0" (
   exit /b %RC%
 )
 
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -TotalCount 1 -ErrorAction Stop; Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'DefaultPassword' -Value $pw; exit 0} catch {exit 1}" >nul 2>&1
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$key=$null; try {$pwPath = Join-Path $env:WINDIR 'Setup\Scripts\.bootstrap.pw'; $pw = Get-Content -LiteralPath $pwPath -TotalCount 1 -ErrorAction Stop; if ([string]::IsNullOrEmpty($pw)) {exit 1}; $wl='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'; Set-ItemProperty -LiteralPath $wl -Name 'DefaultPassword' -Value $pw -Type String -ErrorAction Stop; $key=Get-Item -LiteralPath $wl -ErrorAction Stop; if ($key.GetValueKind('DefaultPassword') -ne [Microsoft.Win32.RegistryValueKind]::String -or -not [string]::Equals($key.GetValue('DefaultPassword'),$pw,[StringComparison]::Ordinal)) {exit 1}; exit 0} catch {exit 1} finally {if ($null -ne $key) {$key.Dispose()}}" >nul 2>&1
 call :winlogon_handle_default_password
 exit /b %ERRORLEVEL%
 
