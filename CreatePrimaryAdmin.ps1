@@ -136,7 +136,7 @@ function Test-RegKeyAccessDenied([string]$Key) {
   }
 }
 
-function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data, [switch]$ReturnCode, [switch]$SuppressWarnOnAccessDenied, [switch]$ReturnResult) {
+function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data, [switch]$SuppressWarnOnAccessDenied, [switch]$ReturnResult) {
   $rc = -1
   $rcRaw = -1
   try {
@@ -158,10 +158,9 @@ function Reg-Add([string]$Key, [string]$Name, [string]$Type, [string]$Data, [swi
     Write-SetupLog "Reg ADD failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
   }
   if ($ReturnResult) { return [pscustomobject]@{ Raw = $rcRaw; Effective = $rc; Normalized = ($rcRaw -ne $rc) } }
-  if ($ReturnCode) { return $rc }
 }
 
-function Reg-Del([string]$Key, [string]$Name, [switch]$ReturnCode, [switch]$SuppressWarnOnAccessDenied, [switch]$OkIfMissing, [switch]$ReturnResult) {
+function Reg-Del([string]$Key, [string]$Name, [switch]$SuppressWarnOnAccessDenied, [switch]$OkIfMissing, [switch]$ReturnResult) {
   $rc = -1
   $rcRaw = -1
   try {
@@ -201,7 +200,6 @@ function Reg-Del([string]$Key, [string]$Name, [switch]$ReturnCode, [switch]$Supp
     Write-SetupLog "Reg DEL failed: $Key\$Name - $($_.Exception.Message)" 'WARN'
   }
   if ($ReturnResult) { return [pscustomobject]@{ Raw = $rcRaw; Effective = $rc; Normalized = ($rcRaw -ne $rc) } }
-  if ($ReturnCode) { return $rc }
 }
 
 function Get-RegValueState([string]$KeyPath, [string]$Name) {
