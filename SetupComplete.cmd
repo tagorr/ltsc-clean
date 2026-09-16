@@ -179,15 +179,18 @@ set "RV=%~2"
 set "RT=%~3"
 set "RD=%~4"
 set "REGVERIFY_FOUND=0"
+set "REGVERIFY_TYPE="
 set "REGVERIFY_DATA="
 for /f "skip=1 tokens=1,2,*" %%A in ('reg query "%RK%" /v "%RV%" 2^>nul') do if /I "%%A"=="%RV%" (
   set "REGVERIFY_FOUND=1"
+  set "REGVERIFY_TYPE=%%B"
   set "REGVERIFY_DATA=%%C"
 )
 if not "%REGVERIFY_FOUND%"=="1" (
   call :hardwarn REG policy not applied: %RK% %RV% expected=%RD% actual=missing rc=%L2C_LAST_REGADD_RC%
   goto :regverify_cleanup
 )
+if /I not "%REGVERIFY_TYPE%"=="%RT%" goto :regverify_mismatch
 if /I "%RT%"=="REG_DWORD" (
   set "REGVERIFY_EXP_DEC="
   set /a REGVERIFY_EXP_DEC=%RD% >nul 2>&1
@@ -202,7 +205,7 @@ if /I not "%REGVERIFY_DATA%"=="%RD%" goto :regverify_mismatch
 goto :regverify_cleanup
 
 :regverify_mismatch
-set "HARDWARN_MSG=REG policy not applied: %RK% %RV% expected=%RD% actual=%REGVERIFY_DATA% (rc=%L2C_LAST_REGADD_RC%)"
+set "HARDWARN_MSG=REG policy not applied: %RK% %RV% expected=%RT%:%RD% actual=%REGVERIFY_TYPE%:%REGVERIFY_DATA% (rc=%L2C_LAST_REGADD_RC%)"
 call :hardwarn_cached
 
 :regverify_cleanup
@@ -211,6 +214,7 @@ set "RV="
 set "RT="
 set "RD="
 set "REGVERIFY_FOUND="
+set "REGVERIFY_TYPE="
 set "REGVERIFY_DATA="
 set "REGVERIFY_EXP_DEC="
 set "REGVERIFY_ACT_DEC="
