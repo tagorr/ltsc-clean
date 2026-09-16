@@ -38,7 +38,6 @@ set "L2C_HAS_PRIMARYADMIN_SECRET=0"
 set "L2C_PW_ALLOWED=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-"
 set "L2C_FIRST_BAD_RC="
 set "HARDENING_HAS_WARNINGS=0"
-set "HARDENING_WARN_COUNT=0"
 set "HARDENING_WARN_UNIQUE_COUNT=0"
 set "HARDENING_WARN_FALLBACK_USED=0"
 set "HARDENING_WARN_TS_SHORT="
@@ -298,7 +297,6 @@ set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
 call :log "[WARN] HARDENING_WARN_FILE_FALLBACK file=%HARDENING_WARN_FILE%"
 goto :hardwarn_write_attempt
 :hardwarn_ok
-set /a HARDENING_WARN_COUNT=%HARDENING_WARN_COUNT%+1 >nul 2>&1
 set "HARDWARN_MSG="
 exit /b 0
 :hardwarn_fail
@@ -1607,7 +1605,7 @@ if "%EDGE_EXE_PRESENT%"=="0" (
 if "%EDGE_EXE_PRESENT%"=="1" if defined ProgramFiles(x86) if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" call :hardwarn EDGE removal verification failed: msedge.exe present at "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
 if "%EDGE_EXE_PRESENT%"=="1" if defined ProgramFiles if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" call :hardwarn EDGE removal verification failed: msedge.exe present at "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
 
-endlocal & set "HARDENING_HAS_WARNINGS=%HARDENING_HAS_WARNINGS%" & set "HARDENING_WARN_COUNT=%HARDENING_WARN_COUNT%" & set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE%" & set "HARDENING_WARN_FALLBACK_USED=%HARDENING_WARN_FALLBACK_USED%" & exit /b 0
+endlocal & set "HARDENING_HAS_WARNINGS=%HARDENING_HAS_WARNINGS%" & set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE%" & set "HARDENING_WARN_FALLBACK_USED=%HARDENING_WARN_FALLBACK_USED%" & exit /b 0
 
 :edge_uninstall_once
 start "" /wait "%EDGE_SETUP%" --uninstall --system-level --force-uninstall >nul 2>&1
