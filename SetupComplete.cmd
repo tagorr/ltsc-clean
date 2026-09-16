@@ -1622,7 +1622,10 @@ REM ===== Helpers (Telemetry hardening) =====
 :svc_disable
 REM Usage: call :svc_disable "ServiceName"
 set "_svc=%~1"
-sc query "%_svc%" >nul 2>&1 || goto :svc_done
+sc query "%_svc%" >nul 2>&1
+set "_svc_query_rc=%ERRORLEVEL%"
+if "%_svc_query_rc%"=="1060" goto :svc_done
+if not "%_svc_query_rc%"=="0" goto :svc_initial_query_unverified
 sc stop  "%_svc%" >nul 2>&1
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" call :log "[WARN] SERVICE_STOP_FAILED rc=%RC% service=%_svc%"
@@ -1646,8 +1649,14 @@ goto :svc_done
 
 :svc_disable_state_unverified
 call :log "[WARN] SERVICE_DISABLE_STATE_UNVERIFIED service=%_svc%"
+goto :svc_done
+
+:svc_initial_query_unverified
+call :hardwarn SERVICE initial query state unverified: service=%_svc% rc=%_svc_query_rc%
+goto :svc_done
 
 :svc_done
+set "_svc_query_rc="
 set "_svc="
 set "_svc_start="
 set "RC="
@@ -1655,7 +1664,15 @@ exit /b 0
 
 :task_disable
 REM Usage: call :task_disable "\Path\To\Task"
-schtasks /Query /TN "%~1" >nul 2>&1 || goto :task_done
+schtasks /Query /TN "%~1" >nul 2>&1
+set "TASK_INITIAL_QUERY_RC=%ERRORLEVEL%"
+if "%TASK_INITIAL_QUERY_RC%"=="0" goto :task_mutation
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$n='%~1';$i=$n.LastIndexOf('\');if($i -lt 0){exit 2};$p=$n.Substring(0,$i+1);$t=$n.Substring($i+1);try{$matches=@(Get-ScheduledTask -TaskPath $p -TaskName $t -ErrorAction Stop);if($matches.Count -eq 1){exit 0};exit 2}catch{if($_.FullyQualifiedErrorId -eq 'CmdletizationQuery_NotFound,Get-ScheduledTask'){exit 1};exit 2}" >nul 2>&1
+set "TASK_INITIAL_PROBE_RC=%ERRORLEVEL%"
+if "%TASK_INITIAL_PROBE_RC%"=="1" goto :task_done
+call :hardwarn TASK initial query state unverified: task=%~1 schtasks_rc=%TASK_INITIAL_QUERY_RC% probe_rc=%TASK_INITIAL_PROBE_RC%
+goto :task_done
+:task_mutation
 schtasks /Change /TN "%~1" /Disable >nul 2>&1
 set "TASK_DISABLE_RC=%ERRORLEVEL%"
 if "%TASK_DISABLE_RC%"=="0" (
@@ -1689,6 +1706,8 @@ if /I "%TASK_VERIFY_STATE%"=="Unknown" if defined _task_xml_sz (
 del /q "%_task_xml%" >nul 2>&1
 
 :task_done
+set "TASK_INITIAL_QUERY_RC="
+set "TASK_INITIAL_PROBE_RC="
 set "RC="
 set "TASK_DISABLE_RC="
 set "TASK_VERIFY_XML_RC="
