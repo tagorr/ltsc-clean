@@ -1066,7 +1066,7 @@ if "%FAILED%"=="0" if "%NEEDS_REBOOT%"=="1" if not "%REBOOT_FLAG_SIGNAL_OK%"=="1
 
 REM === [L2C] Schedule CreatePrimaryAdmin as SYSTEM/Highest/OnLogon; then prime Winlogon autologon ===
 REM Autologon only if the bootstrap password is known and SEC-2 passed for both secrets
-if "%FAILED%"=="0" if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_FORMAT_OK%"=="1" if "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
+if "%FAILED%:%HAS_BOOTSTRAP_PW%:%L2C_BOOTSTRAP_PW_FORMAT_OK%:%L2C_HAS_PRIMARYADMIN_SECRET%:%L2C_BOOTSTRAP_PW_ACL_OK%:%L2C_PRIMARYADMIN_PW_ACL_OK%"=="0:1:1:1:1:1" (
   call :l2c_stageb_schedule_and_prime
 ) else (
   call :log "[WARN] Winlogon autologon not primed (gate FAILED=%FAILED%, HAS_BOOTSTRAP_PW=%HAS_BOOTSTRAP_PW%, L2C_BOOTSTRAP_PW_FORMAT_OK=%L2C_BOOTSTRAP_PW_FORMAT_OK%, L2C_HAS_PRIMARYADMIN_SECRET=%L2C_HAS_PRIMARYADMIN_SECRET%, L2C_BOOTSTRAP_PW_ACL_OK=%L2C_BOOTSTRAP_PW_ACL_OK%, L2C_PRIMARYADMIN_PW_ACL_OK=%L2C_PRIMARYADMIN_PW_ACL_OK%)"
