@@ -279,6 +279,7 @@ exit /b 0
 
 :hardwarn_write
 if not defined HARDWARN_MSG exit /b 0
+set "HARDENING_HAS_WARNINGS=1"
 if not defined HARDENING_WARN_FILE exit /b 0
 :hardwarn_write_attempt
 if "%HARDENING_WARN_FALLBACK_USED%"=="0" if defined ProgramData if not exist "%ProgramData%" mkdir "%ProgramData%" >nul 2>&1
@@ -297,7 +298,6 @@ set "HARDENING_WARN_FILE=%HARDENING_WARN_FILE_FALLBACK%"
 call :log "[WARN] HARDENING_WARN_FILE_FALLBACK file=%HARDENING_WARN_FILE%"
 goto :hardwarn_write_attempt
 :hardwarn_ok
-set "HARDENING_HAS_WARNINGS=1"
 set /a HARDENING_WARN_COUNT=%HARDENING_WARN_COUNT%+1 >nul 2>&1
 set "HARDWARN_MSG="
 exit /b 0
@@ -310,12 +310,10 @@ exit /b 0
 set "HARDENING_WARN_UNIQUE_COUNT=0"
 if not "%HARDENING_HAS_WARNINGS%"=="1" exit /b 0
 if not exist "%HARDENING_WARN_FILE%" (
-  set "HARDENING_HAS_WARNINGS=0"
   exit /b 0
 )
 for %%G in ("%HARDENING_WARN_FILE%") do set "HARDENING_WARN_FILE_SZ=%%~zG"
 if "%HARDENING_WARN_FILE_SZ%"=="0" (
-  set "HARDENING_HAS_WARNINGS=0"
   set "HARDENING_WARN_FILE_SZ="
   exit /b 0
 )
