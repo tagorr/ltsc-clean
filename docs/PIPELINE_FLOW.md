@@ -152,7 +152,7 @@ This is the main control layer of the baseline. A successful import establishes 
 * requires the bootstrap secret to be present, non-empty, and format-valid;
 * requires the primary admin secret to be present, non-empty, and format-valid;
 * establishes temporary logon-policy rollback eligibility after the combined secret gate;
-* selects the final reboot obligation, preserving servicing-driven `need-reboot` and selecting `force-reboot` when `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1`; when a reboot is required, writes and positively verifies the final Panther marker before registering the Stage B task or priming autologon;
+* records any servicing-derived `need-reboot` evidence, then applies the fixed `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` policy for the normal handoff, selecting `force-reboot`; it writes and positively verifies that final Panther marker before registering the Stage B task or priming autologon;
 * verifies the ACL boundary for `%WINDIR%\Setup\Scripts` and `CreatePrimaryAdmin.ps1`;
 * hardens the `%SystemRoot%\System32\Tasks\L2C` task container;
 * registers `\L2C\CreatePrimaryAdmin` as the finalization task;
@@ -165,7 +165,7 @@ The first-logon continuation is armed and the flow is ready to transition into t
 **Important alternate exit**
 
 * if either secret is missing, invalid, unreadable, or outside the expected boundary, the gate closes and the first-logon finalization path is not armed;
-* if no reboot is required, the marker step is skipped and the existing continuation gateway remains available; if required marker signaling or verification fails, the gateway remains closed;
+* on the normal successful handoff, the fixed policy requires a verified `force-reboot` marker; if marker signaling or verification fails, the gateway remains closed. Valid retained, manual, or externally encountered `need-reboot` markers remain supported by Stage B, but are not the normal successful SetupComplete producer outcome;
 * if task registration or task-boundary validation fails, the automatic continuation is not armed normally;
 * if autologon priming cannot be completed cleanly after task registration, the flow does not claim that the unattended handoff is intact; it either preserves a degraded manual-login continuation when the executor remains available or blocks continuation after rollback.
 
@@ -220,7 +220,7 @@ This is the real handoff between setup orchestration and final system completion
 * writes the final master outcome log.
 
 **Normal exit**
-The temporary execution bridge is removed and the machine reaches its intended finalized local-admin state. When a valid reboot obligation remains, Stage B deletes the marker, positively verifies its absence, treats marker consumption as successful, and then requests one controlled reboot; an accepted shutdown is required before describing that reboot as completed.
+The temporary execution bridge is removed and the machine reaches its intended finalized local-admin state. On the normal successful path, Stage B consumes the verified `force-reboot` marker, positively verifies its absence, and requests one controlled reboot. That reboot also ends the already-active interactive `bootstrap` logon session after teardown; a successful shutdown request proves only that the request was accepted. The reboot is complete only after Windows actually restarts, at which point it returns to the normal sign-in screen for manual `primaryadmin` sign-in.
 
 **Important alternate exit**
 
@@ -250,12 +250,12 @@ This is the point where the pipeline either becomes a finalized local baseline o
 * if finalization succeeded, evaluates the reboot signal, verifies marker consumption, and handles reboot conservatively.
 
 **Normal exit**
-The successful normal path handles a valid `force-reboot` marker without a pending-reboot probe, or a `need-reboot` marker with pending state `true` or `unknown`, by deleting the marker, positively verifying its absence, and treating marker consumption as successful before one controlled reboot request. A `need-reboot` marker with pending state `false` is stale and is cleared and verified without reboot. After shutdown returns zero, Windows presents the normal sign-in screen for manual `primaryadmin` sign-in.
+On the current normal successful path, `SetupComplete.cmd` has already superseded any earlier servicing `need-reboot` evidence with a verified `force-reboot` marker. Stage B consumes that marker without a pending-reboot probe, positively verifies its absence, and makes one controlled reboot request. Stage B also supports valid retained, manual, or external `need-reboot` markers: pending state `true` or `unknown` causes a conservative reboot, while pending state `false` is stale and is cleared and verified without reboot. After Windows actually restarts following an accepted normal shutdown request, it presents the normal sign-in screen for manual `primaryadmin` sign-in.
 
 **Important alternate exit**
 
 * if finalization did not succeed, reboot is intentionally suppressed so the retained state can be inspected and recovered;
-* if the reboot flag is stale, the flow clears it without rebooting;
+* if a valid non-final `need-reboot` marker is stale, the flow clears it without rebooting; this is not the normal successful SetupComplete producer path;
 * if reboot state is uncertain, the flow consumes the valid marker and requests reboot conservatively;
 * if shutdown scheduling fails, restoration of the original marker is attempted and verified; if verification fails, marker state is not proven. Reboot-finalization RC 8 is returned when no earlier failure code owns the result, and no retry is issued;
 * `OUTCOME: SUCCESS` records provisioning and teardown success before reboot finalization and does not by itself prove that shutdown scheduling was accepted.
@@ -276,7 +276,8 @@ In the normal successful path:
 * `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
 * `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available for elevated post-deployment verification or remediation;
 * temporary Winlogon and logon-policy changes have been restored;
-* when a reboot obligation is present, its valid Panther marker is deleted and its absence is positively verified before the single shutdown request; the automatic reboot is complete only when that request is accepted, while a stale `need-reboot` marker is cleared and verified without reboot.
+* in the normal successful path, the fixed final policy produces and verifies `force-reboot`; Stage B consumes that marker and verifies its absence before the single shutdown request, which completes the transition out of the temporary interactive `bootstrap` session after teardown. A successful shutdown request proves only that the request was accepted; the automatic reboot is complete only after Windows actually restarts, at which point Windows returns to the normal sign-in screen for manual `primaryadmin` sign-in;
+* valid retained, manual, or external `need-reboot` markers remain separately supported: pending state `true` or `unknown` causes reboot, while pending state `false` is treated as stale and cleared without reboot. This is not the normal successful SetupComplete producer outcome.
 
 If the flow cannot safely reach that state, the project prefers a visible degraded or recovery posture over a falsely clean success.
 
