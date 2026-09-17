@@ -176,14 +176,14 @@ On a clean supported deployment, confirm that:
 The evidence is separated by the layer at which it was observed:
 
 - **Offline prepared-image state:** the exact selected image's offline SOFTWARE hive contained `Microsoft\Windows Defender\Features\TamperProtection=REG_DWORD 4`; the existing `Features` key ACLs were retained and `TamperProtectionSource` was absent.
-- **Fresh pre-servicing deployment baseline:** the resulting VM was Windows build `26100.1742`, Defender platform `4.18.23110.3`, and Defender engine `1.1.23110.2`.
-- **SetupComplete and initial deployment state:** `SetupComplete.cmd` completed successfully and the combined Local GPO import succeeded. `ConfigureDefenderPrivacy.ps1` observed `IsTamperProtected=False`, `MAPSReporting=0`, and `SubmitSamplesConsent=2`. After deployment, the machine still showed Tamper `4`, no `TamperProtectionSource`, `IsTamperProtected=False`, policy `DisableBehaviorMonitoring=1`, effective `Get-MpPreference.DisableBehaviorMonitoring=True`, and runtime `Get-MpComputerStatus.BehaviorMonitorEnabled=False`.
+- **Fresh pre-servicing deployment baseline:** the resulting VM was Windows build `26100.1742`, Defender platform `4.18.23110.3`, Defender engine `1.1.23110.2`, and Security Intelligence `1.403.7.0`.
+- **SetupComplete and initial deployment state:** `SetupComplete.cmd` completed successfully and the combined Local GPO import succeeded. `ConfigureDefenderPrivacy.ps1` observed `IsTamperProtected=False`, `MAPSReporting=0`, and `SubmitSamplesConsent=2`. After deployment, the machine still showed Tamper `4`, no `TamperProtectionSource`, `IsTamperProtected=False`, policy `DisableBehaviorMonitoring=1`, policy-backed `ThreatIDDefaultAction_Ids=2147741622` / `ThreatIDDefaultAction_Actions=6`, effective `Get-MpPreference.DisableBehaviorMonitoring=True`, and runtime `Get-MpComputerStatus.BehaviorMonitorEnabled=False`.
 - **Ordinary reboot:** the Tamper and Behavior Monitoring state persisted.
 - **Direct WdVerification execution:** the genuine action `MpCmdRun.exe -IdleTask -TaskName WdVerification` completed with exit code `0`; the validated state persisted.
-- **Windows and Defender servicing:** the tested servicing cycle moved Windows from `26100.1742` to `26100.9445`, Defender platform from `4.18.23110.3` to `4.18.26080.3`, Defender engine from `1.1.23110.2` to `1.1.26080.3`, and security intelligence to `1.459.182.0`.
-- **Final ordinary reboot:** after servicing and reboot, Tamper remained `4`, `TamperProtectionSource` remained absent, `IsTamperProtected=False`, policy `DisableBehaviorMonitoring=1`, effective disablement `True`, and runtime `BehaviorMonitorEnabled=False`.
+- **Windows and Defender servicing:** the tested servicing cycle moved Windows from `26100.1742` to `26100.9457`, Defender platform from `4.18.23110.3` to `4.18.26080.3`, Defender engine from `1.1.23110.2` to `1.1.26080.3`, and Security Intelligence to `1.459.256.0`.
+- **Final ordinary reboot:** after servicing and reboot, Tamper remained `4`, `TamperProtectionSource` remained absent, `IsTamperProtected=False`, policy `DisableBehaviorMonitoring=1`, policy-backed Threat ID action `6` remained effective for `2147741622`, effective disablement remained `True`, and runtime `BehaviorMonitorEnabled=False`.
 
-This sequence establishes observed persistence for the prepared fresh-deployment path. It does not establish internal Defender causality or claim that every equivalent offline preparation method has passed the same complete validation sequence. The supported path does not require production `gpupdate /force` recovery.
+This sequence establishes observed persistence for the prepared fresh-deployment path through the ordinary reboot, genuine `WdVerification`, and tested servicing cycle. It does not establish internal Defender causality or claim that every equivalent offline preparation method has passed the same complete validation sequence. The supported path does not require production `gpupdate /force` recovery.
 
 ### Behavior Monitoring Local GPO validation
 
@@ -191,15 +191,15 @@ Use this scenario when changing the combined Local GPO payload or its `SetupComp
 
 On a clean Windows 11 Enterprise LTSC 2024 target satisfying the repository platform gate and the offline preparation contract, confirm without a manual refresh or another policy/API mutation that:
 
-- one `LGPO.exe /t` import of `BaselinePolicies.txt` succeeds and the five User records remain intact;
-- a read-only LGPO parse of the native Machine `Registry.pol` shows the Computer record `Software\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring`, `DWORD:1`;
+- one `LGPO.exe /t` import of `BaselinePolicies.txt` succeeds and the five User records plus the three Computer records remain intact;
+- a read-only LGPO parse of the native Machine `Registry.pol` shows the Computer record `Software\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring`, `DWORD:1`, and the Threats records `Software\Policies\Microsoft\Windows Defender\Threats\Threats_ThreatIdDefaultAction`, `DWORD:1`, and `Software\Policies\Microsoft\Windows Defender\Threats\ThreatIdDefaultAction`, value `2147741622`, `SZ:6`;
 - the materialized machine-policy value is `REG_DWORD 1`;
-- `Get-MpPreference.DisableBehaviorMonitoring` is `True` and `Get-MpComputerStatus.BehaviorMonitorEnabled` is `False`;
+- `Get-MpPreference.DisableBehaviorMonitoring` is `True`, `Get-MpComputerStatus.BehaviorMonitorEnabled` is `False`, and effective `ThreatIDDefaultAction_Ids=2147741622` / `ThreatIDDefaultAction_Actions=6`;
 - Antivirus, real-time, On-Access, IOAV, applicable NIS, and PUA protection remain in their intended enabled state;
-- the materialized policy, effective preference, and runtime Behavior Monitoring state remain aligned after an ordinary reboot, the direct WdVerification action, the tested servicing cycle, and the final reboot;
+- the materialized policy, policy-backed Threat ID action, effective preference, and runtime Behavior Monitoring state remain aligned after an ordinary reboot, the Security Intelligence and engine update, the direct WdVerification action, the tested Windows/Defender servicing cycle and reboot, final-platform WdVerification, and definitions removal followed by a full intelligence reload;
 - the offline Tamper preset remains `4` and `IsTamperProtected=False`;
 
-The completed clean-deployment record above includes a genuine direct `WdVerification` action with exit code `0`, followed by the tested servicing cycle and final reboot, while the policy, effective, and runtime BM layers remained aligned. This demonstrates observed persistence; it does not establish internal Defender causality. For future changes, capture the action result and relevant logs when available, but do not infer successful execution from a queued request, generic AutoPurge line, or LastRunTime alone. A validation-only `gpupdate /target:computer /force` regression remains separate from the supported production path and must not conceal a failed no-refresh deployment result.
+The completed clean-deployment record above includes genuine direct `WdVerification` actions with exit code `0`, Security Intelligence and engine servicing, Windows servicing and reboot, and `MpCmdRun.exe -RemoveDefinitions -All` completing with exit code `0` before the full intelligence reload, while the policy, policy-backed Threat ID, effective, and runtime BM layers remained aligned. No `DefenderTamperingRestore` Event 1116/1117 remediation or Behavior Monitoring Event 5004 re-enable occurred in those tested scenarios, and the native `Registry.pol` remained unchanged. This demonstrates observed persistence for the tested Defender stack; it does not establish internal Defender causality or guarantee future Defender releases or the natural scheduled threat-history cleanup cycle. For future changes, capture the action result and relevant logs when available, but do not infer successful execution from a queued request, generic AutoPurge line, or LastRunTime alone. A validation-only `gpupdate /target:computer /force` regression remains separate from the supported production path and must not conceal a failed no-refresh deployment result.
 
 ## Scenario Selection by Change Type
 
@@ -218,7 +218,7 @@ Use this section to choose the minimum meaningful validation scope.
   - targeted runtime validation covering the component's policy/effective-state distinction, non-fatal warning path, final post-reboot state, and retained-script rerun.
 
 - change to the combined Local GPO baseline payload or its SetupComplete import:
-  - targeted Windows 11 validation covering the offline preparation contract, persistent Computer policy, materialized/effective/runtime Behavior Monitoring state, retained protections, reboot and servicing persistence, and one evidenced WdVerification lifecycle.
+  - targeted Windows 11 validation covering the offline preparation contract, persistent Computer Behavior Monitoring and Threat ID policy, materialized/effective/runtime state, retained protections, reboot and servicing persistence, Security Intelligence reevaluation, definitions reload, and evidenced WdVerification lifecycles.
 
 - change to SetupComplete flow, continuation logic, or scheduled-task behavior:
   - happy-path smoke plus one deliberate blocked or degraded scenario relevant to that boundary.

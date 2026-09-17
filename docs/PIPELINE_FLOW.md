@@ -117,7 +117,7 @@ After the early setup path completes, control reaches `SetupComplete.cmd`.
 * imports the complete combined system-wide Local GPO baseline once through `LGPO.exe /t` as `SYSTEM`;
 * runs the main servicing and hardening workload;
 * applies the majority of the post-install baseline configuration;
-* keeps Defender real-time protection, On-Access protection, IOAV protection, applicable NIS protection, and PUA protection enabled while intentionally disabling Behavior Monitoring through the Computer Local GPO record;
+* keeps Defender real-time protection, On-Access protection, IOAV protection, applicable NIS protection, and PUA protection enabled while intentionally disabling Behavior Monitoring through the Computer Local GPO `DisableBehaviorMonitoring=1` record and the policy-backed Defender Threat ID `2147741622` action value `6`;
 * invokes `ConfigureDefenderPrivacy.ps1` through the pinned Windows PowerShell 5.1 executable;
 * captures the component's `[DEFENDER-PRIVACY]` output in `SetupComplete.log`;
 * tracks fatal failures, hardening warnings, and degraded continuation conditions.
@@ -135,7 +135,7 @@ If the platform gate and post-install flow remain valid, the pipeline moves to s
 * non-fatal issues can still allow continuation with warnings or a degraded later handoff.
 
 **Flow meaning**
-This is the main control layer of the baseline. A successful import establishes persistent system-wide Local GPO User and Computer state: Windows later processes the User records for profiles and the Computer record for machine policy. The User records are not implemented through direct `HKCU` writes from `SYSTEM` or a first-logon helper. The validated fresh-deployment and servicing path requires no production `gpupdate /force` recovery mechanism. The separate Defender privacy component directly manages two machine policy registry values rather than Local GPO `Registry.pol`. `SetupComplete.cmd` then does the heavy post-install work and decides whether the system is ready for the first-logon finalization path. A Defender privacy warning describes the privacy state observed when the component ran and does not by itself establish the final Defender acceptance state.
+This is the main control layer of the baseline. A successful import establishes persistent system-wide Local GPO User and Computer state: Windows later processes the User records for profiles and the Computer records for machine policy. The User records are not implemented through direct `HKCU` writes from `SYSTEM` or a first-logon helper. The Computer records include the policy-backed Defender Threat ID `2147741622` action value `6` that protects the Behavior Monitoring policy materialization during the demonstrated Security Intelligence reevaluation path. The validated fresh-deployment and servicing path requires no production `gpupdate /force` recovery mechanism or runtime repair. The separate Defender privacy component directly manages two machine policy registry values rather than Local GPO `Registry.pol`. `SetupComplete.cmd` then does the heavy post-install work and decides whether the system is ready for the first-logon finalization path. A Defender privacy warning describes the privacy state observed when the component ran and does not by itself establish the final Defender acceptance state.
 
 ---
 
