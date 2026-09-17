@@ -1009,6 +1009,16 @@ try {
     Write-SetupLog 'Secret cleanup error: .bootstrap.pw and/or .primaryadmin.pw could not be removed' 'ERROR'
   }
 
+  if ($SecretCleanupError) {
+    if ($rc -eq 0) { $rc = 3 }
+  } elseif (-not $WinlogonSanitizedOk) {
+    if ($rc -eq 0) { $rc = 4 }
+  } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
+    if ($rc -eq 0) { $rc = 6 }
+  } elseif ($StageA_Succeeded -and (-not $ExecutorTeardownVerified)) {
+    if ($rc -eq 0) { $rc = 7 }
+  }
+
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllLines($MasterLogPath, $finalLogEntries, $utf8NoBom)
   Write-SetupLog ("Master log created: {0}" -f $MasterLogPath)
@@ -1050,19 +1060,15 @@ try {
   }
   if ($SecretCleanupError) {
     Write-SetupLog "End B (FAIL - secret cleanup error)" 'ERROR'
-    if ($rc -eq 0) { $rc = 3 }
     $StageB_Succeeded = $false
   } elseif (-not $WinlogonSanitizedOk) {
     Write-SetupLog "End B (FAIL - Winlogon cleanup verification failed)" 'ERROR'
-    if ($rc -eq 0) { $rc = 4 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded -and (-not $LogonPolicyRestoredOk)) {
     Write-SetupLog "End B (FAIL - logon policy restore verification failed)" 'ERROR'
-    if ($rc -eq 0) { $rc = 6 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded -and (-not $ExecutorTeardownVerified)) {
     Write-SetupLog "End B (FAIL - executor teardown verification failed)" 'ERROR'
-    if ($rc -eq 0) { $rc = 7 }
     $StageB_Succeeded = $false
   } elseif ($StageA_Succeeded) {
     Write-SetupLog "End B (SUCCESS)"
