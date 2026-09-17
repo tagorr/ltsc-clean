@@ -1793,7 +1793,6 @@ set "REBOOT_FLAG_WRITE_RC="
 set "REBOOT_FLAG_READ_RC="
 set "REBOOT_FLAG_REASON="
 set "REBOOT_FLAG_OBSERVED_CLASS="
-set "REBOOT_FLAG_OBSERVED="
 
 call :log "[INFO] REBOOT_FLAG_SIGNAL_BEGIN marker=%REBOOT_FLAG% expected=%REBOOT_FLAG_CONTENT%"
 
@@ -1815,7 +1814,6 @@ if not errorlevel 1 (
   goto :reboot_flag_fail
 )
 
-set "REBOOT_FLAG_OBSERVED="
 call :reboot_flag_read_firstline_checked
 if "%REBOOT_FLAG_READ_IOERR%"=="1" goto :reboot_flag_fast_read_failed
 if not "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_fast_read_failed
@@ -1825,7 +1823,7 @@ set "REBOOT_FLAG_REASON=read_failed"
 set "REBOOT_FLAG_OBSERVED_CLASS=unreadable"
 goto :reboot_flag_fail
 :reboot_flag_read_ok
-if /I not "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" goto :reboot_flag_write_attempt
+if not "%REBOOT_FLAG_MATCH%"=="1" goto :reboot_flag_write_attempt
 
 set "REBOOT_FLAG_SIGNAL_OK=1"
 call :log "[INFO] REBOOT_FLAG_SIGNAL_OK already_present=1 marker=%REBOOT_FLAG% value=%REBOOT_FLAG_CONTENT%"
@@ -1888,25 +1886,14 @@ set "REBOOT_FLAG_WRITE_RC=%ERRORLEVEL%"
 exit /b 0
 
 :reboot_flag_read_firstline_checked
-REM Read first line from marker. Do not trust ERRORLEVEL from set /p + < redirection as authoritative.
-REM Auditor-confirmed: same-line 2> capture can miss errors when < redirection fails (redirection ordering).
-REM Avoid < redirection entirely by using TYPE in a child cmd.exe process; capture stderr at the process boundary.
+REM Keep marker text out of CMD grammar. PowerShell returns 0=match, 2=mismatch, 1=read error.
+set "REBOOT_FLAG_MATCH=0"
 set "REBOOT_FLAG_READ_IOERR=0"
-set "REBOOT_FLAG_IOERR_SZ=0"
-set "REBOOT_FLAG_IOERR_OUT=%TEMP%\l2c_reboot_flag_read_%RANDOM%_%RANDOM%.out"
-set "REBOOT_FLAG_IOERR_FILE=%TEMP%\l2c_reboot_flag_read_%RANDOM%_%RANDOM%.err"
-del /q "%REBOOT_FLAG_IOERR_OUT%" >nul 2>&1
-del /q "%REBOOT_FLAG_IOERR_FILE%" >nul 2>&1
-set "REBOOT_FLAG_OBSERVED="
-cmd.exe /d /q /c "type ""%REBOOT_FLAG%""" 1>"%REBOOT_FLAG_IOERR_OUT%" 2>"%REBOOT_FLAG_IOERR_FILE%"
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try{$r=[System.IO.StreamReader]::new([System.IO.File]::Open($env:REBOOT_FLAG,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite),[System.Text.Encoding]::ASCII,$false);try{$line=$r.ReadLine()}finally{$r.Dispose()};if([string]::Equals($line,$env:REBOOT_FLAG_CONTENT,[System.StringComparison]::OrdinalIgnoreCase)){exit 0};exit 2}catch{exit 1}" 1>nul 2>nul
 set "REBOOT_FLAG_READ_RC=%ERRORLEVEL%"
-if not exist "%REBOOT_FLAG_IOERR_OUT%" set "REBOOT_FLAG_READ_IOERR=1"
-if not exist "%REBOOT_FLAG_IOERR_FILE%" set "REBOOT_FLAG_READ_IOERR=1"
-if exist "%REBOOT_FLAG_IOERR_FILE%" for %%G in ("%REBOOT_FLAG_IOERR_FILE%") do set "REBOOT_FLAG_IOERR_SZ=%%~zG"
-if exist "%REBOOT_FLAG_IOERR_OUT%" set /p REBOOT_FLAG_OBSERVED=<"%REBOOT_FLAG_IOERR_OUT%"
-del /q "%REBOOT_FLAG_IOERR_OUT%" >nul 2>&1
-del /q "%REBOOT_FLAG_IOERR_FILE%" >nul 2>&1
-if not "%REBOOT_FLAG_IOERR_SZ%"=="0" set "REBOOT_FLAG_READ_IOERR=1"
+if "%REBOOT_FLAG_READ_RC%"=="0" set "REBOOT_FLAG_MATCH=1"
+if "%REBOOT_FLAG_READ_RC%"=="2" set "REBOOT_FLAG_READ_RC=0"
+if not "%REBOOT_FLAG_READ_RC%"=="0" set "REBOOT_FLAG_READ_IOERR=1"
 exit /b 0
 
 :reboot_flag_verify_expected_after_write
@@ -1924,7 +1911,7 @@ if not exist "%REBOOT_FLAG%" exit /b 0
 call :reboot_flag_read_firstline_checked
 if "%REBOOT_FLAG_READ_IOERR%"=="1" goto :reboot_flag_verify_read_failed
 if not "%REBOOT_FLAG_READ_RC%"=="0" goto :reboot_flag_verify_read_failed
-if /I "%REBOOT_FLAG_OBSERVED%"=="%REBOOT_FLAG_CONTENT%" set "REBOOT_FLAG_VERIFY_OK=1"
+if "%REBOOT_FLAG_MATCH%"=="1" set "REBOOT_FLAG_VERIFY_OK=1"
 exit /b 0
 :reboot_flag_verify_read_failed
 set "REBOOT_FLAG_REASON=read_failed"
