@@ -591,6 +591,10 @@ $ExecutorTeardownVerified = $false
 
 Write-SetupLog "Begin A: Primary admin creation/config"
 try {
+    if ($PrimaryUser -ieq 'bootstrap') {
+      $StageAAbortReason = 'PrimaryUser must not be the reserved temporary bootstrap account'
+      throw [System.InvalidOperationException]::new($StageAAbortReason)
+    }
     $primaryAdminSecretPath = Join-Path $env:WINDIR 'Setup\Scripts\.primaryadmin.pw'
     try {
       $passwordText = Get-Content -LiteralPath $primaryAdminSecretPath -Encoding utf8 -TotalCount 1 -ErrorAction Stop
