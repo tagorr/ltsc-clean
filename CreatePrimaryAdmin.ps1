@@ -308,6 +308,27 @@ function Test-WinlogonSanitized([string]$WinlogonKeyPath) {
     }
   }
 
+  $isoKey = $null
+  try {
+    $isoKey = Get-Item -LiteralPath $WinlogonKeyPath -ErrorAction Stop
+    $isoValue = $isoKey.GetValue('IgnoreShiftOverride')
+    if ($null -eq $isoValue) {
+      [void]$reasons.Add('IgnoreShiftOverride missing (expected REG_SZ "0")')
+    } else {
+      $isoKind = $isoKey.GetValueKind('IgnoreShiftOverride')
+      if ($isoKind -ne [Microsoft.Win32.RegistryValueKind]::String) {
+        [void]$reasons.Add(("IgnoreShiftOverride wrong registry type (kind={0} expected=REG_SZ)" -f $isoKind))
+      } elseif ($isoValue -cne '0') {
+        [void]$reasons.Add(("IgnoreShiftOverride not disabled (value={0} expected=0)" -f $isoValue))
+      }
+    }
+  } catch {
+    $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+    [void]$reasons.Add(("IgnoreShiftOverride read error: {0}" -f $msg))
+  } finally {
+    if ($null -ne $isoKey) { $isoKey.Dispose() }
+  }
+
   return [pscustomobject]@{ Ok = ($reasons.Count -eq 0); Reasons = @($reasons) }
 }
 
