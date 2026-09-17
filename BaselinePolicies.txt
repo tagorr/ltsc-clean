@@ -27,3 +27,13 @@ Computer
 Software\Policies\Microsoft\Windows Defender\Real-Time Protection
 DisableBehaviorMonitoring
 DWORD:1
+
+Computer
+Software\Policies\Microsoft\Windows Defender\Threats
+Threats_ThreatIdDefaultAction
+DWORD:1
+
+Computer
+Software\Policies\Microsoft\Windows Defender\Threats\ThreatIdDefaultAction
+2147741622
+SZ:6
