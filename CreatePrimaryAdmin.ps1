@@ -691,12 +691,11 @@ try {
         }
       }
 
-      $setArgs = @{ Name = $PrimaryUser; ErrorAction = 'Stop' }
-      $doSet = $false
-      if ($FullName) { $setArgs['FullName'] = $FullName; $doSet = $true }
-      if ($Description) { $setArgs['Description'] = $Description; $doSet = $true }
-      if ($PasswordNeverExpires) { $setArgs['PasswordNeverExpires'] = $true; $doSet = $true }
-      if ($doSet) { Set-LocalUser @setArgs }
+      $setArgs = @{ Name = $PrimaryUser; AccountNeverExpires = $true; ErrorAction = 'Stop' }
+      if ($FullName) { $setArgs['FullName'] = $FullName }
+      if ($Description) { $setArgs['Description'] = $Description }
+      if ($PasswordNeverExpires) { $setArgs['PasswordNeverExpires'] = $true }
+      Set-LocalUser @setArgs
 
       Write-Verbose "Stage A: ensuring Administrators membership (bounded Add-LocalGroupMember)"
       $addCode = Ensure-InAdministrators $PrimaryUser
@@ -705,6 +704,11 @@ try {
       }
 
       if ($AddToRemoteDesktopUsers) { Ensure-InGroup 'S-1-5-32-555' $PrimaryUser }
+
+      $primaryAccount = Get-LocalUser -Name $PrimaryUser -ErrorAction Stop
+      if ($primaryAccount -isnot [Microsoft.PowerShell.Commands.LocalUser] -or $null -ne $primaryAccount.AccountExpires) {
+        throw "Account-never-expires verification failed for $PrimaryUser"
+      }
     } catch {
       $msg = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
       Write-SetupLog ("Stage A user provisioning failed for {0}: {1}" -f $PrimaryUser, $msg) 'ERROR'
