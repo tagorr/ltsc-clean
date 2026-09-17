@@ -35,7 +35,6 @@ set "L2C_BOOTSTRAP_PW_ACL_OK=0"
 set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
 set "L2C_PRIMARYADMIN_PW_ACL_OK=0"
 set "L2C_HAS_PRIMARYADMIN_SECRET=0"
-set "L2C_PW_ALLOWED=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#@_-"
 set "L2C_FIRST_BAD_RC="
 set "HARDENING_HAS_WARNINGS=0"
 set "HARDENING_WARN_UNIQUE_COUNT=0"
@@ -602,75 +601,14 @@ set "DISM_HARD_FAIL=1"
 call :log "[DISM] RC=%L2C_DISM_RC% (error)"
 exit /b %L2C_DISM_RC%
 
-:validate_primaryadmin_password
-set "L2C_PW_CHECK="
-set "L2C_PW_SEEN=0"
-if not defined L2C_PRIMARYADMIN_PASSWORD exit /b 1
-if "%L2C_PRIMARYADMIN_PASSWORD%"=="" exit /b 1
-set "L2C_PW_CHECK=%L2C_PRIMARYADMIN_PASSWORD%"
-
-:_validate_primaryadmin_password_loop
-if not defined L2C_PW_CHECK goto :_validate_primaryadmin_password_ok
-if "%L2C_PW_CHECK%"=="" if "%L2C_PW_SEEN%"=="1" goto :_validate_primaryadmin_password_ok
-set "L2C_PW_CHAR=%L2C_PW_CHECK:~0,1%"
-call :is_primaryadmin_char_allowed "%L2C_PW_CHAR%"
-if errorlevel 1 goto :_validate_primaryadmin_password_badchar
-set "L2C_PW_SEEN=1"
-set "L2C_PW_CHECK=%L2C_PW_CHECK:~1%"
-goto :_validate_primaryadmin_password_loop
-:_validate_primaryadmin_password_badchar
-set "L2C_PW_CHAR="
-set "L2C_PW_CHECK="
-set "L2C_PW_SEEN="
-exit /b 1
-:_validate_primaryadmin_password_ok
-set "L2C_PW_CHAR="
-set "L2C_PW_CHECK="
-set "L2C_PW_SEEN="
-exit /b 0
-
-:validate_bootstrap_password
-set "L2C_PW_CHECK="
-set "L2C_PW_SEEN=0"
-if not defined L2C_BOOTSTRAP_PASSWORD exit /b 1
-if "%L2C_BOOTSTRAP_PASSWORD%"=="" exit /b 1
-set "L2C_PW_CHECK=%L2C_BOOTSTRAP_PASSWORD%"
-
-:_validate_bootstrap_password_loop
-if not defined L2C_PW_CHECK goto :_validate_bootstrap_password_ok
-if "%L2C_PW_CHECK%"=="" if "%L2C_PW_SEEN%"=="1" goto :_validate_bootstrap_password_ok
-set "L2C_PW_CHAR=%L2C_PW_CHECK:~0,1%"
-call :is_primaryadmin_char_allowed "%L2C_PW_CHAR%"
-if errorlevel 1 goto :_validate_bootstrap_password_badchar
-set "L2C_PW_SEEN=1"
-set "L2C_PW_CHECK=%L2C_PW_CHECK:~1%"
-goto :_validate_bootstrap_password_loop
-:_validate_bootstrap_password_badchar
-set "L2C_PW_CHAR="
-set "L2C_PW_CHECK="
-set "L2C_PW_SEEN="
-exit /b 1
-:_validate_bootstrap_password_ok
-set "L2C_PW_CHAR="
-set "L2C_PW_CHECK="
-set "L2C_PW_SEEN="
-exit /b 0
-
-:is_primaryadmin_char_allowed
-set "L2C_PW_CHAR_TEST=%~1"
-if "%L2C_PW_CHAR_TEST%"=="" (
-  set "L2C_PW_CHAR_TEST="
-  exit /b 1
-)
-call set "L2C_PW_SCAN=%%L2C_PW_ALLOWED:%L2C_PW_CHAR_TEST%=%%"
-if "%L2C_PW_SCAN%"=="%L2C_PW_ALLOWED%" (
-  set "L2C_PW_SCAN="
-  set "L2C_PW_CHAR_TEST="
-  exit /b 1
-)
-set "L2C_PW_SCAN="
-set "L2C_PW_CHAR_TEST="
-exit /b 0
+:validate_password_file
+REM Read only in PowerShell; CMD receives 0=valid, 1=invalid, 2=empty/unreadable.
+setlocal
+set "L2C_PASSWORD_FILE=%~1"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$pw=Get-Content -LiteralPath $env:L2C_PASSWORD_FILE -Encoding UTF8 -TotalCount 1 -ErrorAction Stop; if ([string]::IsNullOrEmpty($pw)) {exit 2}; if ($pw -cmatch '\A[A-Za-z0-9#@_-]+\z') {exit 0}; exit 1} catch {exit 2}" >nul 2>&1
+if "%ERRORLEVEL%"=="0" (endlocal & exit /b 0)
+if "%ERRORLEVEL%"=="2" (endlocal & exit /b 2)
+endlocal & exit /b 1
 
 :configure_defender_privacy
 set "DEFENDER_PRIVACY_SCRIPT=%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1"
@@ -935,17 +873,13 @@ if "%HAS_BOOTSTRAP_PW%"=="1" if "%L2C_BOOTSTRAP_PW_ACL_OK%"=="1" goto :l2c_boots
 goto :l2c_bootstrap_pw_done
 
 :l2c_bootstrap_pw_read
-REM Read the first line of the file, standard set /p VAR=<FILE syntax
-set "BOOTSTRAP_CHECK="
-set /p BOOTSTRAP_CHECK=<"%PWFILE%"
-if not defined BOOTSTRAP_CHECK (
+call :validate_password_file "%PWFILE%"
+if errorlevel 2 (
   set "FAILED=1"
   call :log "[ERROR] .bootstrap.pw missing or empty; Stage B registration will be skipped."
   goto :l2c_bootstrap_pw_done
 )
 
-set "L2C_BOOTSTRAP_PASSWORD=%BOOTSTRAP_CHECK%"
-call :validate_bootstrap_password
 if errorlevel 1 (
   set "FAILED=1"
   set "L2C_BOOTSTRAP_PW_FORMAT_OK=0"
@@ -953,8 +887,6 @@ if errorlevel 1 (
 ) else (
   set "L2C_BOOTSTRAP_PW_FORMAT_OK=1"
 )
-set "L2C_BOOTSTRAP_PASSWORD="
-set "BOOTSTRAP_CHECK="
 
 :l2c_bootstrap_pw_done
 
@@ -995,11 +927,7 @@ if "%FAILED%"=="0" (
   ) else (
     REM Read and validate primary admin password only if SEC-2 passed for .primaryadmin.pw
     if "%L2C_PRIMARYADMIN_PW_ACL_OK%"=="1" (
-      set "L2C_PRIMARYADMIN_PASSWORD="
-      REM Read the password, ignoring Hidden/System attributes
-      set /p L2C_PRIMARYADMIN_PASSWORD=<"%L2C_PRIMARYADMIN_SECRET%"
-      REM TEMP: skip trimming; empty is validated by validate_primaryadmin_password helper
-      call :validate_primaryadmin_password
+      call :validate_password_file "%L2C_PRIMARYADMIN_SECRET%"
       if errorlevel 1 (
         call :log "[ERROR] primary admin password is empty or contains unsupported characters; only A-Z, a-z, 0-9, #, @, _ and - are allowed. Stage B registration will be skipped."
       ) else (
@@ -1016,8 +944,6 @@ REM If we are still not in FAILED, require that primary admin secret has been su
 if "%FAILED%"=="0" if not "%L2C_HAS_PRIMARYADMIN_SECRET%"=="1" (
   set "FAILED=1"
 )
-
-set "L2C_PRIMARYADMIN_PASSWORD="
 
 REM Establish temporary logon-policy rollback eligibility after the combined secret gate.
 REM The best-effort temporary values are applied immediately before Winlogon priming.
