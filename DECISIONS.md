@@ -103,7 +103,9 @@ This is part of the design, not residue. The baseline prefers safe, legible, ope
 
 `SetupComplete.cmd` does not use an immediate reboot as part of its main execution path.
 
-If servicing requires a reboot, that requirement is signaled rather than handled within `SetupComplete.cmd` itself. Reboot handling is treated as a bounded post-servicing concern, not as a mechanism for forcing progression through unfinished state.
+If servicing requires a reboot, that intermediate requirement is signaled rather than handled within `SetupComplete.cmd` itself. The fixed `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` policy then selects and verifies a final `force-reboot` marker for the normal successful handoff to Stage B; valid retained, manual, or externally encountered `need-reboot` markers remain supported with their separate pending-reboot semantics. Stage B alone consumes the marker and makes the single controlled shutdown request after successful finalization.
+
+The final controlled reboot is part of normal completion: after Stage B disables the temporary `bootstrap` account and removes the continuation machinery, it ends the already-active interactive bootstrap session and returns Windows to the normal sign-in screen for manual `primaryadmin` sign-in. Reboot handling remains a bounded post-servicing concern, not a mechanism for forcing progression through unfinished state.
 
 This keeps the setup boundary more deterministic and makes intermediate state easier to observe and review.
 

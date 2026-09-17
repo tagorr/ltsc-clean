@@ -205,14 +205,14 @@ Treat `cleanup state=error` as retained recovery state, not as normal completion
 
 ## Reboot Flag Handling
 
-The baseline may use `_needs_reboot.flag` to carry a pending reboot requirement across phases:
+The current normal `SetupComplete.cmd` producer always applies `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` for the final handoff. Any earlier servicing-derived `need-reboot` evidence is intermediate and is superseded by a verified `force-reboot` marker before Stage B is armed. The Panther flag may also carry retained, manual, or externally encountered marker state across phases:
 
-- in normal mode after successful Stage B provisioning and teardown, `force-reboot` is consumed without a pending-reboot probe; `need-reboot` with pending state `true` or `unknown` is consumed conservatively, while pending state `false` is stale and is cleared and verified without reboot;
+- in the normal successful path after Stage B provisioning and teardown, the verified `force-reboot` marker is consumed without a pending-reboot probe; Stage B also supports valid retained, manual, or external `need-reboot` markers, using pending state `true` or `unknown` for a conservative reboot and treating pending state `false` as stale and clearing it without reboot. The latter is not the normal successful SetupComplete producer outcome;
 - for a rebooting case, Stage B positively verifies marker absence before issuing the single shutdown request. A zero shutdown result is accepted; a failed or nonzero request attempts to restore and verify the original marker, returns reboot-finalization RC 8 when no earlier failure code owns the result, and issues no automatic retry. If restoration cannot be verified, inspect the actual Panther marker state;
 - in recovery or failed finalization, automatic reboot is not performed for you;
 - if the flag remains in place after a degraded or failed run, treat it as manual follow-up state, not as proof of successful completion.
 
-`OUTCOME: SUCCESS` in the Stage B master log describes successful provisioning and teardown; it does not by itself prove that shutdown scheduling was accepted. Use the current-run evidence, including `SetupComplete.log` and the Stage B master log if it exists, to determine which reboot outcome was reached. RC 8 identifies reboot-finalization failure when no earlier nonzero result takes precedence.
+`OUTCOME: SUCCESS` in the Stage B master log describes successful provisioning and teardown; it does not by itself prove that shutdown scheduling was accepted. On the current normal path, that success is followed by consumption of the verified `force-reboot` marker and one controlled reboot request; a successful shutdown result proves only that the request was accepted, and Windows returns to the normal sign-in screen only after the reboot completes. Use the current-run evidence, including `SetupComplete.log` and the Stage B master log if it exists, to distinguish accepted shutdown from reboot-finalization failure. RC 8 identifies reboot-finalization failure when no earlier nonzero result takes precedence.
 
 ## Post-Run Checks
 
@@ -231,7 +231,7 @@ For a normal completed run, confirm the following:
 - `TamperProtection=REG_DWORD 4` and `IsTamperProtected=False`;
 - after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;
 - temporary Winlogon and logon-policy changes have been restored;
-- when a reboot obligation exists, the existing controlled reboot occurs only after shutdown scheduling is accepted; after reboot, the normal Windows sign-in screen is shown and `primaryadmin` is signed in manually. If no reboot is required or RC 8 is returned, follow the reboot-flag and troubleshooting evidence before treating the run as normally complete.
+- after successful normal provisioning and teardown, the verified `force-reboot` obligation is consumed and one controlled reboot request is made; that reboot ends the temporary interactive `bootstrap` session. A successful shutdown result proves only that the request was accepted; after the reboot completes, the normal Windows sign-in screen is shown for manual `primaryadmin` sign-in. If RC 8 is returned, follow the reboot-flag and troubleshooting evidence before treating the run as normally complete; `OUTCOME: SUCCESS` alone still describes only provisioning and teardown.
 
 ### Evidence checks
 

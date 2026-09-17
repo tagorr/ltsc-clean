@@ -38,7 +38,7 @@ Disk and partition selection remains intentionally manual because `Autounattend.
 - `primaryadmin` is ready as the permanent local administrator;
 - the temporary `bootstrap` account is disabled and deployment secret files are removed;
 - Microsoft Defender Antivirus remains enabled with real-time, On-Access, IOAV, and applicable NIS protection; Tamper Protection and Behavior Monitoring are off;
-- temporary logon changes are restored; after any required final controlled reboot, the normal Windows sign-in screen is shown for manual `primaryadmin` sign-in.
+- temporary logon changes are restored; after the one required final controlled reboot, which ends the temporary interactive `bootstrap` logon session, the normal Windows sign-in screen is shown for manual `primaryadmin` sign-in.
 
 ## If Normal Completion Does Not Happen
 
