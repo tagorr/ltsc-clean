@@ -71,7 +71,7 @@ Treat a missing or wrong policy record as an import/source problem, a missing or
 
 Use this section when Stage B appears to have run, but the resulting machine state does not match the expected final state.
 
-Start with the current-run evidence. Use the most recent `%ProgramData%\l2c_master_<timestamp>.log`, when present, as the primary Stage A/Stage B and teardown record, but always inspect `%WINDIR%\Panther\SetupComplete.log` for reboot-finalization diagnostics; obtain or inspect the Stage B process result separately when available. The runtime does not guarantee that this process result is persisted in either log. If the master log is absent, use `SetupComplete.log` to determine how far continuation progressed and whether finalization stopped before the master log was written.
+Start with the current-run evidence. Use the most recent `%ProgramData%\l2c_master_<timestamp>.log`, when present, as the primary Stage A/Stage B and teardown record, but treat it as authoritative only for entries it actually contains; its existence does not guarantee both per-secret cleanup-state records. Always inspect `%WINDIR%\Panther\SetupComplete.log` for reboot-finalization diagnostics; obtain or inspect the Stage B process result separately when available. The runtime does not guarantee that this process result is persisted in either log. An exception before secret-cleanup evidence was established, or a master-log persistence/finalization failure, can leave the master log absent or incomplete. If the master log is absent or lacks either cleanup-state record, use `SetupComplete.log` to determine how far continuation progressed and verify actual presence or absence of `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`.
 
 Check:
 
@@ -79,13 +79,14 @@ Check:
 - the Stage A result, including normal no-change outcomes when the account was already in the required local group;
 - the Stage B result, including failed or aborted finalization;
 - whether logon-policy restore or Winlogon cleanup verification failed, and whether teardown was blocked as a result;
-- whether secret cleanup completed;
+- any per-secret cleanup-state records actually present in the master log, and whether either record is missing;
+- actual presence or absence of `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`, especially when cleanup-state evidence is absent or incomplete;
 - whether reboot handling completed or was suppressed;
 - whether the process returned reboot-finalization RC 8, unless an earlier nonzero result took precedence.
 
 Focus on the meaning of the evidence rather than on any single line in isolation:
 
-- `OUTCOME: SUCCESS` together with completed cleanup and restoration supports provisioning and teardown success, but does not by itself prove that automatic shutdown scheduling was accepted; check `SetupComplete.log` and, when available, the separate process result;
+- `OUTCOME: SUCCESS` together with successfully persisted cleanup-state records for both secrets and restoration supports provisioning and teardown success, but does not by itself prove that automatic shutdown scheduling was accepted; if either cleanup-state record is missing, the state remains unproven and the actual file state must be verified; check `SetupComplete.log` and, when available, the separate process result;
 - any final fail or aborted outcome means the machine must not be treated as finalized;
 - retained task state, retained secrets, an enabled `bootstrap` account, or reboot suppression indicate retained recovery state rather than normal completion.
 
@@ -124,14 +125,14 @@ Treat this as deliberate retained recovery state, not as an acceptable steady st
 
 ## Secret Cleanup States and Their Meaning
 
-In non-normal runs, use the current-run evidence to interpret per-secret cleanup state. If the Stage B master log exists, use it to read those states. Otherwise, use `%WINDIR%\Panther\SetupComplete.log` to determine whether cleanup progressed far enough to record them.
+Use current-run evidence to interpret per-secret cleanup state. When Stage B reaches secret cleanup and successfully persists the relevant evidence, it records one resolved state for each secret. The master log is authoritative only for cleanup-state records it actually contains. An earlier Stage B exception or a master-log persistence/finalization failure can make the master log absent, incomplete, or present without one or both records. Do not infer `skipped` or any other state from an absent record. When cleanup evidence is absent or incomplete, use `%WINDIR%\Panther\SetupComplete.log` to determine how far continuation progressed and verify actual presence or absence of `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw`.
 
-States that may be compatible with normal completion for a given artifact:
+Recorded states that may be compatible with normal completion for a given artifact:
 
 - `removed`, the file was present and deleted successfully;
 - `missing`, the file was not present when cleanup was attempted.
 
-States that indicate retained recovery state or incomplete finalization:
+Recorded states that indicate retained recovery state or incomplete finalization:
 
 - `error`, deletion failed and the file may still remain on disk;
 - `preserved`, the file was intentionally retained for recovery or retry;

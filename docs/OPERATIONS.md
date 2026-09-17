@@ -107,7 +107,7 @@ Use the current-run logs as the primary evidence for what happened during the ru
 
 - `PreOOBE.log` shows specialize-phase policy work, bootstrap provisioning status, and bootstrap output lines that help confirm whether early bootstrap completed cleanly.
 - `SetupComplete.log` shows the mandatory combined Local GPO baseline import, `[DEFENDER-PRIVACY]` policy/effective-state results and any hardening warning, secret-gate results, Stage B registration decisions, recovery transitions, reboot-flag handling, reboot-finalization errors, and the SetupComplete-side outcome for the current run.
-- `l2c_master_<timestamp>.log`, if present, is the main evidence for Stage A and Stage B outcome, per-secret cleanup state, and teardown/finalization progress after continuation. Its reboot-preparation entries do not prove that shutdown scheduling was accepted; use `SetupComplete.log` and the process result for reboot-finalization failures.
+- `l2c_master_<timestamp>.log`, when present, is the main evidence for Stage A and Stage B outcome, teardown/finalization progress, and any per-secret cleanup-state records it actually contains after continuation. When Stage B reaches secret cleanup and successfully persists the relevant evidence, it records one resolved state for each secret; an earlier Stage B exception or master-log persistence/finalization failure can leave the log absent, incomplete, or without one or both records, so its existence alone does not prove that both records are available. Its reboot-preparation entries do not prove that shutdown scheduling was accepted; use `SetupComplete.log` and the process result for reboot-finalization failures.
 - `SetupComplete-DISM.log` is the consolidated DISM servicing trace for SetupComplete-time servicing work.
 
 ### What to look for first
@@ -117,8 +117,8 @@ Before deciding how far the run progressed, check whether:
 - `SetupComplete.log` shows `[SECTION] System-wide Local GPO baseline` followed by `[INFO] Local GPO baseline import succeeded rc=0` on the normal path;
 - `SetupComplete.log` shows the Defender privacy policy and effective-state result that was observable when the component ran, plus any corresponding hardening-warning summary;
 - `SetupComplete.log` shows the expected current-run outcome;
-- the Stage B master log, if present, shows the expected Stage A and Stage B outcome;
-- secret cleanup states match the observed secret-file state;
+- the Stage B master log, if present, shows the expected Stage A and Stage B outcome and is authoritative for each cleanup-state record it actually contains;
+- each recorded cleanup state matches the observed secret-file state; if either record is absent, correlate `SetupComplete.log` and verify actual file presence or absence instead of inferring a state;
 - reboot-flag handling in the logs matches the final machine state;
 - if automatic reboot was expected, `SetupComplete.log` and the process result show whether shutdown scheduling was accepted; a master-log preparation entry alone is not acceptance evidence.
 
@@ -193,7 +193,7 @@ Treat this as retained recovery state, not as normal completion.
 
 ### Secret cleanup states
 
-In non-normal runs, use the current-run evidence to determine what cleanup did or did not complete. If the Stage B master log exists, use it to read the per-secret cleanup states:
+When investigating a Stage B run, use current-run evidence to determine what cleanup did or did not complete. When Stage B reaches secret cleanup and successfully persists the relevant master-log evidence, the log records one resolved state for each secret. Use each record that is actually present as authoritative for that secret. An earlier Stage B exception can occur before either state is established or appended, and a master-log persistence/finalization failure can leave the log absent or incomplete; a master log may therefore be present without one or both records. A missing record means that the cleanup state is not proven by that evidence surface; do not convert it to any listed state. Correlate `%WINDIR%\Panther\SetupComplete.log` and verify actual presence or absence of `%WINDIR%\Setup\Scripts\.bootstrap.pw` and `%WINDIR%\Setup\Scripts\.primaryadmin.pw` when cleanup evidence is absent or incomplete.
 
 - `removed`, the file was present and deleted successfully;
 - `missing`, the file was not present when cleanup was attempted;
@@ -201,7 +201,7 @@ In non-normal runs, use the current-run evidence to determine what cleanup did o
 - `preserved`, the secret was intentionally kept for recovery or retry;
 - `skipped`, cleanup was not attempted in the current path.
 
-Treat `cleanup state=error` as retained recovery state, not as normal completion. Verify whether a secret remains on disk, and do not treat the machine as finalized until the cleanup failure is understood.
+Treat a recorded `cleanup state=error` as a security-significant failure and retained recovery state, not as normal completion. Verify whether a secret remains on disk, and do not treat the machine as finalized until the cleanup failure is understood.
 
 ## Reboot Flag Handling
 
@@ -238,8 +238,8 @@ For a normal completed run, confirm the following:
 Also confirm that the logs support the observed end state:
 
 - `SetupComplete.log` confirms the successful combined Local GPO baseline import and reflects the expected SetupComplete outcome for the current run;
-- the Stage B master log, if present, reflects the expected Stage A and Stage B outcome;
-- secret cleanup states match the observed file state;
+- the Stage B master log, if present, reflects the expected Stage A and Stage B outcome and any cleanup-state records it actually contains; its existence alone does not prove that both per-secret records persisted;
+- each recorded cleanup state matches the observed file state; when a record is absent, use `SetupComplete.log` and actual file presence or absence to establish what is known;
 - reboot-flag handling in the logs matches the final machine state.
 
 If these conditions are not met, do not assume normal completion.
