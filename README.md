@@ -62,7 +62,7 @@ Not a fit:
 These baseline decisions come with explicit trade-offs:
 
 - SmartScreen policy layers are disabled, reducing prompts and reputation-based checks at the cost of SmartScreen-based protection.
-- Microsoft Defender Antivirus remains enabled. Real-time protection, On-Access protection, IOAV protection, applicable NIS protection, and PUA protection remain enabled, while Tamper Protection is intentionally Off in the prepared deployment and Behavior Monitoring is intentionally disabled through the persistent Local GPO baseline. The retained privacy component configures cloud/MAPS and automatic sample submission off, and reports a non-fatal warning when the point-in-time effective privacy posture cannot be verified; see [Operations](docs/OPERATIONS.md) for post-deployment verification and remediation.
+- Microsoft Defender Antivirus remains enabled. Real-time protection, On-Access protection, IOAV protection, applicable NIS protection, and PUA protection remain enabled, while Tamper Protection is intentionally Off in the prepared deployment and Behavior Monitoring is intentionally disabled through persistent Local GPO records. The policy-backed Defender Threat ID `2147741622` action value `6` protects that materialization during Security Intelligence reevaluation. The retained privacy component configures cloud/MAPS and automatic sample submission off, and reports a non-fatal warning when the point-in-time effective privacy posture cannot be verified; see [Operations](docs/OPERATIONS.md) for post-deployment verification and remediation.
 - Automatic component cleanup is not forced, preserving predictability and reversibility at the cost of a larger system footprint.
 - With WPAD disabled, proxy configuration must be made explicitly later.
 

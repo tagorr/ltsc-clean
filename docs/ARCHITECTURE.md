@@ -82,7 +82,7 @@ Its role is to establish a tightly scoped temporary bridge, not the permanent ma
 
 It performs platform compatibility gating, imports the mandatory system-wide Local GPO baseline, applies the main baseline configuration, invokes the subordinate Defender privacy component, runs secret validation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
 
-Immediately after the platform gate, it executes the operator-supplied Microsoft `LGPO.exe` as `SYSTEM` to import the repository-tracked `BaselinePolicies.txt` payload. Successful import is required before the normal workload continues. The resulting persistent Local GPO User and Computer state is processed by Windows for the relevant profiles and machine policy; the User records are not implemented through direct `HKCU` writes from `SYSTEM`.
+Immediately after the platform gate, it executes the operator-supplied Microsoft `LGPO.exe` as `SYSTEM` to import the repository-tracked `BaselinePolicies.txt` payload. The Computer records include the intentional Behavior Monitoring disablement (`DisableBehaviorMonitoring=DWORD:1`) and the policy-backed Defender threat action `2147741622` with action `6` for `VirTool:Win32/DefenderTamperingRestore`. Together they provide the persistent policy source and protect its materialization during the demonstrated Security Intelligence reevaluation path. Successful import is required before the normal workload continues. The resulting persistent Local GPO User and Computer state is processed by Windows for the relevant profiles and machine policy; the User records are not implemented through direct `HKCU` writes from `SYSTEM`.
 
 It is a critical architectural boundary because it determines whether continuation is armed, degraded, or blocked.
 
@@ -94,11 +94,11 @@ It is not the final completion boundary.
 
 `SetupComplete.cmd` invokes it through the pinned Windows PowerShell 5.1 executable and captures its `[DEFENDER-PRIVACY]` output in `%WINDIR%\Panther\SetupComplete.log`. The same script is intentionally retained under `%WINDIR%\Setup\Scripts` for later execution from an already elevated Windows PowerShell session; this manual reuse is not a separate pipeline stage.
 
-The component is the single implementation owner of machine-policy `SpynetReporting=0` and `SubmitSamplesConsent=2`. It verifies those registry values separately from Defender's effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state. Its result describes the effective privacy posture; it observes but never disables or bypasses Tamper Protection, and it does not own the offline Tamper prerequisite or the Behavior Monitoring Local GPO policy.
+The component is the single implementation owner of machine-policy `SpynetReporting=0` and `SubmitSamplesConsent=2`. It verifies those registry values separately from Defender's effective `IsTamperProtected`, `MAPSReporting`, and `SubmitSamplesConsent` state. Its result describes the effective privacy posture; it observes but never disables or bypasses Tamper Protection, and it does not own the offline Tamper prerequisite or the Behavior Monitoring Local GPO records.
 
 Exit `0` means the effective privacy posture was fully verified, exit `2` means policy application and state inspection succeeded but the effective privacy posture could not be guaranteed, and exit `1` means a technical execution or verification failure. `SetupComplete.cmd` converts exit `2`, technical nonzero results, or a missing component into hardening warnings rather than trusted-continuation failures.
 
-The component writes direct machine policy registry values, not Local GPO `Registry.pol`, and remains separate from the `BaselinePolicies.txt` Local GPO declarations. The payload's Computer record is the persistent authority for Behavior Monitoring.
+The component writes direct machine policy registry values, not Local GPO `Registry.pol`, and remains separate from the `BaselinePolicies.txt` Local GPO declarations. The payload's Computer records are the persistent authority for Behavior Monitoring and its `2147741622` threat-remediation exception. The policy-backed action is distinct from the transient runtime/history `ThreatIDDefaultAction` entry; no runtime repair, watchdog, or scheduled policy reapplication is added.
 
 ### `ValidateSecrets.ps1`
 
@@ -258,7 +258,7 @@ These enter the system from outside the pipeline itself.
 - operator-supplied `LGPO.exe`
 - `.primaryadmin.pw`
 
-Successful import produces persistent system-wide Local GPO User and Computer state. Windows later processes the User records for profiles and the Computer record for machine policy. The User path does not require direct `HKCU` writes from `SYSTEM` or a first-logon helper. The validated fresh-deployment and servicing path requires no production `gpupdate /force` recovery mechanism.
+Successful import produces persistent system-wide Local GPO User and Computer state. Windows later processes the User records for profiles and the Computer records for machine policy. The User path does not require direct `HKCU` writes from `SYSTEM` or a first-logon helper. The validated fresh-deployment and servicing path requires no production `gpupdate /force` recovery mechanism.
 
 `ConfigureDefenderPrivacy.ps1` is also staged as a runtime input, but its lifecycle is different from temporary bridge and executor artifacts. It remains installed after normal finalization as a deliberate operational verification/remediation entry point; it is not a secret, a continuation artifact, or retained recovery residue.
 

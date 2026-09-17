@@ -145,7 +145,7 @@ Use `docs/TROUBLESHOOTING.md` when the remaining state must be diagnosed or inte
 
 ### Defender privacy final-state verification and remediation
 
-A Defender privacy posture warning during SetupComplete is a point-in-time, non-fatal hardening result. Allow the normal provisioning reboot to complete before deciding whether remediation is needed, then use the retained `ConfigureDefenderPrivacy.ps1` as the canonical machine-readable verification entry point for its two owned privacy policies from an already elevated Windows PowerShell session. It does not apply or certify the Behavior Monitoring Local GPO policy; inspect that policy and its effective/runtime state separately below.
+A Defender privacy posture warning during SetupComplete is a point-in-time, non-fatal hardening result. Allow the normal provisioning reboot to complete before deciding whether remediation is needed, then use the retained `ConfigureDefenderPrivacy.ps1` as the canonical machine-readable verification entry point for its two owned privacy policies from an already elevated Windows PowerShell session. It does not apply or certify the Behavior Monitoring Local GPO policy records; inspect those records and their effective/runtime state separately below.
 
 The desired final deployment state is:
 
@@ -156,7 +156,7 @@ The desired final deployment state is:
 - policy `SpynetReporting=0` and policy `SubmitSamplesConsent=2`;
 - Microsoft Defender Antivirus enabled;
 - real-time protection, On-Access protection, IOAV protection, and applicable NIS protection enabled;
-- Behavior Monitoring intentionally disabled: the Local GPO Computer record and machine-policy `DisableBehaviorMonitoring=1`, effective `Get-MpPreference.DisableBehaviorMonitoring=True`, and runtime `Get-MpComputerStatus.BehaviorMonitorEnabled=False` agree;
+- Behavior Monitoring intentionally disabled and protected against the demonstrated Defender reevaluation path: the Local GPO Computer record and machine-policy `DisableBehaviorMonitoring=1`, effective Threat ID mapping `ThreatIDDefaultAction_Ids=2147741622` / `ThreatIDDefaultAction_Actions=6`, effective `Get-MpPreference.DisableBehaviorMonitoring=True`, and runtime `Get-MpComputerStatus.BehaviorMonitorEnabled=False` agree;
 - `PUAProtection=1`.
 
 Windows Security may visibly warn because Tamper Protection is Off. That warning is independent of the intentional Behavior Monitoring disablement and does not indicate that Microsoft Defender Antivirus or the explicitly retained real-time, On-Access, IOAV, NIS, and PUA protections have changed.
@@ -177,7 +177,9 @@ Read `$LASTEXITCODE` immediately after the command:
 
 `-ExecutionPolicy Bypass` applies only to the spawned Windows PowerShell process and does not permanently change PowerShell execution policy.
 
-The component directly manages the two privacy machine-policy registry values; it does not write corresponding Local GPO `Registry.pol` state. `gpedit.msc` may therefore show those privacy Administrative Template settings as Not Configured even when the owned registry values and privacy effective state are correct. Do not use that display alone as failure evidence, and do not conflate this direct privacy profile with the `BaselinePolicies.txt` Local GPO declarations. The BM Computer record must be checked in the Local GPO source and effective/runtime layers separately.
+The component directly manages the two privacy machine-policy registry values; it does not write corresponding Local GPO `Registry.pol` state. `gpedit.msc` may therefore show those privacy Administrative Template settings as Not Configured even when the owned registry values and privacy effective state are correct. Do not use that display alone as failure evidence, and do not conflate this direct privacy profile with the `BaselinePolicies.txt` Local GPO declarations. The BM Computer records and the policy-backed `2147741622` action must be checked in the Local GPO source, materialized/effective state, and runtime layers separately from the transient runtime/history path.
+
+The validated fresh-deployment path kept the Behavior Monitoring and Threat ID policy state, materialized/effective/runtime Behavior Monitoring state, and `2147741622` action `6` aligned through normal reboot, Security Intelligence and engine update, genuine `WdVerification`, Windows servicing and reboot, final-platform `WdVerification`, and definitions removal followed by a full intelligence reload. No `DefenderTamperingRestore` quarantine or Behavior Monitoring re-enable occurred in those tested scenarios. This is observed evidence for the tested Defender stack; future Defender releases and the natural scheduled threat-history cleanup cycle remain outside that validation.
 
 ### Retained recovery state
 
@@ -226,8 +228,8 @@ For a normal completed run, confirm the following:
 - `%WINDIR%\Setup\Scripts\.bootstrap.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\.primaryadmin.pw` has been removed;
 - `%WINDIR%\Setup\Scripts\ConfigureDefenderPrivacy.ps1` remains available;
-- the machine Local GPO contains the five User entries and the Computer `DisableBehaviorMonitoring=1` entry defined by `BaselinePolicies.txt`;
-- the corresponding Machine `Registry.pol`, machine-policy DWORD, effective preference and runtime Behavior Monitoring state agree with the BM validation contract;
+- the machine Local GPO contains the five User entries and the Computer Behavior Monitoring and Threat ID policy entries defined by `BaselinePolicies.txt`;
+- the corresponding Machine `Registry.pol`, machine-policy DWORD, policy-backed `2147741622` action `6`, effective Threat ID mapping, effective preference, and runtime Behavior Monitoring state agree with the BM validation contract;
 - `TamperProtection=REG_DWORD 4` and `IsTamperProtected=False`;
 - after the normal provisioning reboot, the Defender privacy final state matches the verification contract above or any remaining posture warning has been investigated;
 - temporary Winlogon and logon-policy changes have been restored;

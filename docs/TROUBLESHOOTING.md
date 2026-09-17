@@ -59,13 +59,15 @@ Use this section when the intended Behavior Monitoring suppression is not observ
 
 Check the layers independently:
 
-- the Computer record in the parsed `%WINDIR%\System32\GroupPolicy\Machine\Registry.pol` from the `BaselinePolicies.txt` import;
+- the Computer records in the parsed `%WINDIR%\System32\GroupPolicy\Machine\Registry.pol` from the `BaselinePolicies.txt` import, including the Behavior Monitoring record and the Defender Threats records;
 - `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection\DisableBehaviorMonitoring` as `REG_DWORD 1`;
+- `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Threats\Threats_ThreatIdDefaultAction` as `REG_DWORD 1`, plus `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Threats\ThreatIdDefaultAction` value `2147741622` as `SZ:6`;
 - `Get-MpPreference.DisableBehaviorMonitoring` as `True`;
 - `Get-MpComputerStatus.BehaviorMonitorEnabled` as `False`;
+- effective `ThreatIDDefaultAction_Ids=2147741622` and `ThreatIDDefaultAction_Actions=6`;
 - retained Antivirus, real-time, On-Access, IOAV, applicable NIS, and PUA protection fields.
 
-Treat a missing or wrong policy record as an import/source problem, a missing or unreadable value as technical uncertainty, and a readable different value as a posture mismatch. A successful LGPO return code, `SetupComplete` success, or `ConfigureDefenderPrivacy.ps1` exit `0` is not proof of effective Behavior Monitoring suppression. Record the offline Tamper value, `IsTamperProtected`, and the BM layers separately; if Tamper is On, verify media preparation first. Do not disable or bypass Tamper Protection at runtime, and do not use production `gpupdate /force` as the normal remedy. Use the completed validation record for the WdVerification and servicing durability evidence before claiming durable suppression.
+Treat a missing or wrong Behavior Monitoring or Threats policy record as an import/source problem, a missing or unreadable value as technical uncertainty, and a readable different value as a posture mismatch. If the Local GPO source remains intact while the materialized Behavior Monitoring value disappears, inspect Defender events for `DefenderTamperingRestore` (Threat ID `2147741622`) and the corresponding remediation before treating the source as lost. A successful LGPO return code, `SetupComplete` success, or `ConfigureDefenderPrivacy.ps1` exit `0` is not proof of effective Behavior Monitoring suppression. Record the offline Tamper value, `IsTamperProtected`, the BM layers, and the effective Threat ID mapping separately; if Tamper is On, verify media preparation first. Do not disable or bypass Tamper Protection at runtime, use the transient `HKLM\SOFTWARE\Microsoft\Windows Defender\Threats\ThreatIDDefaultAction` path, or use production `gpupdate /force` as the normal remedy. Use the completed validation record for Security Intelligence reevaluation, WdVerification, and servicing durability evidence before claiming durable suppression.
 
 ## Symptom: Stage B Ran but the Final State Is Not Correct
 
