@@ -8,7 +8,7 @@
      - This answer file does not create user accounts or configure autologon; setup scripts may create accounts and prime temporary autologon
      - No automatic disk partitioning
      - OOBE is biased toward local accounts; MSA screens are hidden
-     - This file defines no FirstLogonCommands; all servicing and tweaks are performed from SetupComplete.cmd -->
+     - This file defines no FirstLogonCommands; PreOOBE applies early policies and prepares bootstrap, while SetupComplete performs servicing and continuation setup -->
 
   <settings pass="windowsPE">
     <component name="Microsoft-Windows-International-Core-WinPE"

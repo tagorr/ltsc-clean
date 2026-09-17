@@ -691,7 +691,7 @@ call :regadd_verify "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender Security 
 call :l2c_securityhealth_autorun_cleanup
 call :configure_defender_privacy
 
-:: ------------ Early Edge browser removal (guarantee layer) ------------
+:: ------------ Early Edge browser removal (best-effort hardening) ------------
 call :edge_remove
 
 :: ------------ Telemetry / Diagnostics / WER ------------
