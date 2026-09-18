@@ -1121,6 +1121,21 @@ exit /b 0
 
 :l2c_stageb_schedule_and_prime
 REM Schedule Stage B executor first, then prime Winlogon autologon only on success (atomicity).
+REM Bootstrap account precondition: 0=enabled, 1=missing, 2=disabled, 3=ambiguous/unusable, 4=query error.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try {$users=@(Get-LocalUser -Name 'bootstrap' -ErrorAction Stop); if ($users.Count -eq 0) {exit 1}; if ($users.Count -ne 1) {exit 3}; $u=$users[0]; if ($null -eq $u -or $u.Name -isnot [string] -or $u.Name -ine 'bootstrap' -or $u.Enabled -isnot [bool]) {exit 3}; if (-not $u.Enabled) {exit 2}; exit 0} catch {if ($_.FullyQualifiedErrorId -eq 'UserNotFound,Microsoft.PowerShell.Commands.GetLocalUserCommand') {exit 1}; exit 4}" >nul 2>&1
+set "RC=%ERRORLEVEL%"
+set "L2C_BOOTSTRAP_ACCOUNT_STATE=query_error"
+if "%RC%"=="1" set "L2C_BOOTSTRAP_ACCOUNT_STATE=missing"
+if "%RC%"=="2" set "L2C_BOOTSTRAP_ACCOUNT_STATE=disabled"
+if "%RC%"=="3" set "L2C_BOOTSTRAP_ACCOUNT_STATE=ambiguous_or_unusable"
+if not "%RC%"=="0" (
+  call :log "[ERROR] Bootstrap account precondition failed state=%L2C_BOOTSTRAP_ACCOUNT_STATE% rc=%RC%; Stage B registration and autologon priming skipped."
+  call :track_rc %RC%
+  set "FAILED=1"
+  set "STAGEB_NOT_SCHEDULED=1"
+  exit /b 0
+)
+call :log "[INFO] Bootstrap account precondition passed: local bootstrap exists and is enabled."
 REM [L2C] ACL boundary pre-check (non-admin tamper boundary): Scripts dir + Stage B script target
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
   -File "%WINDIR%\Setup\Scripts\ValidateSecrets.ps1" ^
