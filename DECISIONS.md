@@ -85,7 +85,7 @@ This compatibility posture is intentional. The baseline prefers a fail-closed ou
 
 A successful `SetupComplete.cmd` run is not treated as sufficient evidence that the unattended continuation path remains safe.
 
-Continuation into primary-admin finalization is allowed only after the required validation and setup conditions succeed in sequence, including secret validation, task registration, and the remaining conditions for safe continuation.
+Continuation into primary-admin finalization is allowed only after the required validation and setup conditions succeed in sequence, including secret validation, task registration, and the remaining conditions for safe continuation. Secret validity is only one of those conditions: before `SetupComplete.cmd` begins Stage B continuation preparation, it must positively verify that exactly one local `bootstrap` account exists with a readable Boolean enabled state. Missing, disabled, ambiguous, unreadable, or otherwise unproven account state closes the existing gate; `SetupComplete.cmd` does not repair or re-enable the account, and a retained `.bootstrap.pw` does not establish account usability.
 
 If those conditions are not met safely, the normal unattended continuation path is not established.
 

@@ -75,6 +75,9 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] `.primaryadmin.pw` presence, validation state, and first-line validity are checked before Stage B scheduling or autologon priming.
 * [ ] `ValidateSecrets.ps1` results are decoded and used as part of the combined gate.
 * [ ] Internal validator failure is treated as fail closed.
+* [ ] Before continuation mutations begin, `SetupComplete.cmd` independently verifies exactly one local `bootstrap` account with a readable Boolean `Enabled=$true` state.
+* [ ] Secret validity and bootstrap-account usability are separate preconditions; a retained `.bootstrap.pw` does not prove that the account is usable for another continuation attempt.
+* [ ] Missing, disabled, ambiguous or unusable, unreadable, or otherwise unproven bootstrap-account state closes the existing gate before task-directory hardening, Stage B registration, temporary logon-policy writes, or Winlogon autologon priming; SetupComplete does not repair or re-enable the account.
 * [ ] A single combined gate controls:
   * [ ] temporary logon-policy relaxation;
   * [ ] Winlogon autologon priming;

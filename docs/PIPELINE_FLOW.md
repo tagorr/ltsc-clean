@@ -153,6 +153,7 @@ This is the main control layer of the baseline. A successful import establishes 
 * requires the primary admin secret to be present, non-empty, and format-valid;
 * establishes temporary logon-policy rollback eligibility after the combined secret gate;
 * records any servicing-derived `need-reboot` evidence, then applies the fixed `ALWAYS_REBOOT_AFTER_FIRST_LOGON=1` policy for the normal handoff, selecting `force-reboot`; it writes and positively verifies that final Panther marker before registering the Stage B task or priming autologon;
+* before continuation mutations begin, independently verifies exactly one local `bootstrap` account with a readable Boolean `Enabled=$true` state; this account check is separate from secret validation and must pass before task-directory hardening, task registration, temporary logon-policy writes, or Winlogon autologon priming;
 * verifies the ACL boundary for `%WINDIR%\Setup\Scripts` and `CreatePrimaryAdmin.ps1`;
 * hardens the `%SystemRoot%\System32\Tasks\L2C` task container;
 * registers `\L2C\CreatePrimaryAdmin` as the finalization task;
@@ -165,12 +166,13 @@ The first-logon continuation is armed and the flow is ready to transition into t
 **Important alternate exit**
 
 * if either secret is missing, invalid, unreadable, or outside the expected boundary, the gate closes and the first-logon finalization path is not armed;
+* if the bootstrap account is missing, disabled, ambiguous, unreadable, or otherwise unproven, the existing failure/recovery gate closes before Stage B registration or autologon preparation; the attempt does not write the bootstrap password into Winlogon, and the failure uses the existing `FAILED=1` / `STAGEB_NOT_SCHEDULED=1` final-result and recovery path. `SetupComplete.cmd` does not repair or re-enable the account, and a retained `.bootstrap.pw` does not establish account usability;
 * on the normal successful handoff, the fixed policy requires a verified `force-reboot` marker; if marker signaling or verification fails, the gateway remains closed. Valid retained, manual, or externally encountered `need-reboot` markers remain supported by Stage B, but are not the normal successful SetupComplete producer outcome;
 * if task registration or task-boundary validation fails, the automatic continuation is not armed normally;
 * if autologon priming cannot be completed cleanly after task registration, the flow does not claim that the unattended handoff is intact; it either preserves a degraded manual-login continuation when the executor remains available or blocks continuation after rollback.
 
 **Flow meaning**
-This is the key security-sensitive transition in the whole pipeline. The flow is not considered armed just because setup completed. It is armed only when secret validation, boundary validation, task registration, and autologon priming succeed in sequence.
+This is the key security-sensitive transition in the whole pipeline. The flow is not considered armed just because setup completed. It is armed only when secret validation, account usability verification, boundary validation, task registration, and autologon priming succeed in sequence.
 
 ---
 

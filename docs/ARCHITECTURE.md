@@ -80,7 +80,7 @@ Its role is to establish a tightly scoped temporary bridge, not the permanent ma
 
 `SetupComplete.cmd` is the central orchestration component.
 
-It performs platform compatibility gating, imports the mandatory system-wide Local GPO baseline, applies the main baseline configuration, invokes the subordinate Defender privacy component, runs secret validation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
+It performs platform compatibility gating, imports the mandatory system-wide Local GPO baseline, applies the main baseline configuration, invokes the subordinate Defender privacy component, runs secret validation, independently verifies bootstrap-account usability for continuation, checks non-admin tamper boundaries, registers the finalization executor, prepares temporary continuation state when allowed, and decides whether the system should signal a deferred reboot requirement.
 
 Immediately after the platform gate, it executes the operator-supplied Microsoft `LGPO.exe` as `SYSTEM` to import the repository-tracked `BaselinePolicies.txt` payload. The Computer records include the intentional Behavior Monitoring disablement (`DisableBehaviorMonitoring=DWORD:1`) and the policy-backed Defender threat action `2147741622` with action `6` for `VirTool:Win32/DefenderTamperingRestore`. Together they provide the persistent policy source and protect its materialization during the demonstrated Security Intelligence reevaluation path. Successful import is required before the normal workload continues. The resulting persistent Local GPO User and Computer state is processed by Windows for the relevant profiles and machine policy; the User records are not implemented through direct `HKCU` writes from `SYSTEM`.
 
@@ -171,12 +171,15 @@ Trusted continuation depends on a compound chain of conditions, including:
 - required secret presence
 - secret ACL and attribute validity
 - secret content validity
+- positively verified continuation target: exactly one local `bootstrap` account with a readable Boolean enabled state
 - non-admin tamper boundary checks on scripts and related surfaces
 - successful executor registration
 - successful temporary continuation preparation
 - successful continuation marker or equivalent state confirmation
 
 Architecturally, what matters is not any single condition in isolation, but the ordered success of the gate as a whole.
+
+The protected `.bootstrap.pw` is not evidence that the target account is currently usable. At the start of `SetupComplete.cmd`'s Stage B scheduling and priming helper, the local account is queried independently; missing, disabled, ambiguous, unreadable, or otherwise unproven state closes the existing gate before task-directory hardening, task registration, temporary logon-policy writes, or Winlogon priming. `SetupComplete.cmd` does not repair or re-enable the account; `BootstrapLocalAdmin.ps1` remains the provisioning owner.
 
 The Defender privacy component is intentionally outside this compound gate. Its posture warning, technical nonzero result, or absence may produce a hardening warning, but does not by itself block secret validation, executor registration, autologon preparation, or later finalization.
 
