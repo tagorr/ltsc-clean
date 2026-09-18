@@ -21,6 +21,7 @@ Check:
 - `[SECTION] System-wide Local GPO baseline` and any following `[ERROR]` about a missing `LGPO.exe`, missing `BaselinePolicies.txt`, or failed import;
 - `[SECTION] Secret ACL validation (bootstrap=..., primaryadmin=...)`
 - nearby `[WARN]` or `[ERROR]` lines about invalid, missing, unreadable, or malformed secret files, including internal validator errors or malformed primary admin secret content
+- `[ERROR] Bootstrap account precondition failed state=...` lines, including `missing`, `disabled`, `ambiguous_or_unusable`, or `query_error`
 - `[ACLBOUNDARY]` pre-check and post-check results for the Scripts directory, Stage B script, task definition, and task directory
 - any line showing that `\L2C\CreatePrimaryAdmin` was scheduled
 - any line showing that Winlogon priming completed, was rolled back, or degraded into manual-login continuation
@@ -31,6 +32,7 @@ Interpretation:
 - if the mandatory Local GPO prerequisite or import fails, `SetupComplete.cmd` exits through the shared final return-code path before the normal baseline workload, secret validation, Stage B scheduling, or bootstrap autologon priming; a normal logon screen is therefore expected for this early fail-closed path;
 - this early final path does not have to emit the recovery banner, because it is reached before the later recovery-and-reboot section;
 - `TEMP_LOGON_ROLLBACK_FAILED` warnings are not expected when the mandatory Local GPO path fails before the combined secret gate establishes rollback eligibility; after eligibility is established, such warnings may occur even if the current run did not yet enter the temporary logon-policy write helper;
+- if the bootstrap account precondition fails, SetupComplete closes the existing gate before task-directory hardening, task registration, temporary logon-policy writes, or Winlogon priming for that attempt; a retained or valid `.bootstrap.pw` does not prove account usability, and SetupComplete does not repair or re-enable the account;
 - if secret validation passed and the scheduled task `\L2C\CreatePrimaryAdmin` was created, that proves only that task registration returned success; it does not prove that continuation preparation completed. Inspect the post-registration trust-boundary evidence, Winlogon/autologon priming outcome, any rollback evidence, and the actual presence or absence of the continuation task;
 - if task creation occurred but the post-registration trust-boundary check or later priming path failed, SetupComplete may delete the task, roll back Winlogon state, or do both depending on the failure point; inspect the current log and actual task state to determine what remains;
 - successful automatic continuation preparation requires the relevant trust-boundary checks and Winlogon priming to pass together with the expected continuation task state;

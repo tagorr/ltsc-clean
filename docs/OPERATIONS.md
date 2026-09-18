@@ -92,6 +92,8 @@ Treat it as a temporary secret file with the same protected handling expectation
 
 In the normal completed path, this file is removed during finalization. If it remains, treat it as retained recovery state, not as normal completion.
 
+Retaining `.bootstrap.pw` does not authorize a later continuation attempt. Before SetupComplete starts Stage B preparation, it independently requires exactly one local `bootstrap` account with a readable Boolean enabled state. Missing, disabled, ambiguous, unreadable, or otherwise unproven account state closes the existing gate before task-directory hardening, task registration, temporary logon-policy writes, or Winlogon autologon priming. SetupComplete does not repair or re-enable the account; use the current-run evidence and the existing bootstrap provisioning/recovery path before retrying.
+
 ## Runtime Evidence
 
 Use the current-run logs as the primary evidence for what happened during the run.

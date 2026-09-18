@@ -221,7 +221,7 @@ Use this section to choose the minimum meaningful validation scope.
   - targeted Windows 11 validation covering the offline preparation contract, persistent Computer Behavior Monitoring and Threat ID policy, materialized/effective/runtime state, retained protections, reboot and servicing persistence, Security Intelligence reevaluation, definitions reload, and evidenced WdVerification lifecycles.
 
 - change to SetupComplete flow, continuation logic, or scheduled-task behavior:
-  - happy-path smoke plus one deliberate blocked or degraded scenario relevant to that boundary.
+  - happy-path smoke plus one deliberate blocked or degraded scenario relevant to that boundary; when the bootstrap-account continuation precondition is affected, cover an enabled account and a missing, disabled, ambiguous, unreadable, or otherwise unproven account state, confirming that the blocked attempt does not register Stage B, write temporary logon policy, or prime Winlogon.
 
 - change to secret validation, secret cleanup, or secret-related gating:
   - happy-path smoke plus one deliberate fail-closed or recovery-oriented scenario.
