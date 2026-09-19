@@ -6,7 +6,7 @@ Use this document as the canonical security view of the baseline.
 
 It describes the security posture, threat boundaries, assumptions, and trade-offs for the supported baseline: Windows 11 Enterprise LTSC 2024 workstations (`EnterpriseS`, `24H2`, build `26100+`) in standalone or simple network environments without corporate integration or automatic proxy discovery requirements.
 
-The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes, while favoring deterministic, idempotent behavior.
+The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes, while favoring deterministic behavior and idempotent operations where the component contract supports them.
 
 ## Intentional trade-offs
 

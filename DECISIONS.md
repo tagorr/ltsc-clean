@@ -21,7 +21,7 @@ The baseline is guided by the following principles:
 - Use native Windows configuration mechanisms and system-recognized states, validated by project testing.
 - Stay conservative and avoid hacks or unsupported tricks.
 - Prefer deterministic behavior with legible outcomes.
-- Preserve idempotent execution so reruns converge safely without harmful drift.
+- Preserve idempotent behavior where a component supports it, while keeping rerun and recovery boundaries explicit.
 
 The project relies on supported Windows control planes such as policy, registry, servicing, and scheduled tasks. It does not try to become a general enterprise management stack, a universal hardening framework, or a broad compatibility layer for unrelated deployment scenarios.
 
@@ -109,13 +109,13 @@ The final controlled reboot is part of normal completion: after Stage B disables
 
 This keeps the setup boundary more deterministic and makes intermediate state easier to observe and review.
 
-### Idempotence is a design property
+### Supported repeatability and controlled re-entry
 
-Idempotence is a deliberate execution property of the baseline.
+Idempotence is a deliberate component-level property of the baseline, not a blanket guarantee for the whole provisioning pipeline.
 
-Scripts may be run repeatedly during manual reruns, regressions, or recovery-oriented retries. Operations are designed to remain safe on repeat and to converge toward the intended machine state without harmful drift.
+Operations are safe to repeat only where the relevant component and stage gates support it. Controlled recovery or re-entry follows those stage-specific checks; retained or intermediate artifacts are evidence for recovery, not proof that rerunning the entire flow from that state will converge safely. For example, `BootstrapLocalAdmin.ps1` refuses its normal bootstrap refresh path when `.bootstrap.pw` already exists.
 
-They are also structured so that applicability can be checked before change and outcomes remain distinguishable in logs. Already-satisfied state, no-op transitions, and repeat invocations are expected to remain safe, legible, and reviewable.
+Already-satisfied state, no-op transitions, and repeat invocations remain expected to be safe, legible, and reviewable only within the applicable component contract.
 
 ### Primary admin provisioning is operator-supplied and secret-safe by design
 

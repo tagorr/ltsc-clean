@@ -449,6 +449,6 @@ Retained recovery-signaling state remains a deliberate architectural outcome, no
 
 The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes.
 
-### Idempotence as a system property
+### Supported repeatability and controlled re-entry
 
-Repeatability and controlled re-entry remain architectural properties of the system, not accidental implementation details.
+Supported repeatability and controlled re-entry remain architectural properties of the system, not accidental implementation details. They are bounded by each component's guards and stage gates; retained or intermediate state is not a blanket promise that rerunning the whole flow will converge safely.
