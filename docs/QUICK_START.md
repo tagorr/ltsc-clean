@@ -13,7 +13,7 @@ Use this document to prepare and run the baseline for the first time. It covers:
   
 - Use supported Windows 11 Enterprise LTSC 2024 installation media;
 - Prepare the selected image offline with Defender Tamper Protection Off; see [Operations](OPERATIONS.md) for details;
-- Place `Autounattend.xml` at the media root;
+- Check `TimeZone` in `Autounattend.xml` for your region; place the file at the media root;
 - Stage these baseline files under `%WINDIR%\Setup\Scripts`:  
   - `PreOOBE.cmd`  
   - `SetupComplete.cmd`  

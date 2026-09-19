@@ -123,7 +123,9 @@ The baseline never auto-generates or derives the primary local admin password. T
 
 The current provisioning decision uses `LocalAccounts` and `SecureString` semantics so password application remains explicit and stays off external command lines. Stage A creates or updates the local user, enables it, and enforces required local group membership through SID-based local group resolution. Failure handling remains fail-closed and observable.
 
-If Stage A created `primaryadmin` during the current run and a later step fails, it attempts best-effort rollback and forces recovery. If the user existed before the current run, it is not deleted on failure.
+In the normal unattended path, Stage A sets `AccountNeverExpires=$true` and requests `PasswordNeverExpires=$true` for both newly created and existing primary administrator accounts.
+
+If Stage A provisioning fails after creating a new `primaryadmin`, it attempts best-effort account removal and enters recovery. Pre-existing accounts are not deleted by this rollback, and failures after successful Stage A, including Stage B failures, do not trigger it.
 
 This preserves a clearer security boundary while keeping retry and recovery behavior explicit.
 
