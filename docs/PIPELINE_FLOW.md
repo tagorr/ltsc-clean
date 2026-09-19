@@ -67,7 +67,7 @@ Control passes to `BootstrapLocalAdmin.ps1`, then returns to the normal setup pa
 **Important alternate exit**
 
 * if bootstrap preparation fails, `PreOOBE.cmd` records failure and returns a failing outcome;
-* if bootstrap cleanup hits a non-blocking anomaly, `%WINDIR%\Panther\preoobe_warnings.flag` can be left for later visibility.
+* if cleanup after a bootstrap secret failure also fails, a best-effort diagnostic-marker write may leave `%WINDIR%\Panther\preoobe_warnings.flag` for later visibility; marker handling does not change the failing PreOOBE outcome.
 
 **Flow meaning**
 This is a preparation phase, not the full baseline workload. It shapes the pre-OOBE environment and hands the flow to the temporary bootstrap-account step.
@@ -96,7 +96,7 @@ The setup path continues with a valid temporary administrator and a protected bo
 **Important alternate exit**
 
 * if secret creation or verification fails, the step fails;
-* if cleanup after an earlier bootstrap error also fails, a non-blocking warning marker can remain for later inspection.
+* if cleanup after an earlier bootstrap error also fails, a best-effort warning-marker write can leave `%WINDIR%\Panther\preoobe_warnings.flag` for later inspection; the underlying bootstrap error remains a failing outcome.
 
 **Flow meaning**
 This step does not establish the permanent admin state. It creates a temporary controlled bridge that later allows post-install finalization to proceed.
