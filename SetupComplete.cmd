@@ -330,7 +330,10 @@ exit /b 0
 if not "%HARDENING_HAS_WARNINGS%"=="1" exit /b 0
 if not exist "%HARDENING_WARN_FILE%" exit /b 0
 call :log "[HARDENING] warn_count_unique=%HARDENING_WARN_UNIQUE_COUNT% file=%HARDENING_WARN_FILE%"
-type "%HARDENING_WARN_FILE%" >> "%LOG%"
+type "%HARDENING_WARN_FILE%" >> "%LOG%" || (
+  >&2 echo [WARN] HARDENING_WARN_TRANSFER_FAILED artifact retained at "%HARDENING_WARN_FILE%"
+  exit /b 0
+)
 del /q "%HARDENING_WARN_FILE%" >nul 2>&1
 exit /b 0
 
