@@ -331,7 +331,7 @@ The finalization path in `CreatePrimaryAdmin.ps1` is more than a simple “last 
 
 That means cleanup is not just cosmetic tidying after the important work is done. Cleanup verification is part of completion semantics. A machine is not in the same state when it merely attempted teardown and when it proved that teardown and restoration succeeded. This is why the flow distinguishes between normal completion and retained recovery posture rather than flattening both outcomes into the same notion of success.
 
-The rollback behavior around Stage A also matters. If the flow creates a new permanent account and then fails before that state is safe to keep, the project attempts to avoid leaving behind a partially established final identity. That behavior supports the broader goal of keeping the end state legible and recoverable rather than silently accumulating ambiguous residue.
+If Stage A provisioning fails after creating a new permanent account, it attempts best-effort removal; pre-existing accounts are not deleted. Once Stage A succeeds, later failures do not trigger this rollback.
 
 ### Controlled Completion and Recovery Posture
 
