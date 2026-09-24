@@ -10,7 +10,7 @@ It records the key decisions, rationale, and scope boundaries that define the pr
 
 This project defines a lean, predictable Windows 11 Enterprise LTSC 2024 baseline designed to reduce background activity and telemetry while keeping default workstation behavior quiet, legible, and stable.
 
-The supported target is Windows 11 Enterprise LTSC 2024 (`EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, with strict display-version enforcement). Closely aligned Enterprise variants are not treated as supported unless they satisfy the exact runtime gate.
+The supported editions are `EnterpriseS` and `IoTEnterpriseS`, both requiring `DisplayVersion=24H2`, minimum build `26100`, and strict display-version enforcement. Other editions are unsupported.
 
 The baseline is intended for standalone or simple-network environments. It is not designed around corporate integration requirements or environments that depend on automatic proxy discovery by default.
 
@@ -72,7 +72,7 @@ The baseline does not treat broad version similarity as sufficient evidence of c
 
 It validates the supported platform explicitly against the expected baseline:
 
-- `EditionID=EnterpriseS`
+- `EditionID=EnterpriseS` or `EditionID=IoTEnterpriseS`
 - `DisplayVersion=24H2`
 - `CurrentBuild >= 26100`
 - `STRICT_DISPLAYVERSION=1`

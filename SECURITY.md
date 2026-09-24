@@ -4,7 +4,7 @@
 
 Use this document as the canonical security view of the baseline.
 
-It describes the security posture, threat boundaries, assumptions, and trade-offs for the supported baseline: Windows 11 Enterprise LTSC 2024 workstations (`EnterpriseS`, `24H2`, build `26100+`) in standalone or simple network environments without corporate integration or automatic proxy discovery requirements.
+It describes the security posture, threat boundaries, assumptions, and trade-offs for the supported baseline: Windows 11 Enterprise LTSC 2024 workstations (`EditionID=EnterpriseS` or `IoTEnterpriseS`, `24H2`, build `26100+`) in standalone or simple network environments without corporate integration or automatic proxy discovery requirements.
 
 The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes, while favoring deterministic behavior and idempotent operations where the component contract supports them.
 
@@ -39,6 +39,8 @@ The Windows Security notification-area presentation is suppressed through the su
 ### Edge Browser Removal and Update Suppression
 
 Edge browser removal runs early in `SetupComplete.cmd` as a best-effort hardening layer. Edge SmartScreen policies are still set to disabled before removal, EdgeUpdate services/tasks are left unchanged, and WebView2 runtime is not removed.
+
+On Windows 11 IoT Enterprise LTSC 2024, the standard Microsoft Edge uninstaller may block removal, leaving the browser installed. LTSC-clean logs this as a non-blocking hardening warning and continues deployment.
 
 - Windows Shell SmartScreen: `HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen=0`
 - Edge SmartScreen policies: `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenDnsRequestsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenForTrustedDownloadsEnabled=0`; `HKLM\SOFTWARE\Policies\Microsoft\Edge\SmartScreenPuaEnabled=0`

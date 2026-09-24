@@ -1,6 +1,6 @@
 @echo off
 REM SPDX-License-Identifier: MIT
-REM Windows 11 LTSC 2024 - Clean ^& Quiet Baseline (Official Tools Only)
+REM Windows 11 LTSC 2024 - Clean-Quiet Baseline
 setlocal EnableExtensions
 set "L2C_LOG_DATE_TOKEN="
 set "L2C_LOG_ISO_DATE="
@@ -54,33 +54,36 @@ if not defined ProgramData (
 call :log "----- SetupComplete started -----"
 
 :: --- compatibility controls ---
-set "REQUIRED_EDITION=EnterpriseS"
 set "REQUIRED_DV=24H2"
 set "MIN_BUILD=26100"
 set "STRICT_DISPLAYVERSION=1"  :: 1 = abort on DV mismatch, 0 = warn and continue
 
 :: ------------ platform gate ------------
 
-REM --- EditionID read (robust, locale-safe) ---
+REM --- EditionID read ---
 set "ED="
 for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v EditionID 2^>nul') do if /I "%%A"=="EditionID" set "ED=%%C"
+
 REM Trim potential quotes
 set "ED=%ED:"=%"
 >>"%WINDIR%\Panther\SetupComplete.log" echo [INFO] Platform EditionID="%ED%"
-if /I not "%ED%"=="%REQUIRED_EDITION%" (
-  call :log "[ERROR] EditionID=%ED% (expected %REQUIRED_EDITION%). Aborting."
+if /I not "%ED%"=="EnterpriseS" if /I not "%ED%"=="IoTEnterpriseS" (
+  call :log "[ERROR] EditionID=%ED%; expected EnterpriseS or IoTEnterpriseS. Aborting."
   set "FAILED=1"
   goto :l2c_final_rc
 )
-REM --- DisplayVersion (robust, locale-safe) ---
+
+REM --- DisplayVersion ---
 set "DV="
 for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v DisplayVersion 2^>nul') do if /I "%%A"=="DisplayVersion" set "DV=%%C"
 set "DV=%DV:"=%"
-REM --- CurrentBuild (robust, locale-safe) ---
+
+REM --- CurrentBuild ---
 set "CB="
 for /f "skip=1 tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CurrentBuild 2^>nul') do if /I "%%A"=="CurrentBuild" set "CB=%%C"
 set "CB=%CB:"=%"
-REM --- Normalize CurrentBuild into CBN (integer) ---
+
+REM --- Normalize CurrentBuild into CBN ---
 set "CBN="
 for /f "tokens=1 delims= " %%# in ("%CB%") do set "CBN=%%#"
 set /a CBN+=0 >nul 2>&1

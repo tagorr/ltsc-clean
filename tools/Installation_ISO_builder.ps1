@@ -213,13 +213,140 @@ function Invoke-Native([string]$File, [string[]]$Arguments, [int[]]$Allowed = @(
     Write-BuildLog ("Verified process result: {0}, exit {1}." -f (Split-Path $File -Leaf), $rc)
 }
 
+function Get-ImageMetadata([string]$Path, [uint32]$Index) {
+    $images = @(Get-WindowsImage -ImagePath $Path -Index $Index -LogPath $script:Build.DismLog -ErrorAction Stop)
+    if ($Index -eq 0 -or $images.Count -ne 1 -or $images[0].ImageIndex -ne $Index) {
+        throw "WIM metadata identity is unproven for index $Index."
+    }
+    $info = $images[0]
+    $version = $null
+    if (-not [version]::TryParse([string]$info.Version, [ref]$version) -or [long]$info.ImageSize -le 0) {
+        throw "Invalid WIM version/size metadata for index $Index."
+    }
+    $architecture = [string]$info.Architecture
+    if ($architecture -in @('9', 'x64', 'amd64')) { $architecture = 'x64' }
+    return [pscustomobject]@{
+        Index = $Index; EditionId = [string]$info.EditionId; Architecture = $architecture
+        Version = $version; ImageSize = [long]$info.ImageSize; ImageName = [string]$info.ImageName
+    }
+}
+
+function Select-InstallImage([string]$Path) {
+    $images = @(Get-WindowsImage -ImagePath $Path -LogPath $script:Build.DismLog -ErrorAction Stop)
+    $seen = @{}
+    Write-Host 'Available Windows images:'
+    $candidates = @(foreach ($image in $images) {
+        [uint32]$index = 0
+        if (-not [uint32]::TryParse([string]$image.ImageIndex, [ref]$index) -or $index -eq 0 -or $seen.ContainsKey($index)) {
+            throw 'WIM image indices are invalid or ambiguous.'
+        }
+        $seen[$index] = $true
+        $info = Get-ImageMetadata $Path $index
+        $description = 'Index {0}: {1}; {2}; {3}; {4}' -f $info.Index, $info.EditionId,
+            $info.Architecture, $info.Version, $info.ImageName
+        if ($info.EditionId -notin @('EnterpriseS', 'IoTEnterpriseS') -or $info.Architecture -ne 'x64' -or
+            $info.Version.Major -ne 10 -or $info.Version.Build -lt 26100) {
+            Write-Host ('Index {0}:' -f $info.Index) -ForegroundColor Gray -NoNewline
+            Write-Host (' {0,-17} {1}' -f $info.EditionId, $info.ImageName) -ForegroundColor Gray -NoNewline
+            Write-Host ' [unsupported]' -ForegroundColor Yellow
+            Write-BuildLog ('Unsupported image: ' + $description)
+            continue
+        }
+        Write-Host ('Index {0}:' -f $info.Index) -ForegroundColor Cyan -NoNewline
+        Write-Host (' {0,-17} {1}' -f $info.EditionId, $info.ImageName)
+        Write-BuildLog ('Candidate image: ' + $description)
+        $info
+    })
+    if ($candidates.Count -eq 0) {
+        throw 'No supported image: require EnterpriseS or IoTEnterpriseS, x64, version 10 / build 26100+.'
+    }
+    if ($candidates.Count -eq 1) { $selected = $candidates[0] }
+    else {
+		$indices = ($candidates | ForEach-Object { $_.Index }) -join ', '
+        while ($true) {
+            $choice = Read-Host ('Enter the WIM index to prepare [{0}] (Q to cancel)' -f $indices)
+            if ([string]::IsNullOrWhiteSpace($choice) -or $choice -ieq 'Q') { throw 'Image selection cancelled.' }
+            [uint32]$index = 0
+            if ([uint32]::TryParse($choice, [ref]$index)) {
+                $matches = @($candidates | Where-Object { $_.Index -eq $index })
+                if ($matches.Count -eq 1) { $selected = $matches[0]; break }
+            }
+            Write-Host 'Enter one of the supported WIM indices shown above.' -ForegroundColor Yellow
+        }
+    }
+    $message = 'Selected image: index {0}, {1}, {2}, {3}.' -f $selected.Index,
+        $selected.EditionId, $selected.Architecture, $selected.Version
+    Write-Host $message -ForegroundColor Cyan
+    Write-BuildLog $message
+    return $selected
+}
+
+function Assert-SelectedImage {
+    $expected = $script:Build.SelectedImage
+    if ($null -eq $expected -or $expected.Index -le 0) { throw 'No image selection was established.' }
+    $actual = Get-ImageMetadata $script:Build.Wim $expected.Index
+    if ($actual.EditionId -ine $expected.EditionId -or $actual.Architecture -ne $expected.Architecture -or
+        $actual.Version -ne $expected.Version) {
+        throw 'Working WIM metadata does not match the selected image; no alternate image will be used.'
+    }
+}
+
+function Read-AnswerXml([string]$Path) {
+    $settings = [Xml.XmlReaderSettings]::new()
+    $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $reader = [Xml.XmlReader]::Create($Path, $settings)
+    try {
+        $answer = [Xml.XmlDocument]::new()
+        $answer.PreserveWhitespace = $true
+        $answer.XmlResolver = $null
+        $answer.Load($reader)
+        return ,$answer
+    } finally { $reader.Dispose() }
+}
+
+function Get-AnswerIndexNode([xml]$Answer, [uint32]$ExpectedIndex) {
+    $ns = [Xml.XmlNamespaceManager]::new($Answer.NameTable)
+    $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+    $node = $Answer
+    foreach ($step in @('u:unattend', 'u:settings[@pass="windowsPE"]',
+        'u:component[@name="Microsoft-Windows-Setup"]', 'u:ImageInstall', 'u:OSImage', 'u:InstallFrom', 'u:MetaData')) {
+        $nodes = @($node.SelectNodes($step, $ns))
+        if ($nodes.Count -ne 1) { throw 'Autounattend.xml image selection is missing or ambiguous.' }
+        $node = $nodes[0]
+        if ($node.LocalName -eq 'component' -and $node.GetAttribute('processorArchitecture') -cne 'amd64') {
+            throw 'Autounattend.xml image selection must use the amd64 Setup component.'
+        }
+    }
+    $keys = @($node.SelectNodes('u:Key', $ns))
+    $values = @($node.SelectNodes('u:Value', $ns))
+    if ($ExpectedIndex -eq 0 -or $Answer.SelectNodes('//u:OSImage', $ns).Count -ne 1 -or
+        $node.ParentNode.SelectNodes('*').Count -ne 1 -or $node.SelectNodes('*').Count -ne 2 -or
+        $node.GetAttribute('action', 'http://schemas.microsoft.com/WMIConfig/2002/State') -cne 'add' -or
+        $keys.Count -ne 1 -or $values.Count -ne 1) {
+        throw 'Autounattend.xml must have exactly one /IMAGE/INDEX selector without an alternate source.'
+    }
+    foreach ($entry in @($keys[0], $values[0])) {
+        if ($entry.ChildNodes.Count -ne 1 -or $entry.FirstChild.NodeType -ne [Xml.XmlNodeType]::Text) {
+            throw 'Autounattend.xml image key and value must be plain text.'
+        }
+    }
+    if ($keys[0].InnerText -cne '/IMAGE/INDEX' -or
+        $values[0].InnerText -cne $ExpectedIndex.ToString([Globalization.CultureInfo]::InvariantCulture)) {
+        throw "Autounattend.xml must select exactly image index $ExpectedIndex."
+    }
+    return ,$values[0]
+}
+
 function Get-OwnedMount {
     return ,@(Get-WindowsImage -Mounted -LogPath $script:Build.DismLog -ErrorAction Stop |
         Where-Object { $_.Path.TrimEnd('\') -ieq $script:Build.Mount })
 }
 
 function Assert-MountIdentity($Mounts) {
-    if ($Mounts.Count -ne 1 -or $Mounts[0].ImagePath -ine $script:Build.Wim -or $Mounts[0].ImageIndex -ne 1) {
+    if ($null -eq $script:Build.SelectedImage -or $script:Build.SelectedImage.Index -le 0 -or
+        $Mounts.Count -ne 1 -or $Mounts[0].Path.TrimEnd('\') -ine $script:Build.Mount -or
+        $Mounts[0].ImagePath -ine $script:Build.Wim -or $Mounts[0].ImageIndex -ne $script:Build.SelectedImage.Index) {
         throw 'Mount ownership/identity is unproven; no automatic unmount is allowed.'
     }
 }
@@ -286,8 +413,10 @@ function Set-OfflinePreparation {
     $display = Get-OfflineValue $versionKey 'DisplayVersion'
     $build = Get-OfflineValue $versionKey 'CurrentBuildNumber'
     if ($null -eq $edition -or $null -eq $display -or $null -eq $build -or
-        $edition.Value -ne 'EnterpriseS' -or $display.Value -ne '24H2' -or [int]$build.Value -lt 26100) {
-        throw 'Offline image must be EnterpriseS / 24H2 / build 26100 or later.'
+        $null -eq $script:Build.SelectedImage -or $edition.Value -notin @('EnterpriseS', 'IoTEnterpriseS') -or
+        $edition.Value -ine $script:Build.SelectedImage.EditionId -or
+        $display.Value -ne '24H2' -or [int]$build.Value -lt 26100) {
+        throw 'Offline image must match the selected EnterpriseS or IoTEnterpriseS edition / 24H2 / build 26100+.'
     }
     $features = 'Microsoft\Windows Defender\Features'
     $beforeSecurity = Get-FeaturesSecurity
@@ -427,7 +556,7 @@ function Remove-BuildDirectory([string]$Path) {
 function Invoke-LtscBuild {
     $script:Build = @{
         Log = $null; DismLog = $null; Workspace = $null; MountAttempted = $false
-        HiveLoaded = $false; TaskAttempted = $false; Published = $false; ExitCode = 1
+        HiveLoaded = $false; TaskAttempted = $false; Published = $false; ExitCode = 1; SelectedImage = $null
         Reg = (Join-Path $env:SystemRoot 'System32\reg.exe')
         Dism = (Join-Path $env:SystemRoot 'System32\dism.exe')
         PowerShell = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')
@@ -501,13 +630,8 @@ function Invoke-LtscBuild {
         $conflicts = @(Get-ChildItem -LiteralPath (Join-Path $source 'sources') -Force |
             Where-Object { $_.Name -match '^install.*\.(esd|swm)$' -or $_.Name -eq '$OEM$' -or $_.Name -ieq 'unattend.xml' })
         if ($conflicts.Count) { throw 'Mixed image formats, sources\unattend.xml or $OEM$ customization are unsupported. Use an original distribution.' }
-        [xml]$answer = [IO.File]::ReadAllText((Join-Path $repo 'Autounattend.xml'))
-        $ns = [Xml.XmlNamespaceManager]::new($answer.NameTable)
-        $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
-        $selection = @($answer.SelectNodes('//u:ImageInstall/u:OSImage/u:InstallFrom/u:MetaData', $ns))
-        if ($selection.Count -ne 1 -or $selection[0].Key -cne '/IMAGE/INDEX' -or $selection[0].Value -ne '1') {
-            throw 'Autounattend.xml must select exactly image index 1.'
-        }
+        $answer = Read-AnswerXml (Join-Path $repo 'Autounattend.xml')
+        $selection = Get-AnswerIndexNode $answer 1
         $sourceBytes = Get-TreeBytes $source
         $runId = [Guid]::NewGuid().ToString('N')
         $script:Build.Workspace = Join-Path $workParent ('L2C-build-' + $runId)
@@ -524,13 +648,9 @@ function Invoke-LtscBuild {
         $candidate = Join-Path $script:Build.Workspace 'output.partial.iso'
         Write-BuildLog ('Private workspace: ' + $script:Build.Workspace)
         Write-BuildLog ('Recovery identifiers: HKLM\' + $script:Build.HiveName + '; task \' + $script:Build.TaskName)
-        $info = Get-WindowsImage -ImagePath (Join-Path $source 'sources\install.wim') -Index 1 -LogPath $script:Build.DismLog -ErrorAction Stop
-        if ($info.EditionId -ne 'EnterpriseS' -or [string]$info.Architecture -notin @('9', 'x64', 'amd64') -or
-            ([version]$info.Version).Major -ne 10 -or ([version]$info.Version).Build -lt 26100) {
-            throw 'install.wim index 1 must be Windows 11 Enterprise LTSC 2024 x64 (EnterpriseS, 26100+).'
-        }
+        $script:Build.SelectedImage = Select-InstallImage (Join-Path $source 'sources\install.wim')
         # Conservative estimate, not a promise that DISM cannot exhaust the volume.
-        $required = 2 * $sourceBytes + [long]$info.ImageSize + 5GB
+        $required = 2 * $sourceBytes + $script:Build.SelectedImage.ImageSize + 5GB
         $available = ([IO.DriveInfo]::new([IO.Path]::GetPathRoot($workParent))).AvailableFreeSpace
         if ($available -lt $required) { throw ('Insufficient workspace space: allow at least {0:N1} GiB free.' -f ($required / 1GB)) }
         Write-BuildLog ('Image metadata accepted. Estimated required free space: {0:N1} GiB.' -f ($required / 1GB))
@@ -549,13 +669,14 @@ function Invoke-LtscBuild {
         }
         [IO.File]::SetAttributes($script:Build.Wim,
             ([IO.File]::GetAttributes($script:Build.Wim) -band (-bnot [IO.FileAttributes]::ReadOnly)))
+        Assert-SelectedImage
         if ((Get-OwnedMount).Count -ne 0) { throw 'Unexpected mount-path collision.' }
         Write-BuildStep 2 'Windows installation files copied and verified.' -Done
         Write-BuildPhase 2 'WINDOWS IMAGE PREPARATION'
         Write-BuildStep 3 'Mounting the Windows image (this may take a few minutes)...'
         $script:Build.MountAttempted = $true
         Invoke-Native $script:Build.Dism @('/Mount-Image', ('/ImageFile:' + $script:Build.Wim),
-            '/Index:1', ('/MountDir:' + $script:Build.Mount), '/CheckIntegrity', ('/LogPath:' + $script:Build.DismLog)) -DirectConsole
+            ('/Index:' + $script:Build.SelectedImage.Index), ('/MountDir:' + $script:Build.Mount), '/CheckIntegrity', ('/LogPath:' + $script:Build.DismLog)) -DirectConsole
         $mounted = Get-OwnedMount
         Assert-MountIdentity $mounted
         if ($mounted[0].MountStatus -ne 'Ok' -or $mounted[0].MountMode -ne 'ReadWrite') { throw 'Image is not mounted read/write in a healthy state.' }
@@ -604,8 +725,16 @@ function Invoke-LtscBuild {
         Invoke-Native $script:Build.PowerShell @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
             '-File', $validator, '-BootstrapPath', (Join-Path $scripts '.bootstrap.pw'), '-PrimaryAdminPath', $secret) @(2) -Quiet
         Write-BuildLog 'Primaryadmin secret content, owner, ACL and Hidden/System attributes verified.'
-        Copy-Item -LiteralPath (Join-Path $repo 'Autounattend.xml') -Destination (Join-Path $script:Build.Media 'Autounattend.xml') -Force
-        Assert-Copy (Join-Path $repo 'Autounattend.xml') (Join-Path $script:Build.Media 'Autounattend.xml')
+        $selection.InnerText = $script:Build.SelectedImage.Index.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $answerPath = Join-Path $script:Build.Media 'Autounattend.xml'
+        Assert-NoReparseAncestors $answerPath
+        $xmlSettings = [Xml.XmlWriterSettings]::new()
+        $xmlSettings.Encoding = [Text.UTF8Encoding]::new($false)
+        $xmlSettings.Indent = $false
+        $xmlSettings.NewLineHandling = [Xml.NewLineHandling]::None
+        $writer = [Xml.XmlWriter]::Create($answerPath, $xmlSettings)
+        try { $answer.Save($writer) } finally { $writer.Dispose() }
+        [void](Get-AnswerIndexNode (Read-AnswerXml $answerPath) $script:Build.SelectedImage.Index)
 
         Write-BuildStep 5 'Installation files and administrator password verified.' -Done
         Write-BuildStep 6 'Saving and unmounting the image. Do not interrupt...'
@@ -616,6 +745,8 @@ function Invoke-LtscBuild {
         if ((Get-OwnedMount).Count -ne 0) { throw 'Image unmount was not confirmed.' }
         $script:Build.MountAttempted = $false
 
+        Assert-SelectedImage
+        [void](Get-AnswerIndexNode (Read-AnswerXml $answerPath) $script:Build.SelectedImage.Index)
         Write-BuildStep 6 'Image saved and unmounted.' -Done
         Write-BuildPhase 3 'ISO CREATION'
         Write-BuildStep 7 'Creating the installation ISO...'
