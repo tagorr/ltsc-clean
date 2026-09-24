@@ -201,6 +201,10 @@ On a clean Windows 11 Enterprise LTSC 2024 target satisfying the repository plat
 
 The completed clean-deployment record above includes genuine direct `WdVerification` actions with exit code `0`, Security Intelligence and engine servicing, Windows servicing and reboot, and `MpCmdRun.exe -RemoveDefinitions -All` completing with exit code `0` before the full intelligence reload, while the policy, policy-backed Threat ID, effective, and runtime BM layers remained aligned. No `DefenderTamperingRestore` Event 1116/1117 remediation or Behavior Monitoring Event 5004 re-enable occurred in those tested scenarios, and the native `Registry.pol` remained unchanged. This demonstrates observed persistence for the tested Defender stack; it does not establish internal Defender causality or guarantee future Defender releases or the natural scheduled threat-history cleanup cycle. For future changes, capture the action result and relevant logs when available, but do not infer successful execution from a queued request, generic AutoPurge line, or LastRunTime alone. A validation-only `gpupdate /target:computer /force` regression remains separate from the supported production path and must not conceal a failed no-refresh deployment result.
 
+## IoT Enterprise deployment evidence
+
+A Windows 11 IoT Enterprise LTSC 2024 installation from a prepared ISO was completed in the Hyper-V VM `L2C`, starting from build `26100.1742`. The deployment reached its working state, and `SetupComplete.cmd` continued after a non-blocking hardening warning. The Builder-reported preflight, Windows PowerShell 5.1 syntax checks, and isolated logic checks passed.
+
 ## Scenario Selection by Change Type
 
 Use this section to choose the minimum meaningful validation scope.

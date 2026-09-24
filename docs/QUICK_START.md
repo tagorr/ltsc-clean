@@ -18,9 +18,9 @@ Choose how to prepare your installation ISO:
 
 ### Manual Preparation
 
-- Use supported Windows 11 Enterprise LTSC 2024 installation media;
-- Prepare the selected image offline with Defender Tamper Protection Off; see [Operations](OPERATIONS.md) for details;
-- Check `TimeZone` in `Autounattend.xml` for your region; place the file at the media root;
+- Use supported Windows 11 Enterprise LTSC 2024 installation media, including IoT Enterprise;
+- Identify the intended image in `install.wim` and prepare that image offline with Defender Tamper Protection Off; see [Operations](OPERATIONS.md) for details;
+- Set `/IMAGE/INDEX` in the media-root `Autounattend.xml` to match the prepared image; also check `TimeZone` for your region;
 - Stage these baseline files under `%WINDIR%\Setup\Scripts`:  
   - `PreOOBE.cmd`  
   - `SetupComplete.cmd`  

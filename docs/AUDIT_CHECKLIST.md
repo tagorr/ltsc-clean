@@ -54,7 +54,7 @@ This checklist is for auditing repository-level invariants, staged execution con
 * [ ] Servicing logic, secret validation, Stage B scheduling, and reboot signaling remain clearly ordered.
 * [ ] When a reboot is required, the final Panther marker content is selected and positively verified before Stage B registration or Winlogon autologon priming; signaling failure keeps that gateway closed.
 * [ ] Platform-gate mismatches fail closed and flow to the shared final return-code path.
-* [ ] The platform gate requires `EditionID=EnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, and `STRICT_DISPLAYVERSION=1`.
+* [ ] The platform gate requires `EditionID=EnterpriseS` or `EditionID=IoTEnterpriseS`, `DisplayVersion=24H2`, minimum build `26100`, and `STRICT_DISPLAYVERSION=1`.
 * [ ] The mandatory system-wide Local GPO baseline gate runs after the platform gate and before the normal baseline workload.
 * [ ] `%WINDIR%\Setup\Scripts\LGPO.exe` is treated as a required operator-supplied runtime input, and `%WINDIR%\Setup\Scripts\BaselinePolicies.txt` is treated as the required tracked eight-record payload.
 * [ ] `BaselinePolicies.txt` preserves the five approved User DWORD values (`DisableWindowsSpotlightFeatures=1`, `DisableTailoredExperiencesWithDiagnosticData=1`, `HideSCAMeetNow=1`, `HttpAcceptLanguageOptOut=1`, and `Start_TrackProgs=0`) under their intended User Configuration registry paths and adds the Computer `DisableBehaviorMonitoring=DWORD:1` record plus the Defender Threats records `Threats_ThreatIdDefaultAction=DWORD:1` and `ThreatIdDefaultAction` value name `2147741622` with `SZ:6`.

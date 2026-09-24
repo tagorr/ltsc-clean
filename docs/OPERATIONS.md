@@ -33,7 +33,7 @@ The tested Windows-host approach mounts the selected WIM index, loads its offlin
 
 For that example:
 
-1. Identify the exact WIM image and index that Windows Setup will install.
+1. Identify the exact WIM image and index that Windows Setup will install, and ensure the media-root `Autounattend.xml` selects that same index.
 2. Mount that index with the Windows servicing tools, then load its `Windows\System32\Config\SOFTWARE` hive under an operator-chosen temporary name such as `HKLM\L2C_OfflineSoftware` (for example, `reg load HKLM\L2C_OfflineSoftware <mount>\Windows\System32\Config\SOFTWARE`).
 3. In the loaded hive, confirm the existing `Microsoft\Windows Defender\Features` key, then set only its `TamperProtection` value to `REG_DWORD 4` (for example, `reg add "HKLM\L2C_OfflineSoftware\Microsoft\Windows Defender\Features" /v TamperProtection /t REG_DWORD /d 4 /f`), read it back. If the key is missing or the value cannot be read back, stop. Do not take ownership, rewrite the key ACL, or add a replacement source value merely to complete the edit.
 4. Unload the temporary hive (for example, `reg unload HKLM\L2C_OfflineSoftware`), dismount the selected image with its changes committed (for example, the servicing tool's `/Unmount-Image ... /Commit` operation), and verify that the installation media still selects that committed image/index.
@@ -44,7 +44,7 @@ If the hive cannot be unloaded cleanly or the value cannot be read back, do not 
 
 Before installation, prepare:
 
-- supported Windows 11 Enterprise LTSC 2024 installation media;
+- supported Windows 11 Enterprise LTSC 2024 installation media, including IoT Enterprise;
 - `Autounattend.xml` at the media root;
 - these baseline files under `%WINDIR%\Setup\Scripts`:
   - `PreOOBE.cmd`

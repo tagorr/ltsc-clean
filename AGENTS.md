@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Scope:** Windows 11 Enterprise LTSC 2024 (`EnterpriseS`, `24H2`, build `26100+`, strict display-version gate). We manage only the install scripts.
+**Scope:** Windows 11 Enterprise LTSC 2024 (`EditionID=EnterpriseS` or `IoTEnterpriseS`, `24H2`, build `26100+`, strict display-version gate). We manage only the install scripts.
 
 ## Allowed to edit
 
@@ -57,7 +57,7 @@ These rules govern the installation scripts that run on the supported Windows ta
 
 ## Policies
 
-* **Edition gate:** `EditionID == REQUIRED_EDITION` → otherwise **FAIL**.
+* **Edition gate:** `EditionID` must be `EnterpriseS` or `IoTEnterpriseS` → otherwise **FAIL**.
 * **DISM RC policy (SetupComplete.cmd):**
   * `0` → success.
   * `3010/1641` → success, reboot required; set `NEEDS_REBOOT=1` and write the Panther reboot flag.

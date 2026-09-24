@@ -1,6 +1,6 @@
 # Windows 11 Enterprise LTSC 2024 Baseline
 
-This repository defines and applies a controlled baseline for Windows 11 Enterprise LTSC 2024 (EnterpriseS, 24H2, build 26100+), with a clean, quiet and predictable system profile. The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes.
+This repository defines and applies a controlled baseline for Windows 11 Enterprise LTSC 2024, including IoT Enterprise, with a clean, quiet and predictable system profile. The baseline uses native Windows configuration mechanisms and system-recognized states, validated by project testing. It avoids binary patching, ACL weakening, and invasive component changes.
 
 It uses a staged deployment pipeline that treats continuation, cleanup, and recovery as explicit, verifiable states.
 
