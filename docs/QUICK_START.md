@@ -9,8 +9,15 @@ Use this document to prepare and run the baseline for the first time. It covers:
 - installation start;
 - expected end state.
 
-## Before You Start  
-  
+## Before You Start
+
+Choose how to prepare your installation ISO:
+
+- **Easy Start:** Use the [ISO Builder](ISO_BUILDER.md) to prepare everything automatically.
+- **Manual Setup:** Follow the steps below.
+
+### Manual Preparation
+
 - Use supported Windows 11 Enterprise LTSC 2024 installation media;
 - Prepare the selected image offline with Defender Tamper Protection Off; see [Operations](OPERATIONS.md) for details;
 - Check `TimeZone` in `Autounattend.xml` for your region; place the file at the media root;

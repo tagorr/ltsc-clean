@@ -25,6 +25,8 @@ The preparation contract is:
 
 This is an operator-owned media-preparation prerequisite, not a `SetupComplete.cmd` action and not a new runtime stage. The repository does not require one host-side implementation. A genuinely offline WinPE workflow or an equivalent method may satisfy the same contract when it establishes and verifies these conditions; the complete validation record in [Validation](VALIDATION.md) applies to the tested fresh-deployment path.
 
+For automated media preparation, use the [ISO Builder](ISO_BUILDER.md). The manual procedure below remains available as an alternative.
+
 ### Tested Windows-host example
 
 The tested Windows-host approach mounts the selected WIM index, loads its offline SOFTWARE hive under a temporary host registry name, sets only the `TamperProtection` value, and commits the image. Perform the mutation from LocalSystem or an equivalent sufficiently authoritative offline context; an elevated Administrator token may be unable to write the protected key.

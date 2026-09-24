@@ -4,6 +4,11 @@ This repository defines and applies a controlled baseline for Windows 11 Enterpr
 
 It uses a staged deployment pipeline that treats continuation, cleanup, and recovery as explicit, verifiable states.
 
+## Start here
+
+- **Automated Setup:** [Build your ISO with the ISO Builder](docs/ISO_BUILDER.md).
+- **Manual Setup:** [Prepare your ISO step by step](docs/QUICK_START.md).
+
 ## Key characteristics
   
 - **Staged deployment pipeline.** The baseline moves through explicit preparation, orchestration and finalization boundaries instead of relying on one broad setup phase.  
@@ -42,15 +47,10 @@ Not a fit:
 
 4. **`CreatePrimaryAdmin.ps1`** completes permanent admin finalization, then either tears down temporary state or preserves recovery-signaling state.
 
-## Start here
-
-1. Confirm that your system and environment fit the supported LTSC baseline.
-2. Follow [Quick Start](docs/QUICK_START.md) for the initial setup path.
-3. Go to [Operations](docs/OPERATIONS.md) for post-run checks and operator handling.
-
 ## Documentation map
 
 - [Guide](docs/GUIDE.md) - documentation guide and reading map
+- [ISO Builder](docs/ISO_BUILDER.md) - automated installation ISO preparation
 - [Quick Start](docs/QUICK_START.md) - minimal setup path
 - [Pipeline Flow](docs/PIPELINE_FLOW.md) - runtime sequence and stage flow
 - [Operations](docs/OPERATIONS.md) and [Troubleshooting](docs/TROUBLESHOOTING.md) - operations, troubleshooting and recovery guidance

@@ -10,8 +10,11 @@ This guide points you to the right document; it does not replace the documents t
 
 ### Core workflow documents
 
+#### [ISO Builder](ISO_BUILDER.md)
+Read this for automated installation ISO preparation.
+
 #### [Quick Start](QUICK_START.md)
-Read this first for the minimal practical path through a first run.
+Read this for manual ISO preparation and the installation procedure.
 
 It covers required inputs, installation start, and smoke-level confirmation that the baseline reached the expected end state.
 
